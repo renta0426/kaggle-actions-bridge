@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "request_id": "20260902-poisoned-chalice-stage1-raw-fim-failure-diagnostic-001",
+  "parent_request_id": "20260902-poisoned-chalice-stage1-raw-fim-003",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_failure_diagnostic",
+  "target": "renta0426/stage1-raw-fim-submission-v1",
+  "api_budget": {
+    "max_calls": 4,
+    "max_pages": 1
+  },
+  "side_effects": []
+}

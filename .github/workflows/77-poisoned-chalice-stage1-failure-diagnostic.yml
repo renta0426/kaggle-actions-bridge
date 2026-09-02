@@ -1,0 +1,275 @@
+name: Poisoned Chalice Stage1 failed kernel read-only diagnostic
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-raw-fim-failure-diagnostic-v1.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-raw-fim-failure-diagnostic-v1.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/stage1-raw-fim-submission-v1
+
+jobs:
+  diagnostic:
+    name: Read failed status and sanitized exception only
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/77-poisoned-chalice-stage1-failure-diagnostic.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "PROTECTED_FAILURE_DIAGNOSTIC_BOUNDARY PASS"
+
+      - name: Validate exact request and prepare hash-locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          request_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${REQUEST_PATH}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${request_url}" "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          from __future__ import annotations
+          import json
+          import re
+          import ssl
+          import sys
+          import urllib.request
+          from urllib.parse import urlparse
+
+          request_url, lock_url, lock_output = sys.argv[1:]
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def read(url: str, limit: int) -> bytes:
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected raw source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit("input exceeds byte budget")
+              return data
+
+          request = json.loads(read(request_url, 16384))
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260902-poisoned-chalice-stage1-raw-fim-failure-diagnostic-001",
+              "parent_request_id": "20260902-poisoned-chalice-stage1-raw-fim-003",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_failure_diagnostic",
+              "target": "renta0426/stage1-raw-fim-submission-v1",
+              "api_budget": {"max_calls": 4, "max_pages": 1},
+              "side_effects": [],
+          }
+          if request != expected:
+              raise SystemExit("failure diagnostic request differs from exact allowlist")
+
+          text = read(lock_url, 65536).decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          open(lock_output, "w", encoding="utf-8").write(text)
+          print("FAILURE_DIAGNOSTIC_REQUEST PASS parent_request=003 side_effects=none")
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+          "${workdir}/venv/bin/kaggle" kernels logs --help >/dev/null
+          echo "LOCKED_KAGGLE_DIAGNOSTIC_CLIENT PASS"
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl
+          import urllib.request
+          context = ssl.create_default_context()
+          for url in (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+          ):
+              req = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req, timeout=30, context=context) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print("CURRENT_KAGGLE_POLICY_REACHABILITY PASS")
+          PY
+
+      - name: Fetch failed status and emit sanitized traceback metadata only
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import os
+          import pathlib
+          import re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+
+          target = os.environ["TARGET_KERNEL"]
+          competition = os.environ["TARGET_COMPETITION"]
+          api = KaggleApi()
+          api.authenticate()
+
+          pages = api.competition_list_pages(competition) or []
+          names = {
+              str((page.to_dict() if hasattr(page, "to_dict") else dict(page)).get("name") or "").strip().lower()
+              for page in pages
+          }
+          if "rules" not in names or "evaluation" not in names:
+              raise SystemExit("live Competition policy pages unavailable")
+
+          status = api.kernels_status(target)
+          state = str(getattr(status, "status", status)).upper()
+          failure = getattr(status, "failure_message", None)
+          if failure is None:
+              failure = getattr(status, "failureMessage", None)
+
+          def scrub(text: str, limit: int = 800) -> str:
+              text = str(text or "")
+              text = re.sub(r"KGAT_[A-Za-z0-9._-]+", "<redacted-token>", text)
+              text = re.sub(r"([?&](?:token|key|signature|credential|auth)=[^\s&]+)", "?<redacted-query>", text, flags=re.I)
+              text = re.sub(r"\s+", " ", text).strip()
+              return text[:limit]
+
+          print(f"KERNEL_FAILURE_STATUS state={scrub(state, 80)}")
+          if failure:
+              print(f"KERNEL_FAILURE_MESSAGE {scrub(failure)}")
+
+          # kaggle==2.2.4 exposes a supported one-shot kernel log API. Keep the
+          # full private log only in runner memory; public Actions output gets
+          # traceback frame metadata / exception messages, never notebook output.
+          log_text = api.kernels_logs(target)
+          if not isinstance(log_text, str):
+              log_text = str(log_text or "")
+          log_digest = hashlib.sha256(log_text.encode("utf-8", errors="replace")).hexdigest()
+          log_lines = log_text.splitlines()
+
+          traceback_marker = re.compile(r"^Traceback \(most recent call last\):$")
+          frame = re.compile(r'^File "([^"]+)", line (\d+)(?:, in (.+))?$')
+          exception = re.compile(
+              r"^(?:[A-Za-z_][\w.]*?(?:Error|Exception)|SystemExit|AssertionError|KeyboardInterrupt)(?::|$)"
+          )
+          keywords = (
+              "CUDA out of memory",
+              "CUDA error",
+              "CUBLAS_STATUS",
+              "CUDNN_STATUS",
+              "No space left on device",
+              "Killed",
+          )
+
+          selected: list[str] = []
+          for raw in log_lines:
+              stripped = raw.strip()
+              if traceback_marker.fullmatch(stripped):
+                  selected.append("Traceback (most recent call last):")
+                  continue
+              match = frame.fullmatch(stripped)
+              if match:
+                  basename = pathlib.PurePosixPath(match.group(1)).name or "<notebook>"
+                  function = scrub(match.group(3) or "", 120)
+                  suffix = f" in {function}" if function else ""
+                  selected.append(f"File <path>/{basename}, line {match.group(2)}{suffix}")
+                  continue
+              if exception.match(stripped) or any(word in stripped for word in keywords):
+                  selected.append(scrub(stripped, 500))
+                  continue
+              if stripped.startswith(("ERROR:", "Error:", "FATAL:", "Fatal:")):
+                  selected.append(scrub(stripped, 500))
+
+          selected = selected[-60:]
+          print(f"KERNEL_LOG_METADATA sha256={log_digest} lines={len(log_lines)} sanitized_exception_lines={len(selected)}")
+          print("KERNEL_SANITIZED_EXCEPTION_BEGIN")
+          if selected:
+              for line in selected:
+                  print(line)
+          else:
+              print("<no traceback/exception line matched; inspect failure_message/status>")
+          print("KERNEL_SANITIZED_EXCEPTION_END")
+
+          if "ERROR" not in state and "FAILED" not in state:
+              raise SystemExit(f"expected failed kernel state, got {scrub(state, 80)}")
+          print("READ_ONLY_FAILURE_DIAGNOSTIC PASS api_calls=3 max_calls=4 side_effects=none")
+          PY
+
+      - name: Cleanup runner-local diagnostic material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "DIAGNOSTIC_TEMPORARY_MATERIAL_REMOVED"
