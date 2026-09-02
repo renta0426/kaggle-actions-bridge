@@ -16,33 +16,31 @@ concurrency:
 jobs:
   diagnose:
     name: Secret-free runner and network diagnostic
-    if: >-
-      github.repository == 'renta0426/kaggle-actions-bridge' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
+    if: ${{ github.repository == 'renta0426/kaggle-actions-bridge' && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor_id == '71638068' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
       EXPECTED_REPOSITORY_ID: "1354356687"
+      EXPECTED_ACTOR: renta0426
+      EXPECTED_ACTOR_ID: "71638068"
       EVENT_NAME_VALUE: ${{ github.event_name }}
       EVENT_REF_VALUE: ${{ github.ref }}
       EVENT_SHA_VALUE: ${{ github.sha }}
       EVENT_REPOSITORY_VALUE: ${{ github.repository }}
-      EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+      EVENT_REPOSITORY_ID_VALUE: ${{ github.repository_id }}
       EVENT_ACTOR_VALUE: ${{ github.actor }}
       EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
       EVENT_TRIGGERING_ACTOR_VALUE: ${{ github.triggering_actor }}
       EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
       WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
       WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
-      RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
-      RUNNER_OS_VALUE: ${{ runner.os }}
-      RUNNER_ARCH_VALUE: ${{ runner.arch }}
 
     steps:
-      - name: Enforce repository and runner boundary
+      - name: Enforce repository, actor, and runner boundary
         shell: bash
+        env:
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
         run: |
           set -euo pipefail
 
@@ -53,6 +51,11 @@ jobs:
 
           if [[ "${EVENT_REPOSITORY_ID_VALUE}" != "${EXPECTED_REPOSITORY_ID}" ]]; then
             echo "ERROR: unexpected repository ID"
+            exit 1
+          fi
+
+          if [[ "${EVENT_ACTOR_VALUE}" != "${EXPECTED_ACTOR}" ]] || [[ "${EVENT_ACTOR_ID_VALUE}" != "${EXPECTED_ACTOR_ID}" ]]; then
+            echo "ERROR: unexpected actor"
             exit 1
           fi
 
@@ -108,6 +111,10 @@ jobs:
 
       - name: Report non-sensitive execution metadata
         shell: bash
+        env:
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+          RUNNER_OS_VALUE: ${{ runner.os }}
+          RUNNER_ARCH_VALUE: ${{ runner.arch }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -203,7 +210,7 @@ jobs:
                       item["https"] = True
                       item["status"] = response.status
               except urllib.error.HTTPError as exc:
-                  # An HTTP response, including 401/403, proves DNS/TLS/HTTPS reachability.
+                  # Any HTTP response, including 401/403, proves DNS/TLS/HTTPS reachability.
                   item["https"] = True
                   item["status"] = exc.code
               except (urllib.error.URLError, TimeoutError, OSError) as exc:
