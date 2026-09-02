@@ -1,0 +1,225 @@
+name: Bootstrap diagnostic
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/00-bootstrap-diagnostic.yml
+
+permissions: {}
+
+concurrency:
+  group: bootstrap-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Secret-free runner and network diagnostic
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+      EXPECTED_REPOSITORY_ID: "1354356687"
+      EVENT_NAME_VALUE: ${{ github.event_name }}
+      EVENT_REF_VALUE: ${{ github.ref }}
+      EVENT_SHA_VALUE: ${{ github.sha }}
+      EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+      EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+      EVENT_ACTOR_VALUE: ${{ github.actor }}
+      EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+      EVENT_TRIGGERING_ACTOR_VALUE: ${{ github.triggering_actor }}
+      EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+      WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+      WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+      RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+      RUNNER_OS_VALUE: ${{ runner.os }}
+      RUNNER_ARCH_VALUE: ${{ runner.arch }}
+
+    steps:
+      - name: Enforce repository and runner boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_REPOSITORY_VALUE}" != "${EXPECTED_REPOSITORY}" ]]; then
+            echo "ERROR: unexpected repository"
+            exit 1
+          fi
+
+          if [[ "${EVENT_REPOSITORY_ID_VALUE}" != "${EXPECTED_REPOSITORY_ID}" ]]; then
+            echo "ERROR: unexpected repository ID"
+            exit 1
+          fi
+
+          if [[ "${EVENT_NAME_VALUE}" != "push" ]]; then
+            echo "ERROR: unexpected event"
+            exit 1
+          fi
+
+          if [[ "${EVENT_REF_VALUE}" != "refs/heads/main" ]]; then
+            echo "ERROR: unexpected ref"
+            exit 1
+          fi
+
+          if [[ "${RUNNER_ENVIRONMENT_VALUE}" != "github-hosted" ]]; then
+            echo "ERROR: non-GitHub-hosted runner is forbidden"
+            exit 1
+          fi
+
+          echo "Boundary checks: PASS"
+
+      - name: Verify forbidden credentials are absent
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          forbidden_names=(
+            KAGGLE_API_TOKEN
+            KAGGLE_USERNAME
+            KAGGLE_KEY
+            GH_TOKEN
+            GITHUB_PAT
+            PERSONAL_ACCESS_TOKEN
+            SSH_PRIVATE_KEY
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            AZURE_CLIENT_SECRET
+            GOOGLE_APPLICATION_CREDENTIALS
+          )
+
+          found=0
+          for name in "${forbidden_names[@]}"; do
+            if [[ -n "${!name-}" ]]; then
+              echo "ERROR: forbidden credential variable is present: ${name}"
+              found=1
+            fi
+          done
+
+          if [[ "${found}" -ne 0 ]]; then
+            exit 1
+          fi
+
+          echo "Forbidden credential check: PASS"
+
+      - name: Report non-sensitive execution metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+
+          names = [
+              "EVENT_NAME_VALUE",
+              "EVENT_REF_VALUE",
+              "EVENT_SHA_VALUE",
+              "EVENT_REPOSITORY_VALUE",
+              "EVENT_REPOSITORY_ID_VALUE",
+              "EVENT_ACTOR_VALUE",
+              "EVENT_ACTOR_ID_VALUE",
+              "EVENT_TRIGGERING_ACTOR_VALUE",
+              "EVENT_SENDER_ID_VALUE",
+              "WORKFLOW_REF_VALUE",
+              "WORKFLOW_SHA_VALUE",
+              "RUNNER_ENVIRONMENT_VALUE",
+              "RUNNER_OS_VALUE",
+              "RUNNER_ARCH_VALUE",
+          ]
+          metadata = {name: os.environ.get(name, "") for name in names}
+          print(json.dumps(metadata, ensure_ascii=True, sort_keys=True, indent=2))
+          PY
+
+      - name: Report preinstalled tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
+          git --version
+          python3 -m pip --version
+
+      - name: Verify unauthenticated DNS and HTTPS reachability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import socket
+          import ssl
+          import urllib.error
+          import urllib.request
+          from urllib.parse import urlparse
+
+          targets = {
+              "github_public_api": "https://api.github.com/repos/renta0426/kaggle-actions-bridge",
+              "kaggle_home": "https://www.kaggle.com/",
+              "kaggle_public_api": "https://www.kaggle.com/api/v1/competitions/list?page=1",
+              "pypi_kaggle_metadata": "https://pypi.org/pypi/kaggle/json",
+          }
+
+          results: dict[str, dict[str, object]] = {}
+          failed = False
+          context = ssl.create_default_context()
+
+          for name, url in targets.items():
+              host = urlparse(url).hostname
+              if not host:
+                  raise RuntimeError(f"Target has no hostname: {name}")
+
+              item: dict[str, object] = {
+                  "host": host,
+                  "dns": False,
+                  "https": False,
+                  "status": None,
+              }
+
+              try:
+                  addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+                  item["dns"] = bool(addresses)
+                  item["address_record_count"] = len(addresses)
+              except OSError as exc:
+                  item["error_type"] = type(exc).__name__
+                  failed = True
+                  results[name] = item
+                  continue
+
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/json, text/html;q=0.9, */*;q=0.1",
+                      "User-Agent": "kaggle-actions-bridge-bootstrap/1.0",
+                  },
+                  method="GET",
+              )
+
+              try:
+                  with urllib.request.urlopen(request, timeout=20, context=context) as response:
+                      item["https"] = True
+                      item["status"] = response.status
+              except urllib.error.HTTPError as exc:
+                  # An HTTP response, including 401/403, proves DNS/TLS/HTTPS reachability.
+                  item["https"] = True
+                  item["status"] = exc.code
+              except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                  item["error_type"] = type(exc).__name__
+                  failed = True
+
+              results[name] = item
+
+          print(json.dumps(results, ensure_ascii=True, sort_keys=True, indent=2))
+
+          if failed:
+              raise SystemExit("One or more network reachability checks failed")
+          PY
+
+      - name: Complete bootstrap diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Bootstrap diagnostic: PASS"
