@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import re
 
-
 REQUEST_ID = "20260903-poisoned-chalice-mellum-transfer-v1-001"
 RESEARCH_REPOSITORY = "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation"
 RESEARCH_COMMIT = "9f6be68c27dc1f3326d68bed4e2abf80db893748"
@@ -33,9 +32,7 @@ SOURCE_FILES = {
     ),
 }
 SECRET_NAMES = {
-    "KAGGLE_API_TOKEN",
-    "KAGGLE_KEY",
-    "KAGGLE_USERNAME",
+    "KAGGLE_API_TOKEN", "KAGGLE_KEY", "KAGGLE_USERNAME",
     "RESEARCH_REPO_READ_TOKEN",
 }
 
@@ -46,7 +43,7 @@ def git_blob_sha(data: bytes) -> str:
     ).hexdigest()
 
 
-def constants(tree: ast.Module) -> dict[str, object]:
+def literal_constants(tree: ast.Module) -> dict[str, object]:
     result: dict[str, object] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -55,27 +52,29 @@ def constants(tree: ast.Module) -> dict[str, object]:
             targets, value = [node.target], node.value
         else:
             continue
+        try:
+            literal = ast.literal_eval(value)
+        except (ValueError, TypeError):
+            continue
         for target in targets:
             if isinstance(target, ast.Name) and target.id.isupper():
-                result[target.id] = ast.literal_eval(value)
+                result[target.id] = literal
     return result
 
 
 def is_os_environ(node: ast.AST) -> bool:
     return (
-        isinstance(node, ast.Attribute)
-        and node.attr == "environ"
-        and isinstance(node.value, ast.Name)
-        and node.value.id == "os"
+        isinstance(node, ast.Attribute) and node.attr == "environ"
+        and isinstance(node.value, ast.Name) and node.value.id == "os"
     )
 
 
 def secret_reads(tree: ast.Module) -> list[str]:
-    result: list[str] = []
+    reads: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Subscript) and is_os_environ(node.value):
             if isinstance(node.slice, ast.Constant) and node.slice.value in SECRET_NAMES:
-                result.append(str(node.slice.value))
+                reads.append(str(node.slice.value))
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         if not is_os_environ(node.func.value) or node.func.attr not in {
@@ -84,24 +83,22 @@ def secret_reads(tree: ast.Module) -> list[str]:
             continue
         key = node.args[0]
         if isinstance(key, ast.Constant) and key.value in SECRET_NAMES:
-            result.append(str(key.value))
+            reads.append(str(key.value))
         elif isinstance(key, ast.Name) and key.id == "TOKEN_ENV":
-            result.append("TOKEN_ENV")
-    return result
+            reads.append("TOKEN_ENV")
+    return reads
 
 
 def call_segments(source: str, tree: ast.Module, module: str, name: str) -> list[str]:
-    matches: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-            continue
-        if (
-            isinstance(node.func.value, ast.Name)
-            and node.func.value.id == module
-            and node.func.attr == name
-        ):
-            matches.append(ast.get_source_segment(source, node) or "")
-    return matches
+    return [
+        ast.get_source_segment(source, node) or ""
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == module
+        and node.func.attr == name
+    ]
 
 
 def validate_request(request: dict, materializer: bytes, loader: bytes) -> None:
@@ -143,16 +140,16 @@ def validate_request(request: dict, materializer: bytes, loader: bytes) -> None:
         "create one private notebook version and start one T4 GPU run",
     ]:
         raise RuntimeError("side-effect allowlist changed")
-    source = request.get("research_source") or {}
-    if source.get("repository") != RESEARCH_REPOSITORY:
+    research = request.get("research_source") or {}
+    if research.get("repository") != RESEARCH_REPOSITORY:
         raise RuntimeError("research repository changed")
-    if source.get("commit") != RESEARCH_COMMIT:
+    if research.get("commit") != RESEARCH_COMMIT:
         raise RuntimeError("research commit changed")
     observed = {
         str(item.get("path")): (
             str(item.get("git_blob_sha")), int(item.get("max_bytes")),
         )
-        for item in source.get("files", [])
+        for item in research.get("files", [])
     }
     if observed != SOURCE_FILES:
         raise RuntimeError("research source allowlist or pin changed")
@@ -164,7 +161,7 @@ def validate_request(request: dict, materializer: bytes, loader: bytes) -> None:
 
 def validate_materializer(source: str) -> None:
     tree = ast.parse(source, filename=MATERIALIZER_PATH)
-    observed = constants(tree)
+    observed = literal_constants(tree)
     expected = {
         "EXPECTED_REQUEST_ID": REQUEST_ID,
         "EXPECTED_TARGET": "renta0426/mellum-transfer-v1",
@@ -180,25 +177,20 @@ def validate_materializer(source: str) -> None:
             raise RuntimeError(f"materializer invariant changed: {key}")
     if secret_reads(tree):
         raise RuntimeError(f"materializer reads secret environment: {secret_reads(tree)}")
-    subprocess_calls = call_segments(source, tree, "subprocess", "run")
-    if len(subprocess_calls) != 1:
-        raise RuntimeError("materializer subprocess call count changed")
-    executable = subprocess_calls[0]
-    for forbidden in ("kaggle", "git", "curl", "wget", "submit", "push", "token"):
-        if forbidden in executable.casefold():
-            raise RuntimeError(f"materializer subprocess gained capability: {forbidden}")
+    executions = call_segments(source, tree, "subprocess", "run")
+    if len(executions) != 1:
+        raise RuntimeError("materializer subprocess count changed")
+    for word in ("kaggle", "git", "curl", "wget", "submit", "push", "token"):
+        if word in executions[0].casefold():
+            raise RuntimeError(f"materializer subprocess gained capability: {word}")
     for marker in (
-        "actual_blob = _git_blob_sha(data)",
-        "if actual_blob != expected_blob:",
+        "actual_blob = _git_blob_sha(data)", "if actual_blob != expected_blob:",
         "records = _prediction_records(notebook)",
-        '"target_labels_embedded": False',
-        '"competition_submission": False',
+        '"target_labels_embedded": False', '"competition_submission": False',
         '"target_labels_embedded_in_gpu_notebook": False',
         '"target_labels_used_for_training_or_normalization": False',
-        '"previous_model_scores_used": False',
-        '"submission_created": False',
-        '"PATH": os.environ.get("PATH", "")',
-        '"PYTHONHASHSEED": "0"',
+        '"previous_model_scores_used": False', '"submission_created": False',
+        '"PATH": os.environ.get("PATH", "")', '"PYTHONHASHSEED": "0"',
     ):
         if marker not in source:
             raise RuntimeError(f"materializer invariant missing: {marker}")
@@ -206,7 +198,7 @@ def validate_materializer(source: str) -> None:
 
 def validate_loader(source: str) -> None:
     tree = ast.parse(source, filename=PRIVATE_LOADER_PATH)
-    observed = constants(tree)
+    observed = literal_constants(tree)
     expected = {
         "TOKEN_ENV": "RESEARCH_REPO_READ_TOKEN",
         "EXPECTED_REQUEST_ID": REQUEST_ID,
@@ -221,10 +213,10 @@ def validate_loader(source: str) -> None:
         if observed.get(key) != value:
             raise RuntimeError(f"private loader invariant changed: {key}")
     reads = secret_reads(tree)
-    if reads != ["TOKEN_ENV", "TOKEN_ENV"]:
+    if len(reads) != 2 or set(reads) != {"TOKEN_ENV"}:
         raise RuntimeError(f"private loader secret access changed: {reads}")
     if call_segments(source, tree, "subprocess", "run"):
-        raise RuntimeError("private loader must not execute a subprocess")
+        raise RuntimeError("private loader must not execute subprocesses")
     for marker in (
         'token = os.environ.pop(TOKEN_ENV, "")',
         'or parsed.hostname != "raw.githubusercontent.com"',
@@ -249,7 +241,7 @@ def validate_loader(source: str) -> None:
 
 
 def validate_launch(source: str) -> None:
-    required = (
+    for marker in (
         "permissions: {}", "group: kaggle-resource-global", "cancel-in-progress: false",
         "environment: kaggle-readonry", "TARGET_KERNEL: renta0426/mellum-transfer-v1",
         "PREREQUISITE_KERNEL: renta0426/stage1-raw-fim-submission-v1",
@@ -262,8 +254,7 @@ def validate_launch(source: str) -> None:
         "MELLUM_LIVE_PREFLIGHT PASS", "MELLUM_LAUNCH_DEFERRED",
         "MELLUM_KERNEL_LAUNCH PASS", "MELLUM_RUNNER_LOCAL_PRIVATE_MATERIAL_REMOVED",
         "automatic_retries=0 submission=false", "labels_embedded=false",
-    )
-    for marker in required:
+    ):
         if marker not in source:
             raise RuntimeError(f"launch invariant missing: {marker}")
     if source.count('"${WORKDIR}/kaggle-venv/bin/kaggle" kernels push') != 1:
@@ -274,24 +265,24 @@ def validate_launch(source: str) -> None:
         raise RuntimeError("Kaggle token use count changed")
     if source.count("environment: kaggle-readonry") != 1:
         raise RuntimeError("protected Environment count changed")
-    launch_marker = "\n  launch:\n"
-    if launch_marker not in source:
+    separator = "\n  launch:\n"
+    if separator not in source:
         raise RuntimeError("protected launch job missing")
-    before, protected = source.split(launch_marker, 1)
+    before, protected = source.split(separator, 1)
     if "${{ secrets." in before:
         raise RuntimeError("secret reference appears outside protected job")
     blocks = re.split(r"(?m)^      - name: ", protected)[1:]
-    research = [b for b in blocks if "secrets.RESEARCH_REPO_READ_TOKEN" in b]
-    kaggle = [b for b in blocks if "secrets.KAGGLE_API_TOKEN" in b]
-    if len(research) != 1 or len(kaggle) != 2:
+    private_steps = [b for b in blocks if "secrets.RESEARCH_REPO_READ_TOKEN" in b]
+    kaggle_steps = [b for b in blocks if "secrets.KAGGLE_API_TOKEN" in b]
+    if len(private_steps) != 1 or len(kaggle_steps) != 2:
         raise RuntimeError("secret step partition changed")
-    if "secrets.KAGGLE_API_TOKEN" in research[0] or any(
-        "secrets.RESEARCH_REPO_READ_TOKEN" in block for block in kaggle
+    if "secrets.KAGGLE_API_TOKEN" in private_steps[0] or any(
+        "secrets.RESEARCH_REPO_READ_TOKEN" in block for block in kaggle_steps
     ):
         raise RuntimeError("private-source and Kaggle credentials share a step")
-    if "private-loader.py" not in research[0]:
+    if "private-loader.py" not in private_steps[0]:
         raise RuntimeError("private token is not bound to the loader step")
-    if any("materializer.py" in block for block in kaggle):
+    if any("materializer.py" in block for block in kaggle_steps):
         raise RuntimeError("research materialization appears in a Kaggle-token step")
     for forbidden in (
         "actions/upload-artifact", "actions/download-artifact", "actions/cache",
