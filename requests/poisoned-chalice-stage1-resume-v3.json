@@ -17,6 +17,8 @@
   "builder_blob_sha": "d4be3a7c523558ca3a99feefb6a9bcbb0a0a86ef",
   "provenance_patcher_path": "scripts/poisoned_chalice_stage1_resume_v3_patch.py",
   "provenance_patcher_blob_sha": "a424e66b0a0efce5edb42547bb6dd961013aba1c",
+  "shard_validator_path": "scripts/poisoned_chalice_stage1_dataset_shards.py",
+  "shard_validator_blob_sha": "5ff8ddc8913c2ad8ae1c94cb5aab6c8c9baa7220",
   "resource": {
     "accelerator": "cpu",
     "expected_runtime_minutes": 5,
