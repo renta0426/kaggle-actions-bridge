@@ -1,0 +1,44 @@
+QUEST_ID,
+            "competition": COMPETITION,
+            "kernel_stage": "b2_taskwise_compact",
+            "source_commit": SOURCE_COMMIT,
+            "package_zip_sha256": PACKAGE_ZIP_SHA256,
+            "python_version": platform.python_version(),
+            "submission_rows": 40,
+            "submission_sha256": submission_sha,
+            "metrics_sha256": metrics_sha,
+            "derived_panel_sizes": {"vaccine": len(vaccine_panel), "challenge": len(challenge_panel)},
+            "selected_models": selected,
+            "task_cv": compact_tasks,
+            "supervised_public_proxy_macro_spearman": proxy_macro,
+            "supervised_public_proxy_finite_tasks": len(proxy_values),
+            "hai_stress_tests": metrics.get("hai_stress_tests", {}),
+            "checksum": metrics.get("checksum"),
+        }
+        (output_dir / "bridge-result.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(
+            "CMI_FLU_B2_COMPLETE "
+            f"rows=40 submission_sha256={submission_sha} "
+            f"proxy_macro_spearman={proxy_macro:.12g} finite_tasks={len(proxy_values)}"
+        )
+        return payload
+    except Exception as error:
+        safe_failure(output_dir, stage=stage, error=error)
+        traceback.print_exc()
+        raise
+
+
+def main() -> int:
+    args = parse_args()
+    if args.self_test:
+        return self_test()
+    input_dir = locate_competition_data(args.input_dir)
+    execute(input_dir, args.output_dir)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
