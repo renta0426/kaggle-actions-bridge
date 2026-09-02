@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "request_id": "20260902-cmi-flu-b1-status-004",
+  "parent_request_id": "20260902-cmi-flu-b1-003",
+  "supersedes_cancelled_request_id": "20260902-cmi-flu-b1-status-003",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_status_output",
+  "target": "renta0426/cmi-flu-b1-anchor-20260902-003",
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": []
+}
