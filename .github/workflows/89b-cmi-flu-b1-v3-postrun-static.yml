@@ -1,0 +1,98 @@
+name: CMI-Flu B1 v3 post-run bridge static validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/89b-cmi-flu-b1-v3-postrun-static.yml
+      - .github/workflows/92-cmi-flu-b1-submit-v3.yml
+      - .github/workflows/93-cmi-flu-b1-score-v3.yml
+
+permissions: {}
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate dormant workflows without credentials
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${HEAD_SHA}" <<'PY'
+          from __future__ import annotations
+          import ssl, sys, urllib.error, urllib.request
+
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+
+          def read(path: str, limit: int = 300000) -> str:
+              with urllib.request.urlopen(root + path, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {path}")
+              return data.decode("utf-8")
+
+          submit = read(".github/workflows/92-cmi-flu-b1-submit-v3.yml")
+          score = read(".github/workflows/93-cmi-flu-b1-score-v3.yml")
+
+          submit_required = (
+              "permissions: {}",
+              "group: kaggle-write-global",
+              "environment: kaggle-readonry",
+              "requests/cmi-flu-b1-submit-v3.json",
+              "renta0426/cmi-flu-b1-anchor-20260902-003",
+              "20260902-cmi-flu-b1-submit-003",
+              "20260902-cmi-flu-b1-status-004",
+              "submission_sha256",
+              "maximum of five (5) submissions per day",
+              "competition_get_submission_limits",
+              "matching B1 request-003 submission already exists",
+              "CMI_B1_COMPETITION_SUBMISSION_CREATED",
+              "automatic_retries=0",
+          )
+          for token in submit_required:
+              if token not in submit:
+                  raise SystemExit(f"submit workflow guard missing: {token}")
+          if submit.count('competitions submit "${TARGET_COMPETITION}"') != 1:
+              raise SystemExit("submit workflow must contain exactly one Competition submit")
+          for token in ("--wait", "kernels push", "kernels delete", "datasets create", "models create"):
+              if token in submit.lower():
+                  raise SystemExit(f"forbidden submit capability present: {token}")
+
+          score_required = (
+              "permissions: {}",
+              "group: kaggle-read-global",
+              "environment: kaggle-readonry",
+              "requests/cmi-flu-b1-score-v3.json",
+              "20260902-cmi-flu-b1-submit-003",
+              "get_submission",
+              "public_score",
+              "CMI_B1_SUBMISSION_STATUS",
+          )
+          for token in score_required:
+              if token not in score:
+                  raise SystemExit(f"score workflow guard missing: {token}")
+          for token in ("competitions submit", "kernels push", "kernels delete", "datasets create", "models create", "--follow"):
+              if token in score.lower():
+                  raise SystemExit(f"forbidden score capability present: {token}")
+
+          for path in ("requests/cmi-flu-b1-submit-v3.json", "requests/cmi-flu-b1-score-v3.json"):
+              try:
+                  read(path, 16384)
+              except urllib.error.HTTPError as error:
+                  if error.code != 404:
+                      raise
+              else:
+                  raise SystemExit(f"dormant workflow unexpectedly has live request: {path}")
+
+          print("CMI_B1_V3_POSTRUN_STATIC PASS")
+          PY
