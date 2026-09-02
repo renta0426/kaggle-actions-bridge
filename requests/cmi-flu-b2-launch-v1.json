@@ -31,11 +31,11 @@
       },
       {
         "path": "payloads/cmi-flu-b2-001/script.py.gz.b64.part04",
-        "sha256": "cbdce963a82b06e87609b53a9700300686a9589003625f0c8c8389ad77816579",
-        "bytes": 4969
+        "sha256": "3b34492893937ab86b02071862feeb4076341ebfbb5ad70f1cf4176c0b595a60",
+        "bytes": 4968
       }
     ],
-    "base64_bytes": 28969,
+    "base64_bytes": 28968,
     "gzip_sha256": "72ea790f5e2e779226630e3ac487fbdbce4615beedbf1fecc1b506906451a1b7",
     "script_sha256": "5893d3bb39608ec7ae429a3a9fb54738e8d9d44cff620cafd792b6e22b4acd7d",
     "script_bytes": 101577
