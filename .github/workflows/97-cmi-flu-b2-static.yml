@@ -1,0 +1,171 @@
+name: CMI-Flu B2 request 001 static validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/97-cmi-flu-b2-static.yml
+      - requests/cmi-flu-b2-launch-v1.json
+      - payloads/cmi-flu-b2-001/**
+  push:
+    branches: [main, feat/b2-reference-baseline]
+    paths:
+      - .github/workflows/97-cmi-flu-b2-static.yml
+      - requests/cmi-flu-b2-launch-v1.json
+      - payloads/cmi-flu-b2-001/**
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-b2-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate B2 request and standalone script without secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce source boundary and reconstruct pinned script
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${HEAD_SHA}" "${workdir}" <<'PY'
+          from __future__ import annotations
+
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import pathlib
+          import ssl
+          import sys
+          import urllib.request
+
+          sha, workdir_text = sys.argv[1:]
+          workdir = pathlib.Path(workdir_text)
+          base = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+
+          def read(path: str, limit: int) -> bytes:
+              with urllib.request.urlopen(base + path, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file exceeds byte budget: {path}")
+              return data
+
+          request = json.loads(read("requests/cmi-flu-b2-launch-v1.json", 32768))
+          expected_top = {
+              "schema_version": 1,
+              "request_id": "20260903-cmi-flu-b2-001",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "kernel_run",
+              "target": "renta0426/cmi-flu-b2-taskwise-compact-20260903-001",
+              "packaging": {"python_files": 1, "code_file": "script.py"},
+              "resource": {
+                  "accelerator": "cpu",
+                  "expected_runtime_minutes": 60,
+                  "hard_timeout_minutes": 180,
+                  "max_active_runs_in_class": 1,
+              },
+              "validation": {
+                  "full_md5": True,
+                  "aggregate_audit": True,
+                  "negative_controls": True,
+                  "grouped_oof": True,
+                  "hai_stress_tests": True,
+              },
+              "api_budget": {"max_calls": 20, "max_pages": 2},
+              "side_effects": ["create one private notebook version and start one CPU run"],
+              "automatic_compute_retries": 0,
+              "enable_internet": False,
+          }
+          for key, value in expected_top.items():
+              if request.get(key) != value:
+                  raise SystemExit(f"request contract mismatch: {key}")
+
+          source = request.get("source") or {}
+          if source.get("cmi_commit") != "342c9c1208f1dba28e58c1698fc399f7eca4b5be":
+              raise SystemExit("CMI commit pin mismatch")
+          if source.get("implementation") != "b2_taskwise_compact_standalone_v1":
+              raise SystemExit("implementation identity mismatch")
+          parts = source.get("payload_parts") or []
+          if len(parts) != 5:
+              raise SystemExit("exactly five payload parts are required")
+          encoded_parts = []
+          for index, item in enumerate(parts):
+              expected_path = f"payloads/cmi-flu-b2-001/script.py.gz.b64.part{index:02d}"
+              if item.get("path") != expected_path:
+                  raise SystemExit(f"payload order/path mismatch at {index}")
+              data = read(expected_path, 7000)
+              if len(data) != int(item.get("bytes", -1)):
+                  raise SystemExit(f"payload size mismatch: {expected_path}")
+              if hashlib.sha256(data).hexdigest() != item.get("sha256"):
+                  raise SystemExit(f"payload digest mismatch: {expected_path}")
+              encoded_parts.append(data)
+          encoded = b"".join(encoded_parts)
+          if len(encoded) != int(source.get("base64_bytes", -1)):
+              raise SystemExit("combined base64 size mismatch")
+          compressed = base64.b64decode(encoded, validate=False)
+          if hashlib.sha256(compressed).hexdigest() != source.get("gzip_sha256"):
+              raise SystemExit("gzip digest mismatch")
+          script = gzip.decompress(compressed)
+          if len(script) != int(source.get("script_bytes", -1)):
+              raise SystemExit("script size mismatch")
+          if hashlib.sha256(script).hexdigest() != source.get("script_sha256"):
+              raise SystemExit("script digest mismatch")
+          text = script.decode("utf-8")
+          tree = ast.parse(text, filename="script.py")
+          allowed_roots = {
+              "__future__", "argparse", "hashlib", "json", "math", "os", "platform",
+              "re", "sys", "time", "warnings", "dataclasses", "pathlib", "typing",
+              "joblib", "numpy", "pandas", "scipy", "sklearn",
+          }
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  names = [alias.name.split(".", 1)[0] for alias in node.names]
+              elif isinstance(node, ast.ImportFrom):
+                  names = [(node.module or "").split(".", 1)[0]]
+              else:
+                  continue
+              unexpected = [name for name in names if name and name not in allowed_roots]
+              if unexpected:
+                  raise SystemExit(f"unexpected import roots: {unexpected}")
+          required_tokens = (
+              'REQUEST_ID = "20260903-cmi-flu-b2-001"',
+              'CMI_COMMIT = "342c9c1208f1dba28e58c1698fc399f7eca4b5be"',
+              'IMPLEMENTATION = "b2_taskwise_compact_standalone_v1"',
+              "purged_leave_one_study_out", "repeated_group_kfold",
+              "run_negative_controls", "leave_one_vaccine_season_out",
+              "leave_one_strain_out", "within_strain_spearman",
+              "b2_proxy_macro_spearman", "CMI_FLU_B2_COMPLETE",
+              "bridge-result.json", "metrics.json", "submission.csv",
+          )
+          for token in required_tokens:
+              if token not in text:
+                  raise SystemExit(f"required B2 capability missing: {token}")
+          forbidden_tokens = (
+              "requests.", "urllib.request", "socket.", "subprocess.", "os.system(",
+              "pip install", "git clone", "kaggle competitions submit", "kaggle kernels push",
+          )
+          lowered = text.casefold()
+          for token in forbidden_tokens:
+              if token.casefold() in lowered:
+                  raise SystemExit(f"forbidden runtime capability present: {token}")
+          (workdir / "script.py").write_bytes(script)
+          print(
+              "CMI_FLU_B2_PAYLOAD_STATIC PASS "
+              f"script_bytes={len(script)} script_sha256={hashlib.sha256(script).hexdigest()}"
+          )
+          PY
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/script.py"
+          echo "CMI_FLU_B2_COMPILE PASS"
