@@ -37,7 +37,6 @@ jobs:
           from __future__ import annotations
           import os
           import ssl
-          import urllib.error
           import urllib.request
           from urllib.parse import urlparse
 
@@ -142,9 +141,9 @@ jobs:
               "20260903-poisoned-chalice-stage1-request005-submit-001",
               "20260903-poisoned-chalice-stage1-request005-status-001",
               "20260902-poisoned-chalice-stage1-raw-fim-005",
-              '"operation": "competition_submit"',
-              '"expected_kernel_version"] != 2',
-              '"automatic_submission_retries"] != 0',
+              'request["operation"] != "competition_submit"',
+              'request["expected_kernel_version"] != 2',
+              'request["automatic_submission_retries"] != 0',
               "Stage1 raw_plus_fim frozen 10k OOF AUC 0.664524; no Public-LB tuning",
               "REQUEST005_FROZEN_SUBMISSION_VERIFIED",
               "api.competition_submit(",
