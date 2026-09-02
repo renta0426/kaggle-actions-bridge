@@ -1,0 +1,487 @@
+name: Poisoned Chalice Stage1 version 2 shard-recovery CPU launch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-v2-recovery-launch.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-v2-recovery-launch.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  SOURCE_KERNEL: renta0426/stage1-raw-fim-submission-v1
+  TARGET_KERNEL: renta0426/stage1-raw-fim-recovery-v1
+  REQUESTED_ACCELERATOR: cpu
+
+jobs:
+  validate:
+    name: Validate immutable CPU recovery request without credentials
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate owner boundary, request, and recovery script pin
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${EVENT_SHA}" <<'PY'
+          from __future__ import annotations
+          import ast, hashlib, json, re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def read(path: str, limit: int) -> bytes:
+              url = root + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              return data
+
+          request = json.loads(read(
+              "requests/poisoned-chalice-stage1-v2-recovery-launch.json", 16384
+          ))
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260903-poisoned-chalice-stage1-v2-recovery-001",
+              "parent_audit_request_id": "20260903-poisoned-chalice-stage1-v2-cache-audit-001",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_run",
+              "source_kernel": "renta0426/stage1-raw-fim-submission-v1",
+              "source_kernel_version": 2,
+              "source_kernel_status": "ERROR",
+              "target": "renta0426/stage1-raw-fim-recovery-v1",
+              "recovery_source_path": "scripts/poisoned_chalice_stage1_v2_recovery.py",
+              "recovery_source_blob_sha": "f2e9fb0ca8b43e3a429fb172e268fb0fbbdb10b0",
+              "resource": {
+                  "accelerator": "cpu",
+                  "expected_runtime_minutes": 10,
+                  "hard_timeout_minutes": 30,
+                  "max_active_runs": 1,
+              },
+              "api_budget": {"max_calls": 20, "max_pages": 2},
+              "side_effects": [
+                  "create one private CPU notebook and start one fit-only recovery run"
+              ],
+              "automatic_compute_retries": 0,
+              "enable_internet": False,
+              "competition_submission": False,
+          }
+          if request != expected:
+              raise SystemExit("recovery launch request differs from exact allowlist")
+          source = read(request["recovery_source_path"], 131072)
+          blob = hashlib.sha1(
+              b"blob " + str(len(source)).encode("ascii") + b"\0" + source
+          ).hexdigest()
+          if blob != request["recovery_source_blob_sha"]:
+              raise SystemExit("recovery source Git blob mismatch")
+          ast.parse(source.decode("utf-8"), filename=request["recovery_source_path"])
+          text = source.decode("utf-8")
+          for marker in (
+              'SOURCE_KERNEL = "renta0426/stage1-raw-fim-submission-v1"',
+              "SOURCE_KERNEL_VERSION = 2",
+              "EXPECTED_TRAIN_SHARDS = 40",
+              "EXPECTED_VALIDATION_SHARDS = 20",
+              "EXPECTED_BASE_FEATURES = 113",
+              'BROKEN_BUILDER_EXCLUSIONS = ("token_count", "window_count")',
+              '"feature_extraction_repeated": False',
+              '"model_forward_passes": 0',
+              '"gpu_used": False',
+              '"competition_submission_created": False',
+          ):
+              if marker not in text:
+                  raise SystemExit(f"recovery source invariant missing: {marker}")
+          for forbidden in (
+              "AutoModel", "AutoTokenizer", "torch.cuda", "competitions submit",
+              "KAGGLE_API_TOKEN", "KAGGLE_KEY",
+          ):
+              if forbidden in text:
+                  raise SystemExit(f"recovery source gained forbidden capability: {forbidden}")
+          print("STAGE1_V2_RECOVERY_REQUEST_STATIC PASS cpu_only=true extraction=false")
+          PY
+
+  launch:
+    name: Verify failed shards and launch exactly one private CPU recovery
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce protected launch boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/115-poisoned-chalice-stage1-v2-recovery-launch.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "PROTECTED_STAGE1_V2_RECOVERY_BOUNDARY PASS"
+
+      - name: Prepare pinned recovery script and locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          from __future__ import annotations
+          import ast, hashlib, json, pathlib, re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha, workdir_value = sys.argv[1:]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+          workdir = pathlib.Path(workdir_value)
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def read(path: str, limit: int) -> bytes:
+              url = root + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              return data
+
+          request = json.loads(read(
+              "requests/poisoned-chalice-stage1-v2-recovery-launch.json", 16384
+          ))
+          source = read(request["recovery_source_path"], 131072)
+          blob = hashlib.sha1(
+              b"blob " + str(len(source)).encode("ascii") + b"\0" + source
+          ).hexdigest()
+          if blob != request["recovery_source_blob_sha"]:
+              raise SystemExit("recovery source Git blob mismatch")
+          ast.parse(source.decode("utf-8"), filename=request["recovery_source_path"])
+          (workdir / "script.py").write_bytes(source)
+
+          lock = read("requirements/kaggle-2.2.4.lock", 65536)
+          text = lock.decode("utf-8")
+          pattern = re.compile(
+              r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* "
+              r"--hash=sha256:[0-9a-f]{64}$"
+          )
+          lines = [
+              line.strip() for line in text.splitlines()
+              if line.strip() and not line.lstrip().startswith("#")
+          ]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          (workdir / "kaggle.lock").write_bytes(lock)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+          echo "STAGE1_V2_RECOVERY_CLIENT PASS"
+
+      - name: Recheck rules, failed source, all shards, target, and CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os, re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import (
+              ApiGetKernelRequest,
+              ApiListKernelSessionOutputRequest,
+          )
+
+          api = KaggleApi(); api.authenticate()
+          pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("live Competition rules/evaluation unavailable")
+          evaluation = re.sub(
+              r"\s+", " ",
+              re.sub(r"<[^>]+>", " ", content["evaluation"].replace(r"\%", "%")),
+          ).casefold()
+          if not all(term in evaluation for term in ("auc", "novelty", "1%", "false-positive")):
+              raise SystemExit("live Competition evaluation contract mismatch")
+
+          source_status = str(
+              getattr(api.kernels_status(os.environ["SOURCE_KERNEL"]), "status", "")
+          ).upper()
+          if "ERROR" not in source_status and "FAILED" not in source_status:
+              raise SystemExit(f"source kernel is no longer failed: {source_status}")
+
+          active_refs = []
+          with api.build_kaggle_client() as client:
+              source_request = ApiGetKernelRequest()
+              source_request.user_name = "renta0426"
+              source_request.kernel_slug = "stage1-raw-fim-submission-v1"
+              source_details = client.kernels.kernels_api_client.get_kernel(source_request)
+              source_version = int(source_details.metadata.current_version_number)
+              if source_version != 2 or not bool(source_details.metadata.is_private):
+                  raise SystemExit(
+                      f"unexpected source version/privacy: version={source_version}"
+                  )
+
+              output_files = []
+              page_token = ""
+              for _ in range(2):
+                  output_request = ApiListKernelSessionOutputRequest()
+                  output_request.user_name = "renta0426"
+                  output_request.kernel_slug = "stage1-raw-fim-submission-v1"
+                  output_request.page_size = 100
+                  output_request.page_token = page_token
+                  response = client.kernels.kernels_api_client.list_kernel_session_output(
+                      output_request
+                  )
+                  output_files.extend(list(getattr(response, "files", None) or []))
+                  page_token = str(getattr(response, "next_page_token", "") or "")
+                  if not page_token:
+                      break
+              if page_token:
+                  raise SystemExit("source output inventory exceeds two-page budget")
+              names = [
+                  str(getattr(item, "file_name", "") or "").replace("\\", "/")
+                  for item in output_files
+              ]
+              expected = [
+                  f"stage1_raw_fim_v1/train_10k/parts/features.part{index:03d}.parquet"
+                  for index in range(40)
+              ] + [
+                  f"stage1_raw_fim_v1/validation_5k/parts/features.part{index:03d}.parquet"
+                  for index in range(20)
+              ]
+              missing = [
+                  suffix for suffix in expected
+                  if sum(name.endswith(suffix) for name in names) != 1
+              ]
+              if missing:
+                  raise SystemExit(f"source feature shards are incomplete: {missing[:5]}")
+
+              existing = api.kernels_list(
+                  user="renta0426", search="stage1-raw-fim-recovery-v1", page_size=5
+              ) or []
+              if os.environ["TARGET_KERNEL"] in {
+                  str(getattr(item, "ref", "")) for item in existing
+              }:
+                  raise SystemExit("target recovery kernel already exists; duplicate refused")
+
+              for item in (
+                  api.kernels_list(user="renta0426", sort_by="dateRun", page_size=10) or []
+              )[:10]:
+                  ref = str(getattr(item, "ref", ""))
+                  if not ref:
+                      continue
+                  state = str(getattr(api.kernels_status(ref), "status", "")).upper()
+                  if any(token in state for token in ("RUNNING", "QUEUED", "PENDING")):
+                      active_refs.append(ref)
+
+              active_by_resource = {"cpu": [], "gpu": [], "tpu": [], "unknown": []}
+              if len(active_refs) > 5:
+                  active_by_resource["unknown"].extend(active_refs)
+              else:
+                  for ref in active_refs:
+                      resource = "unknown"
+                      try:
+                          owner, slug = ref.split("/", 1)
+                          detail_request = ApiGetKernelRequest()
+                          detail_request.user_name = owner
+                          detail_request.kernel_slug = slug
+                          details = client.kernels.kernels_api_client.get_kernel(detail_request)
+                          metadata = getattr(details, "metadata", None)
+                          if metadata is not None:
+                              if bool(getattr(metadata, "enable_tpu", False)):
+                                  resource = "tpu"
+                              elif bool(getattr(metadata, "enable_gpu", False)):
+                                  resource = "gpu"
+                              else:
+                                  resource = "cpu"
+                      except Exception:
+                          resource = "unknown"
+                      active_by_resource[resource].append(ref)
+
+          same_class = len(active_by_resource[os.environ["REQUESTED_ACCELERATOR"]])
+          unknown = len(active_by_resource["unknown"])
+          can_launch = same_class + unknown < 1
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
+          counts = {key: len(value) for key, value in active_by_resource.items()}
+          if can_launch:
+              print(
+                  "STAGE1_V2_RECOVERY_PREFLIGHT PASS source_status=error "
+                  "source_version=2 feature_shards=60 "
+                  f"active_cpu={counts['cpu']} active_gpu={counts['gpu']} "
+                  f"active_tpu={counts['tpu']} active_unknown={counts['unknown']}"
+              )
+          else:
+              print(
+                  "STAGE1_V2_RECOVERY_DEFERRED "
+                  f"same_class={same_class} unknown={unknown} "
+                  f"nonblocking_gpu={counts['gpu']} nonblocking_tpu={counts['tpu']} "
+                  "side_effect=false request_unexecuted=true"
+              )
+          PY
+
+      - name: Record deferred CPU admission
+        if: steps.admission.outputs.can_launch == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "STAGE1_V2_RECOVERY_DEFERRED no Kaggle write occurred; request remains unexecuted."
+          printf '%s\n' \
+            '## Stage1 version-2 recovery deferred' '' \
+            '- A CPU or unclassified active kernel blocked this CPU request.' \
+            '- No `kernels push` call was made.' \
+            '- Request `20260903-poisoned-chalice-stage1-v2-recovery-001` remains unexecuted.' \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Materialize and push exactly one private CPU recovery
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kernel_dir="${WORKDIR}/kernel"
+          mkdir -p "${kernel_dir}"
+          cp "${WORKDIR}/script.py" "${kernel_dir}/script.py"
+          "${WORKDIR}/venv/bin/python" - "${kernel_dir}" <<'PY'
+          from __future__ import annotations
+          import json, os, pathlib, sys
+
+          root = pathlib.Path(sys.argv[1])
+          metadata = {
+              "id": os.environ["TARGET_KERNEL"],
+              "title": "Stage1 Raw FIM Recovery V1",
+              "code_file": "script.py",
+              "language": "python",
+              "kernel_type": "script",
+              "is_private": True,
+              "enable_gpu": False,
+              "enable_tpu": False,
+              "enable_internet": False,
+              "keywords": ["cpu", "recovery", "membership-inference"],
+              "dataset_sources": [],
+              "competition_sources": [],
+              "kernel_sources": [os.environ["SOURCE_KERNEL"]],
+              "model_sources": [],
+          }
+          (root / "kernel-metadata.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push \
+            -p "${kernel_dir}" --timeout 1800 \
+            >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "STAGE1_V2_RECOVERY_LAUNCH FAIL response_logged=false automatic_retries=0"
+            exit 1
+          fi
+          echo "STAGE1_V2_RECOVERY_LAUNCH PASS request_id=20260903-poisoned-chalice-stage1-v2-recovery-001 target=${TARGET_KERNEL} accelerator=cpu internet=false source_version=2 feature_extraction=false automatic_retries=0 submission=false"
+
+      - name: Cleanup runner-local recovery material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "STAGE1_V2_RECOVERY_LOCAL_MATERIAL_REMOVED"

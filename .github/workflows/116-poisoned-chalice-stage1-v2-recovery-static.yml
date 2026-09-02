@@ -1,0 +1,274 @@
+name: Poisoned Chalice Stage1 version 2 recovery static validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/114-poisoned-chalice-stage1-v2-cache-audit.yml
+      - .github/workflows/115-poisoned-chalice-stage1-v2-recovery-launch.yml
+      - .github/workflows/116-poisoned-chalice-stage1-v2-recovery-static.yml
+      - scripts/poisoned_chalice_stage1_v2_recovery.py
+      - requests/poisoned-chalice-stage1-v2-cache-audit.json
+      - requests/poisoned-chalice-stage1-v2-recovery-launch.json
+  pull_request:
+    paths:
+      - .github/workflows/114-poisoned-chalice-stage1-v2-cache-audit.yml
+      - .github/workflows/115-poisoned-chalice-stage1-v2-recovery-launch.yml
+      - .github/workflows/116-poisoned-chalice-stage1-v2-recovery-static.yml
+      - scripts/poisoned_chalice_stage1_v2_recovery.py
+      - requests/poisoned-chalice-stage1-v2-cache-audit.json
+      - requests/poisoned-chalice-stage1-v2-recovery-launch.json
+
+permissions: {}
+
+concurrency:
+  group: poisoned-chalice-stage1-v2-recovery-static-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static:
+    name: Validate read-only audit and CPU recovery boundary
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact PR revision without credentials
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "1354356687" ]]
+          [[ "${EVENT_ACTOR}" == "renta0426" ]]
+          [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
+          [[ "${EVENT_SENDER_ID}" == "71638068" ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            [[ "${PR_HEAD_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+            [[ "${PR_AUTHOR}" == "renta0426" ]]
+          else
+            [[ "${EVENT_NAME}" == "push" ]]
+          fi
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${SOURCE_SHA}" <<'PY'
+          from __future__ import annotations
+          import pathlib, ssl, sys, urllib.error, urllib.request
+          from urllib.parse import urlparse
+
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+          required = {
+              ".github/workflows/114-poisoned-chalice-stage1-v2-cache-audit.yml": 131072,
+              ".github/workflows/115-poisoned-chalice-stage1-v2-recovery-launch.yml": 131072,
+              "scripts/poisoned_chalice_stage1_v2_recovery.py": 131072,
+              "requests/poisoned-chalice-stage1-v2-cache-audit.json": 16384,
+          }
+          forbidden_before_audit = "requests/poisoned-chalice-stage1-v2-recovery-launch.json"
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def fetch(path: str, limit: int, *, missing_ok: bool = False) -> bytes | None:
+              url = root + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              try:
+                  with opener.open(url, timeout=30) as response:
+                      data = response.read(limit + 1)
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              return data
+
+          for path, limit in required.items():
+              data = fetch(path, limit)
+              destination = pathlib.Path(path)
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+          if fetch(forbidden_before_audit, 16384, missing_ok=True) is not None:
+              raise SystemExit("CPU recovery request exists before cache audit")
+          print("STAGE1_V2_RECOVERY_STATIC_SOURCE PASS files=4 credentials=absent")
+          PY
+
+      - name: Validate exact contracts and executable calls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast, hashlib, json, pathlib, re
+
+          audit = pathlib.Path(
+              ".github/workflows/114-poisoned-chalice-stage1-v2-cache-audit.yml"
+          ).read_text(encoding="utf-8")
+          launch = pathlib.Path(
+              ".github/workflows/115-poisoned-chalice-stage1-v2-recovery-launch.yml"
+          ).read_text(encoding="utf-8")
+          script_path = pathlib.Path("scripts/poisoned_chalice_stage1_v2_recovery.py")
+          script_bytes = script_path.read_bytes()
+          script = script_bytes.decode("utf-8")
+          tree = ast.parse(script, filename=str(script_path))
+          request = json.loads(
+              pathlib.Path("requests/poisoned-chalice-stage1-v2-cache-audit.json")
+              .read_text(encoding="utf-8")
+          )
+
+          expected_request = {
+              "schema_version": 1,
+              "request_id": "20260903-poisoned-chalice-stage1-v2-cache-audit-001",
+              "parent_request_id": "20260902-poisoned-chalice-stage1-raw-fim-005",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_output_inventory",
+              "target": "renta0426/stage1-raw-fim-submission-v1",
+              "expected_kernel_version": 2,
+              "expected_status": "ERROR",
+              "expected_feature_shards": {
+                  "train_10k": 40,
+                  "validation_5k": 20,
+                  "rows_per_shard": 250,
+              },
+              "sampled_shards": [
+                  "train_10k/parts/features.part000.parquet",
+                  "train_10k/parts/features.part039.parquet",
+                  "validation_5k/parts/features.part000.parquet",
+                  "validation_5k/parts/features.part019.parquet",
+              ],
+              "api_budget": {"max_calls": 8, "max_pages": 2},
+              "side_effects": [],
+          }
+          if request != expected_request:
+              raise SystemExit("cache-audit request differs from exact allowlist")
+
+          def require(text: str, markers: tuple[str, ...], label: str) -> None:
+              missing = [marker for marker in markers if marker not in text]
+              if missing:
+                  raise SystemExit(f"{label} markers missing: {missing}")
+
+          require(audit, (
+              "permissions: {}",
+              "environment: kaggle-readonry",
+              "ApiListKernelSessionOutputRequest",
+              "train_shards=40 validation_shards=20",
+              "base=113 structure=50 fim=11",
+              "recovered_columns=token_count,window_count",
+          ), "audit")
+          require(launch, (
+              "permissions: {}",
+              "environment: kaggle-readonry",
+              "REQUESTED_ACCELERATOR: cpu",
+              "TARGET_KERNEL: renta0426/stage1-raw-fim-recovery-v1",
+              "f2e9fb0ca8b43e3a429fb172e268fb0fbbdb10b0",
+              '"enable_gpu": False',
+              '"enable_tpu": False',
+              '"enable_internet": False',
+              "feature_shards=60",
+              "feature_extraction=false",
+              "automatic_retries=0 submission=false",
+          ), "launch")
+          require(script, (
+              "EXPECTED_TRAIN_SHARDS = 40",
+              "EXPECTED_VALIDATION_SHARDS = 20",
+              "EXPECTED_BASE_FEATURES = 113",
+              "EXPECTED_STRUCTURE_FEATURES = 50",
+              "EXPECTED_FIM_FEATURES = 11",
+              "EXPECTED_OOF_AUC = 0.664524",
+              'BROKEN_BUILDER_EXCLUSIONS = ("token_count", "window_count")',
+              '"feature_extraction_repeated": False',
+              '"model_forward_passes": 0',
+              '"gpu_used": False',
+              '"competition_submission_created": False',
+          ), "recovery script")
+
+          blob = hashlib.sha1(
+              b"blob " + str(len(script_bytes)).encode("ascii") + b"\0" + script_bytes
+          ).hexdigest()
+          if blob != "f2e9fb0ca8b43e3a429fb172e268fb0fbbdb10b0":
+              raise SystemExit(f"recovery script blob changed: {blob}")
+
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  modules = [alias.name for alias in node.names]
+              elif isinstance(node, ast.ImportFrom):
+                  modules = [str(node.module or "")]
+              else:
+                  continue
+              if any(name.startswith(("torch", "transformers")) for name in modules):
+                  raise SystemExit("recovery script gained model/GPU imports")
+          for marker in (
+              "AutoModel", "AutoTokenizer", "torch.cuda", "KAGGLE_API_TOKEN",
+              "KAGGLE_KEY", "kernels push", "competitions submit",
+          ):
+              if marker in script:
+                  raise SystemExit(f"recovery script gained forbidden capability: {marker}")
+
+          def token_bindings(text: str) -> int:
+              return sum(
+                  line.strip().startswith("KAGGLE_API_TOKEN:")
+                  and "secrets.KAGGLE_API_TOKEN" in line
+                  for line in text.splitlines()
+              )
+
+          if token_bindings(audit) != 1 or token_bindings(launch) != 2:
+              raise SystemExit("Kaggle secret-step partition changed")
+          executable = re.compile(
+              r'^[ \t]*"\$\{WORKDIR\}/[^"\n]*/kaggle"[ \t]+' 
+              r'(?P<operation>kernels push|competitions submit)\b',
+              flags=re.MULTILINE,
+          )
+          audit_operations = [match.group("operation") for match in executable.finditer(audit)]
+          launch_operations = [match.group("operation") for match in executable.finditer(launch)]
+          if audit_operations:
+              raise SystemExit(f"read-only audit gained executable writes: {audit_operations}")
+          if launch_operations != ["kernels push"]:
+              raise SystemExit(f"recovery executable-write contract changed: {launch_operations}")
+
+          for label, text in (("audit", audit), ("launch", launch)):
+              for marker in (
+                  "actions/checkout", "actions/upload-artifact",
+                  "actions/download-artifact", "actions/cache", "workflow_dispatch",
+                  "continue-on-error: true", "kernels delete", "kernels cancel",
+                  "datasets create", "datasets version", "models create",
+              ):
+                  if marker in text:
+                      raise SystemExit(f"{label} gained forbidden capability: {marker}")
+              if re.search(r"\bwhile\s+true\b|\bfor\s+\(\(\s*;\s*;", text):
+                  raise SystemExit(f"{label} contains an unbounded loop")
+              if re.search(r"^\s*sleep\s+", text, flags=re.MULTILINE):
+                  raise SystemExit(f"{label} must not poll")
+
+          print(
+              "STAGE1_V2_RECOVERY_STATIC PASS audit_side_effects=none "
+              "recovery_cpu=true feature_extraction=false push_calls=1 submission=false"
+          )
+          PY
+
+      - name: Cleanup fetched files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github scripts requests
+          echo "STAGE1_V2_RECOVERY_STATIC_TEMPORARY_MATERIAL_REMOVED"

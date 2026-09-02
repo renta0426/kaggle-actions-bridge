@@ -1,0 +1,427 @@
+name: Poisoned Chalice Stage1 version 2 failed-run cache audit
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-v2-cache-audit.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-v2-cache-audit.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL: renta0426/stage1-raw-fim-submission-v1
+
+jobs:
+  validate:
+    name: Validate immutable read-only cache-audit request
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate owner boundary and exact request
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${EVENT_SHA}" <<'PY'
+          from __future__ import annotations
+          import json, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha = sys.argv[1]
+          url = (
+              "https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/"
+              f"{sha}/requests/poisoned-chalice-stage1-v2-cache-audit.json"
+          )
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected request origin")
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(16385)
+          if len(data) > 16384:
+              raise SystemExit("cache-audit request exceeds byte budget")
+          request = json.loads(data)
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260903-poisoned-chalice-stage1-v2-cache-audit-001",
+              "parent_request_id": "20260902-poisoned-chalice-stage1-raw-fim-005",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_output_inventory",
+              "target": "renta0426/stage1-raw-fim-submission-v1",
+              "expected_kernel_version": 2,
+              "expected_status": "ERROR",
+              "expected_feature_shards": {
+                  "train_10k": 40,
+                  "validation_5k": 20,
+                  "rows_per_shard": 250,
+              },
+              "sampled_shards": [
+                  "train_10k/parts/features.part000.parquet",
+                  "train_10k/parts/features.part039.parquet",
+                  "validation_5k/parts/features.part000.parquet",
+                  "validation_5k/parts/features.part019.parquet",
+              ],
+              "api_budget": {"max_calls": 8, "max_pages": 2},
+              "side_effects": [],
+          }
+          if request != expected:
+              raise SystemExit("cache-audit request differs from exact allowlist")
+          print("STAGE1_V2_CACHE_AUDIT_REQUEST PASS side_effects=none")
+          PY
+
+  audit:
+    name: List all outputs and inspect four feature shards
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/114-poisoned-chalice-stage1-v2-cache-audit.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "PROTECTED_STAGE1_V2_CACHE_AUDIT_BOUNDARY PASS"
+
+      - name: Prepare SHA-256-locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          from __future__ import annotations
+          import pathlib, re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha, workdir_value = sys.argv[1:]
+          url = (
+              "https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/"
+              f"{sha}/requirements/kaggle-2.2.4.lock"
+          )
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("Kaggle lock exceeds byte budget")
+          text = data.decode("utf-8")
+          pattern = re.compile(
+              r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* "
+              r"--hash=sha256:[0-9a-f]{64}$"
+          )
+          lines = [
+              line.strip() for line in text.splitlines()
+              if line.strip() and not line.lstrip().startswith("#")
+          ]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          pathlib.Path(workdir_value, "kaggle.lock").write_bytes(data)
+          PY
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+          echo "STAGE1_V2_CACHE_AUDIT_CLIENT PASS"
+
+      - name: List failed version-2 outputs and download four bounded samples
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - "${WORKDIR}" <<'PY'
+          from __future__ import annotations
+          import json, pathlib, re, sys
+          import requests
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import (
+              ApiGetKernelRequest,
+              ApiListKernelSessionOutputRequest,
+          )
+
+          root = pathlib.Path(sys.argv[1])
+          download_root = root / "sample-shards"
+          download_root.mkdir(parents=True, exist_ok=True)
+          api = KaggleApi(); api.authenticate()
+          status = str(
+              getattr(api.kernels_status("renta0426/stage1-raw-fim-submission-v1"), "status", "")
+          ).upper()
+          if "ERROR" not in status and "FAILED" not in status:
+              raise SystemExit(f"expected failed Stage1 version 2, got status={status}")
+          with api.build_kaggle_client() as client:
+              detail_request = ApiGetKernelRequest()
+              detail_request.user_name = "renta0426"
+              detail_request.kernel_slug = "stage1-raw-fim-submission-v1"
+              details = client.kernels.kernels_api_client.get_kernel(detail_request)
+              version = int(details.metadata.current_version_number)
+              if version != 2 or not bool(details.metadata.is_private):
+                  raise SystemExit(
+                      f"unexpected Stage1 source identity: version={version}, "
+                      f"private={bool(details.metadata.is_private)}"
+                  )
+
+              output_files = []
+              page_token = ""
+              pages = 0
+              while pages < 2:
+                  request = ApiListKernelSessionOutputRequest()
+                  request.user_name = "renta0426"
+                  request.kernel_slug = "stage1-raw-fim-submission-v1"
+                  request.page_size = 100
+                  request.page_token = page_token
+                  response = client.kernels.kernels_api_client.list_kernel_session_output(request)
+                  output_files.extend(list(getattr(response, "files", None) or []))
+                  pages += 1
+                  page_token = str(getattr(response, "next_page_token", "") or "")
+                  if not page_token:
+                      break
+              if page_token:
+                  raise SystemExit("output inventory exceeds approved two-page budget")
+
+          records = []
+          for item in output_files:
+              name = str(getattr(item, "file_name", "") or "").replace("\\", "/")
+              url = str(getattr(item, "url", "") or "")
+              size = int(
+                  getattr(item, "total_bytes", 0)
+                  or getattr(item, "size", 0)
+                  or 0
+              )
+              if name and url:
+                  records.append({"name": name, "url": url, "bytes": size})
+
+          def expected(split: str, count: int) -> list[str]:
+              return [
+                  f"stage1_raw_fim_v1/{split}/parts/features.part{index:03d}.parquet"
+                  for index in range(count)
+              ]
+
+          expected_train = expected("train_10k", 40)
+          expected_validation = expected("validation_5k", 20)
+          selected = {}
+          missing = []
+          for suffix in expected_train + expected_validation:
+              matches = [record for record in records if record["name"].endswith(suffix)]
+              if len(matches) != 1:
+                  missing.append({"suffix": suffix, "matches": len(matches)})
+              else:
+                  selected[suffix] = matches[0]
+          if missing:
+              raise SystemExit(f"failed-run feature output is incomplete: {missing[:5]}")
+
+          samples = [
+              expected_train[0], expected_train[-1],
+              expected_validation[0], expected_validation[-1],
+          ]
+          sampled_metadata = []
+          maximum_bytes = 268_435_456
+          for suffix in samples:
+              record = selected[suffix]
+              destination = download_root / suffix.replace("/", "__")
+              with requests.get(record["url"], stream=True, timeout=120) as response:
+                  response.raise_for_status()
+                  written = 0
+                  with destination.open("wb") as handle:
+                      for block in response.iter_content(chunk_size=1024 * 1024):
+                          if not block:
+                              continue
+                          written += len(block)
+                          if written > maximum_bytes:
+                              raise SystemExit(f"sample shard exceeds byte budget: {suffix}")
+                          handle.write(block)
+              sampled_metadata.append(
+                  {"suffix": suffix, "local_name": destination.name, "bytes": written}
+              )
+
+          inventory = {
+              "status": status,
+              "kernel_version": version,
+              "pages": pages,
+              "listed_output_files": len(records),
+              "train_feature_shards": len(expected_train),
+              "validation_feature_shards": len(expected_validation),
+              "total_feature_shards": len(selected),
+              "reported_feature_bytes": int(
+                  sum(int(selected[suffix]["bytes"]) for suffix in selected)
+              ),
+              "sampled_shards": sampled_metadata,
+          }
+          (root / "inventory.json").write_text(
+              json.dumps(inventory, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(
+              "STAGE1_V2_OUTPUT_INVENTORY PASS "
+              f"status=error version=2 train_shards=40 validation_shards=20 "
+              f"listed_files={len(records)} pages={pages}"
+          )
+          PY
+          unset KAGGLE_API_TOKEN
+
+      - name: Inspect sampled Parquet schemas without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/audit-venv"
+          "${WORKDIR}/audit-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --only-binary=:all: \
+            pandas==2.3.2 pyarrow==21.0.0 >/dev/null
+          "${WORKDIR}/audit-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/audit-venv/bin/python" - "${WORKDIR}" <<'PY'
+          from __future__ import annotations
+          import json, pathlib, sys
+          import numpy as np
+          import pandas as pd
+
+          root = pathlib.Path(sys.argv[1])
+          inventory = json.loads((root / "inventory.json").read_text(encoding="utf-8"))
+          if inventory != inventory | {
+              "kernel_version": 2,
+              "train_feature_shards": 40,
+              "validation_feature_shards": 20,
+              "total_feature_shards": 60,
+          }:
+              raise SystemExit("cache inventory identity mismatch")
+          frames = {}
+          for item in inventory["sampled_shards"]:
+              frame = pd.read_parquet(root / "sample-shards" / item["local_name"])
+              if len(frame) != 250 or "sample_id" not in frame or not frame.sample_id.is_unique:
+                  raise SystemExit(f"sample shard row/ID failure: {item['suffix']}")
+              frames[item["suffix"]] = frame
+
+          train_samples = [
+              frame for suffix, frame in frames.items() if "/train_10k/" in f"/{suffix}"
+          ]
+          validation_samples = [
+              frame for suffix, frame in frames.items() if "/validation_5k/" in f"/{suffix}"
+          ]
+          if len(train_samples) != 2 or len(validation_samples) != 2:
+              raise SystemExit("sampled split coverage mismatch")
+          if train_samples[0].columns.tolist() != train_samples[1].columns.tolist():
+              raise SystemExit("train sampled schemas differ")
+          if validation_samples[0].columns.tolist() != validation_samples[1].columns.tolist():
+              raise SystemExit("validation sampled schemas differ")
+
+          non_features = {
+              "sample_id", "language", "membership", "label", "split",
+              "content", "validation_order",
+          }
+          numeric = [
+              column
+              for column in train_samples[0].select_dtypes(include=[np.number]).columns
+              if column not in non_features and not column.startswith("cdf_")
+          ]
+          base = [column for column in numeric if not column.startswith(("ast_", "fim_"))]
+          structure = [column for column in numeric if column.startswith("ast_")]
+          fim = [column for column in numeric if column.startswith("fim_")]
+          if (len(base), len(structure), len(fim)) != (113, 50, 11):
+              raise SystemExit(
+                  f"sampled feature inventory mismatch: base={len(base)} "
+                  f"structure={len(structure)} fim={len(fim)}"
+              )
+          if not {"token_count", "window_count"}.issubset(base):
+              raise SystemExit("diagnosed token_count/window_count columns are absent")
+          if "validation_order" not in validation_samples[0]:
+              raise SystemExit("validation_order missing from validation shard")
+          print(
+              "STAGE1_V2_PARQUET_SAMPLES PASS rows_per_shard=250 "
+              "base=113 structure=50 fim=11 recovered_columns=token_count,window_count"
+          )
+          PY
+
+      - name: Cleanup runner-local sampled output
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "STAGE1_V2_CACHE_AUDIT_LOCAL_MATERIAL_REMOVED"
