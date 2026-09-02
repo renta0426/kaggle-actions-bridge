@@ -1,0 +1,108 @@
+name: Poisoned Chalice Stage1 request 005 static validation
+
+on:
+  pull_request:
+    paths:
+      - scripts/poisoned_chalice_stage1_namespace_patch.py
+      - requests/poisoned-chalice-stage1-raw-fim-launch-v4.json
+      - .github/workflows/74d-poisoned-chalice-stage1-raw-fim-launch-v4.yml
+      - .github/workflows/74d-poisoned-chalice-stage1-raw-fim-launch-v4-static.yml
+
+permissions: {}
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate request 005 and reproduce fixed namespace guard
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          root="https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/${HEAD_SHA}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+          python3 - "${root}" "${tmp}" <<'PY'
+          import hashlib, json, pathlib, sys, urllib.request
+          root, tmp_value = sys.argv[1:]
+          tmp = pathlib.Path(tmp_value)
+          def get(path, limit=131072):
+              with urllib.request.urlopen(f"{root}/{path}", timeout=30) as r:
+                  data = r.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"too large: {path}")
+              return data
+          request = json.loads(get("requests/poisoned-chalice-stage1-raw-fim-launch-v4.json", 32768))
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260902-poisoned-chalice-stage1-raw-fim-005",
+              "parent_failed_request_id": "20260902-poisoned-chalice-stage1-raw-fim-004",
+              "failure_diagnostic_request_id": "20260902-poisoned-chalice-stage1-raw-fim-failure-diagnostic-001",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_run",
+              "target": "renta0426/stage1-raw-fim-submission-v1",
+              "builder_path": "scripts/poisoned_chalice_stage1_kernel_builder.py",
+              "builder_blob_sha": "5d8c4dc7d8a0572fc2d12c38c06479c106d37c89",
+              "patcher_path": "scripts/poisoned_chalice_stage1_namespace_patch.py",
+              "patcher_blob_sha": "848ec681e72efbb8c3c03dff9e436c38cb79ece0",
+              "private_source_kernels": {
+                  "base": "renta0426/starter-plus-10k-v2-continuation",
+                  "fim_structure": "renta0426/selective-fim-10k-v1",
+              },
+              "resource": {
+                  "accelerator": "gpu",
+                  "machine_shape": "NvidiaTeslaT4",
+                  "min_remaining_quota_hours": 5.0,
+                  "max_active_runs": 1,
+              },
+              "side_effects": [
+                  "pull two existing private source notebooks",
+                  "create one corrected private notebook version on the existing target and start one T4 GPU run",
+              ],
+              "automatic_compute_retries": 0,
+              "enable_internet": True,
+              "failure_fix": "use assignment-aware namespace collision checks so STAGE1_EXPECTED_TRAIN_ROWS does not falsely match the removed EXPECTED_TRAIN_ROWS assignment",
+          }
+          if request != expected:
+              raise SystemExit("request 005 differs from allowlist")
+          for path, key in ((request["builder_path"], "builder_blob_sha"), (request["patcher_path"], "patcher_blob_sha")):
+              data = get(path)
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != request[key]:
+                  raise SystemExit(f"blob mismatch: {path}")
+              if key == "patcher_blob_sha":
+                  (tmp / "patcher.py").write_bytes(data)
+
+          # Synthetic flattened notebook reproduces request-003's global collision.
+          notebook = {
+              "cells": [
+                  {"cell_type": "code", "metadata": {}, "outputs": [], "execution_count": None,
+                   "source": ["EXPECTED_TRAIN_ROWS = {\"Go\": 10000}\nLANGUAGES = (\"Go\",)\n"]},
+                  {"cell_type": "code", "metadata": {}, "outputs": [], "execution_count": None,
+                   "source": [
+                       "METHOD = \"raw_plus_fim\"\nCORE_COMMIT = \"x\"\nSOURCE_COMMIT = \"y\"\nSEED = 2027\n",
+                       "TRAIN_PER_LANGUAGE = 2000\nSHARD_SIZE = 250\nEXPECTED_TRAIN_ROWS = 10000\n",
+                       "EXPECTED_VALIDATION_ROWS = 5000\nEXPECTED_BASE_FEATURES = 113\nEXPECTED_STRUCTURE_FEATURES = 50\n",
+                       "EXPECTED_FIM_FEATURES = 11\nEXPECTED_OOF_AUC = 0.664524\nOOF_AUC_TOLERANCE = 0.002\n",
+                       "def main():\n    return {\"method\": METHOD}\nmanifest = main()\n",
+                   ]},
+              ],
+              "metadata": {}, "nbformat": 4, "nbformat_minor": 5,
+          }
+          (tmp / "synthetic.ipynb").write_text(json.dumps(notebook), encoding="utf-8")
+          PY
+          python3 "${tmp}/patcher.py" "${tmp}/synthetic.ipynb" >"${tmp}/patch.log"
+          python3 - "${tmp}/synthetic.ipynb" <<'PY'
+          import json, re, sys
+          nb = json.load(open(sys.argv[1], encoding="utf-8"))
+          text = "\n".join("".join(c.get("source", [])) if isinstance(c.get("source"), list) else str(c.get("source", "")) for c in nb["cells"])
+          if not re.search(r"(?m)^STAGE1_EXPECTED_TRAIN_ROWS\s*=\s*10000\s*$", text):
+              raise SystemExit("new namespaced assignment missing")
+          if re.search(r"(?m)^EXPECTED_TRAIN_ROWS\s*=\s*10000\s*$", text):
+              raise SystemExit("old exact assignment remains")
+          if not all(c.get("id") for c in nb["cells"]):
+              raise SystemExit("cell ids missing")
+          print("REQUEST_005_NAMESPACE_SYNTHETIC PASS")
+          PY
