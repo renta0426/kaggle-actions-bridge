@@ -154,17 +154,19 @@ Environment approvalは、**そのcommit、そのmanifest、その1回のrun**�
 
 ### 4. Resource concurrency
 
-複数エージェントが同じKaggle accountを同時に操作しても、安全性とquotaは共有されます。
+複数エージェントが同じKaggle accountを同時に操作しても、安全性とquotaは共有されます。ただし、Kaggleのremote computeをaccount全体の単一slotとはみなしません。
 
-- resourceを消費するKaggle runは、account全体で原則1件だけactiveにする
-- GPU/TPU/CPU runを別workflowから同時起動しない
-- 全resource-consuming workflowで共通のglobal concurrency groupまたは排他的leaseを使用する
-- 起動前にKaggle側のactive session/runを再確認する
-- stateを確認できない場合は、新しいrunを起動しない
+- Notebook作成・更新、run起動などのbridge側admission/write操作は、共通のglobal concurrency groupまたは排他的leaseで直列化する
+- remote runの同時実行可否はCPU・GPU・TPUのresource classごとに判断する
+- manifestの`resource.max_active_runs`は、特記がなければ要求したaccelerator class内の上限として扱う
+- CPU requestとGPU/TPU requestなど、異なるresource classのrunは、Competition Rules、Kaggleのlive制限、quota、個別承認が許す範囲で同時実行できる
+- 同一resource classがmanifest上限に達している場合、またはactive runのresource classを確認できない場合は、writeせずdeferする
+- defer時に自動pollingや自動再実行は行わず、再実行にはfresh Environment approvalを要求する
+- 起動前にKaggle側のactive session/runを再確認し、resource class別件数だけを非機密metadataとして記録する
 - 1 requestからKaggle runを開始するAPI callは1回だけにする
 - timeout、network error、5xxで結果が不明な場合、再送前にKaggle側で作成済みか確認する
 
-並列実行が実験上必要な場合でも、Competition Rules、account quota、Kaggleの通常UIが認める範囲を確認し、目的、同時数、合計resource見積りを明示して個別承認を取ります。許容される同時数をquota消化の目標にしてはいけません。
+Kaggleまたは対象Competitionがより厳しい同時実行上限を示す場合は、その上限を適用します。並列性は作業上必要な範囲に限定し、quota消化の目標にしてはいけません。
 
 ### 5. Notebook run
 
@@ -230,7 +232,7 @@ run logへ残してよいのは、request ID、対象の公開識別子、operat
 
 次を検知したら直ちに停止します。
 
-- 予期しないactive run、duplicate run、quota急減
+- 未承認または同一resource classの上限を超えるactive run、duplicate run、quota急減
 - HTTP 429、ban/suspension警告、abuse警告
 - 予期しない外向き通信
 - token、cookie、XSRF、private contentのlog出力
