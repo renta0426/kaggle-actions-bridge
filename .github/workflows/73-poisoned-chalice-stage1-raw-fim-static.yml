@@ -1,0 +1,170 @@
+name: Poisoned Chalice Stage1 raw+FIM bridge static validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/73-poisoned-chalice-stage1-raw-fim-static.yml
+      - .github/workflows/74-poisoned-chalice-stage1-raw-fim-launch.yml
+      - .github/workflows/75-poisoned-chalice-stage1-raw-fim-status.yml
+      - .github/workflows/76-poisoned-chalice-stage1-raw-fim-submit.yml
+      - requests/poisoned-chalice-stage1-raw-fim-*.json
+      - scripts/poisoned_chalice_stage1_kernel_builder.py
+
+permissions: {}
+
+concurrency:
+  group: poisoned-chalice-stage1-static-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Validate source locks and workflow security
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Fetch exact PR-head files without credentials and validate
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast
+          import hashlib
+          import json
+          import os
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          repo = os.environ["HEAD_REPO"]
+          sha = os.environ["HEAD_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+          files = {
+              "request": "requests/poisoned-chalice-stage1-raw-fim-launch-v1.json",
+              "builder": "scripts/poisoned_chalice_stage1_kernel_builder.py",
+              "launch": ".github/workflows/74-poisoned-chalice-stage1-raw-fim-launch.yml",
+              "status": ".github/workflows/75-poisoned-chalice-stage1-raw-fim-status.yml",
+              "submit": ".github/workflows/76-poisoned-chalice-stage1-raw-fim-submit.yml",
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def fetch(path: str, limit: int = 196608) -> bytes:
+              url = base + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {path}")
+              return data
+
+          request = json.loads(fetch(files["request"], 32768))
+          expected_fields = {
+              "schema_version", "request_id", "competition", "operation", "target",
+              "builder_path", "builder_blob_sha", "private_source_kernels",
+              "research_provenance", "resource", "api_budget", "side_effects",
+              "automatic_compute_retries", "enable_internet", "rules_checked_at_utc",
+          }
+          if set(request) != expected_fields:
+              raise SystemExit("launch request schema differs from fixed allowlist")
+          if request["schema_version"] != 1:
+              raise SystemExit("unsupported launch request schema")
+          if request["request_id"] != "20260902-poisoned-chalice-stage1-raw-fim-001":
+              raise SystemExit("unexpected launch request id")
+          if request["competition"] != "poisoned-chalice-icse27" or request["operation"] != "kernel_run":
+              raise SystemExit("competition/operation mismatch")
+          if request["target"] != "renta0426/stage1-raw-fim-submission-v1":
+              raise SystemExit("target kernel mismatch")
+          if request["builder_path"] != files["builder"]:
+              raise SystemExit("builder path mismatch")
+          if request["private_source_kernels"] != {
+              "base": "renta0426/starter-plus-10k-v2-continuation",
+              "fim_structure": "renta0426/selective-fim-10k-v1",
+          }:
+              raise SystemExit("private source kernel allowlist mismatch")
+          if request["research_provenance"] != {
+              "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+              "source_commit": "28c34307c71db733dab2744ec9ec46549e54d424",
+              "module_commit": "bcf6d44db86fdda4ac9dd07b2d0172de471ab67a",
+          }:
+              raise SystemExit("research provenance mismatch")
+          if request["resource"] != {
+              "accelerator": "gpu",
+              "machine_shape": "NvidiaTeslaT4",
+              "expected_runtime_minutes": 300,
+              "hard_timeout_minutes": 600,
+              "max_active_runs": 1,
+              "min_remaining_quota_hours": 5.0,
+          }:
+              raise SystemExit("resource manifest mismatch")
+          if request["api_budget"] != {
+              "max_calls": 30,
+              "poll_interval_seconds": 300,
+              "max_pages": 2,
+          }:
+              raise SystemExit("API budget mismatch")
+          if request["side_effects"] != [
+              "pull two existing private source notebooks",
+              "create one private notebook version and start one T4 GPU run",
+          ]:
+              raise SystemExit("side-effect allowlist mismatch")
+          if request["automatic_compute_retries"] != 0 or request["enable_internet"] is not True:
+              raise SystemExit("retry/internet policy mismatch")
+
+          builder = fetch(files["builder"], 131072)
+          ast.parse(builder.decode("utf-8"), filename=files["builder"])
+          blob = hashlib.sha1(b"blob " + str(len(builder)).encode() + b"\0" + builder).hexdigest()
+          if blob != request["builder_blob_sha"]:
+              raise SystemExit("request/builder blob mismatch")
+          builder_text = builder.decode("utf-8")
+          for required in (
+              "renta0426/stage1-raw-fim-submission-v1",
+              "raw_plus_fim",
+              "EXPECTED_OOF_AUC = 0.664524",
+              "hidden_validation_labels_used",
+              "public_leaderboard_tuning_used",
+              "validation_labels_used_for_fit_or_feature_selection",
+          ):
+              if required not in builder_text:
+                  raise SystemExit(f"builder contract missing: {required}")
+
+          for name in ("launch", "status", "submit"):
+              text = fetch(files[name]).decode("utf-8")
+              for required in (
+                  "permissions: {}",
+                  "runs-on: ubuntu-24.04",
+                  "environment: kaggle-readonry",
+              ):
+                  if required not in text:
+                      raise SystemExit(f"{name} workflow missing security invariant: {required}")
+              for forbidden in (
+                  "pull_request_target:",
+                  "workflow_run:",
+                  "repository_dispatch:",
+                  "issue_comment:",
+                  "runs-on: self-hosted",
+                  "set -x",
+                  "actions/checkout@",
+              ):
+                  if forbidden in text:
+                      raise SystemExit(f"forbidden workflow construct in {name}: {forbidden}")
+          print("Poisoned Chalice Stage1 bridge static validation: PASS")
+          PY
