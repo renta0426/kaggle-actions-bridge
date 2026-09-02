@@ -1,0 +1,94 @@
+name: Poisoned Chalice Mellum transfer v1 static validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/109-poisoned-chalice-mellum-transfer-v1-static.yml
+      - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml
+      - requests/poisoned-chalice-mellum-transfer-v1-launch.json
+      - scripts/materialize_poisoned_chalice_mellum_v1.py
+      - scripts/validate_poisoned_chalice_mellum_v1.py
+  pull_request:
+    paths:
+      - .github/workflows/109-poisoned-chalice-mellum-transfer-v1-static.yml
+      - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml
+      - requests/poisoned-chalice-mellum-transfer-v1-launch.json
+      - scripts/materialize_poisoned_chalice_mellum_v1.py
+      - scripts/validate_poisoned_chalice_mellum_v1.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poisoned-chalice-mellum-transfer-v1-static-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static:
+    name: Validate request, materializer, bundle, and protected launch
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'renta0426'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact event head without retaining credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce credential-free source boundary
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_ID}" == "1354356687" ]]
+          [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
+          [[ "${EVENT_SENDER_ID}" == "71638068" ]]
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            expected_sha="${PR_HEAD_SHA}"
+          else
+            expected_sha="${EVENT_SHA}"
+          fi
+          [[ "$(git rev-parse HEAD)" == "${expected_sha}" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected Kaggle credential: ${name}"; exit 1; }
+          done
+          echo "MELLUM_STATIC_BOUNDARY PASS credentials=absent"
+
+      - name: Install pinned credential-free validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .static-venv
+          .static-venv/bin/python -m pip install \
+            --disable-pip-version-check --no-input --only-binary=:all: \
+            pandas==2.3.2 pyarrow==21.0.0 nbformat==5.10.4 >/dev/null
+          .static-venv/bin/python -m pip check >/dev/null
+
+      - name: Run full credential-free Mellum materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          .static-venv/bin/python scripts/validate_poisoned_chalice_mellum_v1.py
+
+      - name: Cleanup validation environment
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .static-venv
+          echo "MELLUM_STATIC_TEMPORARY_MATERIAL_REMOVED"
