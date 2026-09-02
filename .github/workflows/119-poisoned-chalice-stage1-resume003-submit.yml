@@ -1,0 +1,405 @@
+name: Poisoned Chalice Stage1 resume003 SHA-bound submission
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-resume003-submit-v1.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-resume003-submit-v1.json
+  BASE_VERIFIER_PATH: scripts/validate_poisoned_chalice_stage1_resume_output.py
+  BASE_VERIFIER_BLOB_SHA: 50307d5cc4ce305cda95f69d4dbf354cc9d743a6
+  PROVENANCE_VERIFIER_PATH: scripts/validate_poisoned_chalice_stage1_resume003_output.py
+  PROVENANCE_VERIFIER_BLOB_SHA: 1f5f3790e346e270249dbce2aae4494274979731
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/stage1-raw-fim-resume-v1
+  EXPECTED_KERNEL_VERSION: "1"
+  SUBMISSION_MESSAGE: Stage1 raw+structure+FIM cached continuation; OOF AUC 0.6645; no Public-LB tuning
+
+jobs:
+  validate:
+    name: Validate immutable resume003 submission request without credentials
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact SHA-bound request and verifier Git blobs
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${EVENT_SHA}" <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import re
+          import ssl
+          import sys
+          import urllib.request
+          from urllib.parse import urlparse
+
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def read(path: str, limit: int) -> bytes:
+              url = root + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              return data
+
+          request = json.loads(read(
+              "requests/poisoned-chalice-stage1-resume003-submit-v1.json", 16384
+          ))
+          fixed = {
+              "schema_version": 1,
+              "request_id": "20260903-poisoned-chalice-stage1-resume003-submit-001",
+              "parent_status_request_id": "20260903-poisoned-chalice-stage1-resume003-status-001",
+              "parent_run_request_id": "20260903-poisoned-chalice-stage1-resume-003",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "competition_submit",
+              "target_kernel": "renta0426/stage1-raw-fim-resume-v1",
+              "expected_kernel_version": 1,
+              "source_kernel_version": 3,
+              "submission_file": "submission.csv",
+              "submission_message": "Stage1 raw+structure+FIM cached continuation; OOF AUC 0.6645; no Public-LB tuning",
+              "base_verifier_path": "scripts/validate_poisoned_chalice_stage1_resume_output.py",
+              "base_verifier_blob_sha": "50307d5cc4ce305cda95f69d4dbf354cc9d743a6",
+              "provenance_verifier_path": "scripts/validate_poisoned_chalice_stage1_resume003_output.py",
+              "provenance_verifier_blob_sha": "1f5f3790e346e270249dbce2aae4494274979731",
+              "submission_call_limit": 1,
+              "side_effects": ["create one competition submission"],
+              "automatic_submission_retries": 0,
+              "select_as_final": False,
+              "public_leaderboard_tuning_used": False,
+          }
+          for key, value in fixed.items():
+              if request.get(key) != value:
+                  raise SystemExit(f"resume003 submission request mismatch: {key}")
+          if set(request) != set(fixed) | {"submission_sha256"}:
+              raise SystemExit("resume003 submission request contains unknown fields")
+          if not re.fullmatch(r"[0-9a-f]{64}", str(request.get("submission_sha256") or "")):
+              raise SystemExit("resume003 submission SHA-256 is malformed")
+
+          for path_key, blob_key in (
+              ("base_verifier_path", "base_verifier_blob_sha"),
+              ("provenance_verifier_path", "provenance_verifier_blob_sha"),
+          ):
+              data = read(request[path_key], 131072)
+              blob = hashlib.sha1(
+                  b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+              ).hexdigest()
+              if blob != request[blob_key]:
+                  raise SystemExit(f"verifier Git blob mismatch: {path_key}")
+              compile(data, request[path_key], "exec")
+          print("STAGE1_RESUME003_SUBMISSION_REQUEST PASS calls=1 retries=0 final_selection=false")
+          PY
+
+  submit:
+    name: Reverify approved bytes and submit exactly once
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce protected one-submission boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/119-poisoned-chalice-stage1-resume003-submit.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "PROTECTED_STAGE1_RESUME003_SUBMISSION_BOUNDARY PASS max_calls=1"
+
+      - name: Prepare exact request, verifiers, and SHA-locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" "${GITHUB_ENV}" <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import pathlib
+          import re
+          import ssl
+          import sys
+          import urllib.request
+          from urllib.parse import urlparse
+
+          sha, root_value, github_env = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          files = {
+              "requests/poisoned-chalice-stage1-resume003-submit-v1.json": 16384,
+              "scripts/validate_poisoned_chalice_stage1_resume_output.py": 131072,
+              "scripts/validate_poisoned_chalice_stage1_resume003_output.py": 131072,
+              "requirements/kaggle-2.2.4.lock": 65536,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path, limit in files.items():
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              destination = root / path
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+
+          request = json.loads((root / "requests/poisoned-chalice-stage1-resume003-submit-v1.json").read_text())
+          for path_key, blob_key in (
+              ("base_verifier_path", "base_verifier_blob_sha"),
+              ("provenance_verifier_path", "provenance_verifier_blob_sha"),
+          ):
+              data = (root / request[path_key]).read_bytes()
+              blob = hashlib.sha1(
+                  b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+              ).hexdigest()
+              if blob != request[blob_key]:
+                  raise SystemExit(f"verifier Git blob mismatch: {path_key}")
+
+          lock = (root / "requirements/kaggle-2.2.4.lock").read_text(encoding="utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in lock.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          with open(github_env, "a", encoding="utf-8") as handle:
+              handle.write(f"EXPECTED_SUBMISSION_SHA256={request['submission_sha256']}\n")
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/requirements/kaggle-2.2.4.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+          echo "STAGE1_RESUME003_SUBMISSION_LOCKED_CLIENT PASS"
+
+      - name: Confirm current Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl
+          import urllib.request
+
+          context = ssl.create_default_context()
+          for url in (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+          ):
+              request = urllib.request.Request(
+                  url, headers={"User-Agent": "kaggle-actions-bridge/1"}
+              )
+              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print("CURRENT_KAGGLE_POLICY_REACHABILITY PASS")
+          PY
+
+      - name: Recheck live evaluation contract and completed private CPU version 1
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os
+          import re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          api = KaggleApi()
+          api.authenticate()
+          pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("live Competition policy pages unavailable")
+          evaluation = re.sub(
+              r"\s+",
+              " ",
+              re.sub(r"<[^>]+>", " ", content["evaluation"].replace(r"\%", "%")),
+          ).casefold()
+          if not all(term in evaluation for term in ("auc", "novelty", "1%", "false-positive")):
+              raise SystemExit("live evaluation contract mismatch")
+
+          status = str(
+              getattr(api.kernels_status(os.environ["TARGET_KERNEL"]), "status", "")
+          ).upper()
+          if "COMPLETE" not in status:
+              raise SystemExit(f"resumed Stage1 kernel is not complete: {status}")
+          with api.build_kaggle_client() as client:
+              request = ApiGetKernelRequest()
+              request.user_name = "renta0426"
+              request.kernel_slug = "stage1-raw-fim-resume-v1"
+              details = client.kernels.kernels_api_client.get_kernel(request)
+          metadata = details.metadata
+          if int(metadata.current_version_number) != int(os.environ["EXPECTED_KERNEL_VERSION"]):
+              raise SystemExit("resumed Stage1 kernel version changed")
+          if not bool(metadata.is_private):
+              raise SystemExit("resumed Stage1 kernel unexpectedly public")
+          if bool(metadata.enable_gpu) or bool(metadata.enable_tpu) or bool(metadata.enable_internet):
+              raise SystemExit("resumed Stage1 execution contract changed")
+          print("STAGE1_RESUME003_SUBMISSION_PREFLIGHT PASS version=1 cpu=true internet=false")
+          PY
+
+      - name: Download and reverify exact approved output
+        id: output
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          output_dir="${WORKDIR}/output"
+          mkdir -p "${output_dir}"
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels output "${TARGET_KERNEL}" \
+            -p "${output_dir}" -q -o --page-size 50 \
+            --file-pattern '^(run_manifest\.json|submission\.csv|feature_schema\.json|source_shards\.json)$' \
+            >"${WORKDIR}/output.stdout" 2>"${WORKDIR}/output.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/output.stdout" "${WORKDIR}/output.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "STAGE1_RESUME003_SUBMISSION_OUTPUT_DOWNLOAD FAIL response_logged=false"
+            exit 1
+          fi
+          python3 "${WORKDIR}/${PROVENANCE_VERIFIER_PATH}" \
+            --output-dir "${output_dir}" \
+            --base-verifier "${WORKDIR}/${BASE_VERIFIER_PATH}" \
+            --expected-base-verifier-blob "${BASE_VERIFIER_BLOB_SHA}" \
+            --expected-sha256 "${EXPECTED_SUBMISSION_SHA256}" \
+            --github-output "${GITHUB_OUTPUT}"
+          echo "STAGE1_RESUME003_SHA_BOUND_OUTPUT PASS sha256=${EXPECTED_SUBMISSION_SHA256}"
+
+      - name: Submit verified file exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          VERIFIED_SUBMISSION_PATH: ${{ steps.output.outputs.submission_path }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VERIFIED_SUBMISSION_PATH}" && -f "${VERIFIED_SUBMISSION_PATH}" ]]
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" competitions submit \
+            -c "${TARGET_COMPETITION}" \
+            -f "${VERIFIED_SUBMISSION_PATH}" \
+            -m "${SUBMISSION_MESSAGE}" \
+            >"${WORKDIR}/submit.stdout" 2>"${WORKDIR}/submit.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/submit.stdout" "${WORKDIR}/submit.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "STAGE1_RESUME003_COMPETITION_SUBMISSION FAIL response_logged=false automatic_retries=0"
+            exit 1
+          fi
+          echo "STAGE1_RESUME003_COMPETITION_SUBMISSION PASS request_id=20260903-poisoned-chalice-stage1-resume003-submit-001 submit_calls=1 automatic_retries=0 final_selection=false submission_sha256=${EXPECTED_SUBMISSION_SHA256}"
+
+      - name: Cleanup runner-local submission material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "STAGE1_RESUME003_SUBMISSION_LOCAL_MATERIAL_REMOVED"
