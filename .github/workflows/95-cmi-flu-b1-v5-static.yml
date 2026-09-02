@@ -1,0 +1,111 @@
+name: CMI-Flu B1 request 005 static validation
+
+on:
+  push:
+    paths:
+      - .github/workflows/95-cmi-flu-b1-v5-static.yml
+      - .github/workflows/96-cmi-flu-b1-launch-v5.yml
+      - requests/cmi-flu-b1-launch-v5.json
+  pull_request:
+    paths:
+      - .github/workflows/95-cmi-flu-b1-v5-static.yml
+      - .github/workflows/96-cmi-flu-b1-launch-v5.yml
+      - requests/cmi-flu-b1-launch-v5.json
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-b1-v5-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate queued global lock and single-file kernel 005
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact event sources without credentials
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "${SOURCE_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast, hashlib, json, os, ssl, urllib.request
+
+          base = f"https://raw.githubusercontent.com/{os.environ['SOURCE_REPO']}/{os.environ['SOURCE_SHA']}/"
+          def read(path: str, limit: int) -> bytes:
+              with urllib.request.urlopen(base + path, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              return data
+
+          request = json.loads(read("requests/cmi-flu-b1-launch-v5.json", 32768))
+          launch = read(".github/workflows/96-cmi-flu-b1-launch-v5.yml", 131072).decode("utf-8")
+          if request["schema_version"] != 5 or request["request_id"] != "20260902-cmi-flu-b1-005":
+              raise SystemExit("request identity mismatch")
+          if request["parent_request_id"] != "20260902-cmi-flu-b1-004":
+              raise SystemExit("parent identity mismatch")
+          if request["target"] != "renta0426/cmi-flu-b1-anchor-single-file-20260902-005":
+              raise SystemExit("target mismatch")
+          if request["packaging"] != {"python_files": 1, "code_file": "script.py"}:
+              raise SystemExit("packaging mismatch")
+          if request["concurrency"] != {"group": "kaggle-resource-global", "queue": "max"}:
+              raise SystemExit("queued concurrency contract mismatch")
+          required_launch = (
+              "permissions: {}",
+              "group: kaggle-resource-global",
+              "queue: max",
+              "environment: kaggle-readonry",
+              "TARGET_KERNEL: renta0426/cmi-flu-b1-anchor-single-file-20260902-005",
+              '"code_file": "script.py"',
+              '"enable_gpu": False',
+              '"enable_tpu": False',
+              '"enable_internet": False',
+              "python_count=",
+              '[[ "${python_count}" -eq 1 ]]',
+              'kernels push -p "${kernel_dir}" --timeout 1800',
+          )
+          for marker in required_launch:
+              if marker not in launch:
+                  raise SystemExit(f"launch guard missing: {marker}")
+          if "cancel-in-progress: true" in launch:
+              raise SystemExit("resource launch must not cancel an in-progress run")
+          if launch.count("kernels push") != 1:
+              raise SystemExit("launch must contain exactly one kernels push")
+
+          source = request["source"]
+          raw = read(source["path"], 100000)
+          blob = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+          if blob != source["blob_sha"] or blob != "5ef01cf2a7c4a4140bce0210151d407972b9e7f3":
+              raise SystemExit("source blob mismatch")
+          text = raw.decode("utf-8")
+          for item in source["replacements"]:
+              if text.count(item["old"]) != item["count"]:
+                  raise SystemExit("replacement occurrence mismatch")
+              text = text.replace(item["old"], item["new"])
+          compile(text, "script.py", "exec")
+          imports = set()
+          for node in ast.walk(ast.parse(text)):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split('.')[0])
+          if imports & {"requests", "httpx", "socket", "subprocess", "urllib", "cmi_flu_b1_kernel_impl"}:
+              raise SystemExit("patched runtime has forbidden external/process dependency")
+          if "import cmi_flu_b1_kernel_impl" in text:
+              raise SystemExit("sibling module import remains")
+          if 'REQUEST_ID = "20260902-cmi-flu-b1-005"' not in text:
+              raise SystemExit("patched request id missing")
+          if 'run_id = "b01-anchor-standalone-005"' not in text:
+              raise SystemExit("patched run id missing")
+          print(f"CMI_B1_005_STATIC PASS patched_sha256={hashlib.sha256(text.encode()).hexdigest()}")
+          PY
