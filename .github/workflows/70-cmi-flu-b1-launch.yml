@@ -1,0 +1,432 @@
+name: CMI-Flu B1 private CPU kernel launch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/cmi-flu-b1-launch-v1.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-b1-launch-v1.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_KERNEL: renta0426/cmi-flu-b1-anchor-20260902-001
+  KERNEL_SOURCE_PATH: scripts/cmi_flu_b1_kernel.py
+
+jobs:
+  validate:
+    name: Validate immutable request without secrets
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Enforce secret-free boundary and validate request
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+
+          forbidden=(
+            KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY
+            GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY
+            AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AZURE_CLIENT_SECRET
+            GOOGLE_APPLICATION_CREDENTIALS
+          )
+          for name in "${forbidden[@]}"; do
+            [[ -z "${!name-}" ]] || {
+              echo "ERROR: unexpected credential variable present: ${name}"
+              exit 1
+            }
+          done
+
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          export WORKDIR="${workdir}"
+          python3 - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          import re
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          repo = os.environ["EXPECTED_REPOSITORY"]
+          sha = os.environ["EVENT_SHA_VALUE"]
+          request_path = os.environ["REQUEST_PATH"]
+          source_path = os.environ["KERNEL_SOURCE_PATH"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def fetch(relative: str, limit: int) -> bytes:
+              url = base + relative
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected GitHub raw origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {relative}")
+              return data
+
+          request_data = fetch(request_path, 32_768)
+          request = json.loads(request_data)
+          expected_top = {
+              "schema_version", "request_id", "competition", "operation", "target",
+              "kernel_source_path", "kernel_source_blob_sha", "source_repository",
+              "source_commit", "resource", "api_budget", "side_effects",
+              "automatic_compute_retries", "enable_internet", "rules_checked_at_utc",
+          }
+          if set(request) != expected_top:
+              raise SystemExit(f"request fields differ: {sorted(set(request) ^ expected_top)}")
+          if request["schema_version"] != 1:
+              raise SystemExit("unsupported request schema")
+          if request["request_id"] != "20260902-cmi-flu-b1-001":
+              raise SystemExit("unexpected request id")
+          if request["competition"] != os.environ["TARGET_COMPETITION"]:
+              raise SystemExit("competition mismatch")
+          if request["operation"] != "kernel_run" or request["target"] != os.environ["TARGET_KERNEL"]:
+              raise SystemExit("operation or target mismatch")
+          if request["kernel_source_path"] != source_path:
+              raise SystemExit("kernel source path mismatch")
+          if request["source_repository"] != "renta0426/CMI-Flu-Invited-Prediction-Challenge":
+              raise SystemExit("source repository mismatch")
+          if request["source_commit"] != "1e075cfa565698f708e872d22be629f97704a24f":
+              raise SystemExit("source commit mismatch")
+          if request["resource"] != {
+              "accelerator": "cpu",
+              "expected_runtime_minutes": 10,
+              "hard_timeout_minutes": 30,
+              "max_active_runs": 1,
+          }:
+              raise SystemExit("resource manifest mismatch")
+          if request["api_budget"] != {
+              "max_calls": 20,
+              "poll_interval_seconds": 300,
+              "max_pages": 2,
+          }:
+              raise SystemExit("API budget mismatch")
+          if request["side_effects"] != ["create one private notebook version and start one CPU run"]:
+              raise SystemExit("side effect mismatch")
+          if request["automatic_compute_retries"] != 0 or request["enable_internet"] is not True:
+              raise SystemExit("retry/internet policy mismatch")
+          if not re.fullmatch(r"2026-09-02T\d{2}:\d{2}:\d{2}Z", request["rules_checked_at_utc"]):
+              raise SystemExit("invalid rules_checked_at_utc")
+
+          source = fetch(source_path, 64_000)
+          git_blob = hashlib.sha1(
+              b"blob " + str(len(source)).encode() + b"\0" + source
+          ).hexdigest()
+          if git_blob != request["kernel_source_blob_sha"]:
+              raise SystemExit("kernel source blob mismatch")
+          compile(source.decode("utf-8"), source_path, "exec")
+          print("CMI-Flu B1 immutable request validation: PASS")
+          PY
+
+      - name: Check current public Kaggle legal pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl
+          import urllib.request
+
+          urls = (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+          )
+          context = ssl.create_default_context()
+          for url in urls:
+              request = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                  if response.status != 200:
+                      raise SystemExit(f"official Kaggle page unavailable: status={response.status}")
+                  body = response.read(2_000_001)
+                  if not body or len(body) > 2_000_000:
+                      raise SystemExit("official Kaggle page size outside fixed boundary")
+          print("Current Kaggle legal/API page reachability: PASS")
+          PY
+
+  launch:
+    name: Live rule preflight and launch one private CPU run
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/70-cmi-flu-b1-launch.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected CMI-Flu B1 launch boundary: PASS"
+
+      - name: Prepare SHA-256 locked Kaggle CLI before secret exposure
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          import re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock too large")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          open(output, "w", encoding="utf-8").write(text)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version >/dev/null
+          echo "Locked Kaggle CLI prepared: PASS"
+
+      - name: Live competition-rule preflight and account run check
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KAGGLE_API_TOKEN}" ]] || [[ "${KAGGLE_API_TOKEN}" != KGAT_* ]]; then
+            echo "ERROR: protected Kaggle token unavailable or malformed"
+            exit 1
+          fi
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import os
+          import re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+
+          competition = os.environ["TARGET_COMPETITION"]
+          target = os.environ["TARGET_KERNEL"]
+          api = KaggleApi()
+          api.authenticate()
+
+          pages = api.competition_list_pages(competition) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              body = str(data.get("content") or "")
+              if name:
+                  content[name] = body
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("required live Competition pages are unavailable")
+          data_pages = [name for name in content if "data" in name]
+          if not data_pages:
+              raise SystemExit("live Competition data-description page is unavailable")
+
+          def plain(value: str) -> str:
+              return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value)).casefold()
+
+          rules = plain(content["rules"])
+          evaluation = plain(content["evaluation"])
+          data_text = " ".join(plain(content[name]) for name in data_pages)
+          rule_checks = (
+              "maximum of five (5) submissions per day",
+              "maximum team size is five (5)",
+              "data security",
+              "external data and tools",
+          )
+          if not all(check in rules for check in rule_checks):
+              raise SystemExit("live Competition rules differ from the approved guardrail assumptions")
+          evaluation_checks = ("mean spearman correlation", "40 donors", "-99")
+          if not all(check in evaluation for check in evaluation_checks):
+              raise SystemExit("live Competition evaluation text differs from the approved assumptions")
+          if "sample_submission_part1.csv" not in data_text or "investigations_260821.tsv" not in data_text:
+              raise SystemExit("live Competition data page does not expose the expected Part 1/corrected inputs")
+
+          for name in ("rules", "evaluation", *sorted(data_pages)):
+              digest = hashlib.sha256(content[name].encode("utf-8")).hexdigest()
+              print(f"LIVE_PAGE_HASH name={name} sha256={digest}")
+
+          # Request-idempotency check: this target must not already exist.
+          existing = api.kernels_list(user="renta0426", search="cmi-flu-b1-anchor-20260902-001", page_size=5) or []
+          refs = {str(getattr(item, "ref", "")) for item in existing}
+          if target in refs:
+              raise SystemExit("target kernel already exists; refusing duplicate request")
+
+          # Account-wide bounded active-run check over the five most recently run kernels.
+          recent = api.kernels_list(user="renta0426", sort_by="dateRun", page_size=5) or []
+          active = []
+          for item in recent[:5]:
+              ref = str(getattr(item, "ref", ""))
+              if not ref:
+                  continue
+              status = api.kernels_status(ref)
+              value = str(getattr(status, "status", status)).upper()
+              if "RUNNING" in value or "QUEUED" in value:
+                  active.append(ref)
+          if active:
+              raise SystemExit(f"another Kaggle kernel is active; count={len(active)}")
+          print(f"LIVE_RULE_PREFLIGHT PASS pages={len(content)} recent_status_checks={min(len(recent), 5)} accelerator=cpu")
+          PY
+
+      - name: Materialize fixed private kernel and launch exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          kernel_dir="${WORKDIR}/kernel"
+          mkdir -p "${kernel_dir}"
+          raw_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${KERNEL_SOURCE_PATH}"
+          python3 - "${raw_url}" "${kernel_dir}/cmi_flu_b1_kernel.py" <<'PY'
+          import hashlib, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected kernel source origin")
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(64001)
+          if len(data) > 64000:
+              raise SystemExit("kernel source too large")
+          git_blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+          if git_blob != "32230457a10c951b4d5a4d41a9c56e705259fb63":
+              raise SystemExit("kernel source blob mismatch")
+          open(output, "wb").write(data)
+          PY
+          cat > "${kernel_dir}/kernel-metadata.json" <<'JSON'
+          {
+            "id": "renta0426/cmi-flu-b1-anchor-20260902-001",
+            "title": "CMI Flu B1 Anchor 20260902 001",
+            "code_file": "cmi_flu_b1_kernel.py",
+            "language": "python",
+            "kernel_type": "script",
+            "is_private": true,
+            "enable_gpu": false,
+            "enable_tpu": false,
+            "enable_internet": true,
+            "machine_shape": "",
+            "dataset_sources": [],
+            "competition_sources": ["cmi-flu-first-prediction-challenge"],
+            "kernel_sources": [],
+            "model_sources": []
+          }
+          JSON
+
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" \
+            >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "ERROR: Kaggle kernel push/run failed; response content suppressed"
+            rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+            exit 1
+          fi
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          echo "KERNEL_LAUNCH PASS request_id=20260902-cmi-flu-b1-001 target=${TARGET_KERNEL} accelerator=cpu automatic_retries=0"
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" ]] && [[ -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Runner-local request/source/runtime content removed"
