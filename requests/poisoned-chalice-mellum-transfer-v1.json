@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "request_id": "20260902-poisoned-chalice-mellum-transfer-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/mellum-transfer-v1",
+  "source_kernel": "renta0426/pseudo-stage2-starcoder2-7b-v1",
+  "source_expected_version": 1,
+  "builder_path": "scripts/poisoned_chalice_mellum_transfer_builder.py",
+  "builder_blob_sha": "0b8b48b2547454affbde6e730d4e43bde39421cf",
+  "canonical_research_commit": "9f6be68c27dc1f3326d68bed4e2abf80db893748",
+  "target_model": {
+    "id": "JetBrains/Mellum-4b-base",
+    "revision": "83cce2605fbdf6a3868627e9b0a5924e0072b94d"
+  },
+  "source_data": {
+    "repository": "https://github.com/Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026",
+    "commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+    "path": "data/7b_train_test/eval_results.parquet",
+    "sha256": "6e8559279e8ebd94ec8c25561c91d38c454a4e109ea0813b07864ff6a66d4068",
+    "rows": 2000
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 180,
+    "min_remaining_quota_hours": 4.0,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 30,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "pull one existing private source notebook",
+    "create one private Mellum transfer notebook version and start one T4 GPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "clean_room": {
+    "target_labels_embedded": false,
+    "target_labels_used_for_training_or_normalization": false,
+    "previous_model_scores_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "public_leaderboard_tuning_used": false,
+    "competition_submission_created": false
+  }
+}
