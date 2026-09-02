@@ -1,0 +1,107 @@
+name: CMI-Flu B1 bridge static validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/69-cmi-flu-b1-static.yml
+      - .github/workflows/70-cmi-flu-b1-launch.yml
+      - .github/workflows/71-cmi-flu-b1-status.yml
+      - requests/cmi-flu-b1-launch-v1.json
+      - scripts/cmi_flu_b1_kernel.py
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-b1-static-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Validate source locks and workflow security text
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Fetch exact PR-head files without credentials and validate
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast
+          import hashlib
+          import json
+          import os
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          repo = os.environ["HEAD_REPO"]
+          sha = os.environ["HEAD_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+          files = {
+              "request": "requests/cmi-flu-b1-launch-v1.json",
+              "runner": "scripts/cmi_flu_b1_kernel.py",
+              "launch": ".github/workflows/70-cmi-flu-b1-launch.yml",
+              "status": ".github/workflows/71-cmi-flu-b1-status.yml",
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def fetch(path: str, limit: int = 131072) -> bytes:
+              url = base + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {path}")
+              return data
+
+          request = json.loads(fetch(files["request"], 32768))
+          runner = fetch(files["runner"], 64000)
+          ast.parse(runner.decode("utf-8"), filename=files["runner"])
+          blob = hashlib.sha1(b"blob " + str(len(runner)).encode() + b"\0" + runner).hexdigest()
+          if blob != request["kernel_source_blob_sha"]:
+              raise SystemExit("request/source blob mismatch")
+          if request["resource"]["accelerator"] != "cpu":
+              raise SystemExit("B1 must remain CPU-only")
+          if request["automatic_compute_retries"] != 0:
+              raise SystemExit("automatic compute retries are prohibited")
+
+          for name in ("launch", "status"):
+              text = fetch(files[name]).decode("utf-8")
+              if "permissions: {}" not in text:
+                  raise SystemExit(f"{name} workflow must use empty permissions")
+              if "runs-on: ubuntu-24.04" not in text:
+                  raise SystemExit(f"{name} workflow must use GitHub-hosted Ubuntu")
+              if "environment: kaggle-readonry" not in text:
+                  raise SystemExit(f"{name} workflow must use protected Kaggle environment")
+              for forbidden in (
+                  "pull_request_target:",
+                  "workflow_run:",
+                  "issue_comment:",
+                  "runs-on: self-hosted",
+                  "set -x",
+                  "actions/checkout@",
+              ):
+                  if forbidden in text:
+                      raise SystemExit(f"forbidden workflow construct in {name}: {forbidden}")
+          print("CMI-Flu B1 static validation: PASS")
+          PY
