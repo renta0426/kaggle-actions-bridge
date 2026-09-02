@@ -8,6 +8,8 @@
   "source_expected_version": 1,
   "builder_path": "scripts/poisoned_chalice_mellum_transfer_builder.py",
   "builder_blob_sha": "0b8b48b2547454affbde6e730d4e43bde39421cf",
+  "nbformat_shim_path": "scripts/poisoned_chalice_nbformat_minimal.py",
+  "nbformat_shim_blob_sha": "9e91545a7f3318ca7e033c4f49f0eeda64ce4bfd",
   "canonical_research_commit": "9f6be68c27dc1f3326d68bed4e2abf80db893748",
   "target_model": {
     "id": "JetBrains/Mellum-4b-base",
