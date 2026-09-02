@@ -2,7 +2,9 @@
 
 ## Purpose
 
-`10-kaggle-readonly-smoke.yml` verifies that the protected `kaggle-readonly` Environment exposes a valid `KAGGLE_API_TOKEN` and that a GitHub-hosted runner can make one authenticated, read-only Kaggle API request.
+`10-kaggle-readonly-smoke.yml` verifies that the protected `kaggle-readonry` Environment exposes a valid `KAGGLE_API_TOKEN` and that a GitHub-hosted runner can make one authenticated, read-only Kaggle API request.
+
+The Environment name intentionally matches the existing GitHub Settings entry (`kaggle-readonry`). The spelling is retained to avoid recreating the Environment and moving its secrets/protection rules.
 
 The test does not install the Kaggle CLI and does not perform a write operation.
 
@@ -10,7 +12,7 @@ The test does not install the Kaggle CLI and does not perform a write operation.
 
 The workflow runs only when its own workflow file is pushed to `main` through the protected branch flow.
 
-Before the job starts, GitHub must apply the `kaggle-readonly` Environment protection rules. The owner reviews the pending deployment in GitHub Actions and explicitly approves it. Until approval, the Environment Secret is unavailable to the runner.
+Before the job starts, GitHub must apply the `kaggle-readonry` Environment protection rules. The owner reviews the pending deployment in GitHub Actions and explicitly approves it. Until approval, the Environment Secret is unavailable to the runner.
 
 ## Fixed security boundary
 
