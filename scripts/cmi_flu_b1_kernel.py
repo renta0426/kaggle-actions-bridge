@@ -17,7 +17,7 @@ CMI_COMMIT = "1e075cfa565698f708e872d22be629f97704a24f"
 REFERENCE_FOLDER_URL = "https://drive.google.com/drive/u/0/folders/1TFDWZCxGmPauW_CQW4yy94lR9opWz4mO"
 REFERENCE_SHA256 = {
     "GRCh38.113_gene_annotations.tsv": "f940650262d77aa1a4019b5b7f65f52828b2b682e8348560840f94ecc97886d7",
-    "all_challenge_virus_strains.txt": "5fff74a3787fe9db1e17e569fa8a677cbbbf981c5a8348560840f94ecc97886d7",
+    "all_challenge_virus_strains.txt": "5fff74a3787fe9db1e17e569fa8a677cbbbf981c5a834edfcd7c3a30a42dfd0e",
     "cytokine_name_map.csv": "453af19d588a4c1d0c0c313f0bdf7e413e61cdd1c43bc2cb94d204968ef5b79f",
     "flow_name_revised.csv": "aadafb8cfd6de388361b676d8082648154fa8b168b8b31a19847a729f4ebe21b",
     "hai_map.csv": "e94a73b9837f3187eb5086e20fdddedba4e596a1293b1539e36b8b251a40c255",
@@ -102,7 +102,7 @@ def attach_competition_data(repo: Path) -> None:
     source = find_competition_input()
     destination = repo / "data" / "raw"
     destination.mkdir(parents=True, exist_ok=True)
-    expected = (
+    required = {
         "participants.tsv",
         "investigations_260821.tsv",
         "publicData_cytokine.tsv",
@@ -114,12 +114,14 @@ def attach_competition_data(repo: Path) -> None:
         "2025LJI_serology.tsv",
         "sample_submission_part1.csv",
         "md5sum",
-    )
-    for name in expected:
-        src = source / name
-        if not src.is_file():
-            raise RuntimeError(f"required competition file missing: {name}")
-        (destination / name).symlink_to(src)
+    }
+    available = {path.name for path in source.iterdir() if path.is_file()}
+    missing = sorted(required - available)
+    if missing:
+        raise RuntimeError(f"required competition files missing: {missing}")
+    for src in source.iterdir():
+        if src.is_file():
+            (destination / src.name).symlink_to(src)
 
 
 def download_reference_files(repo: Path) -> None:
