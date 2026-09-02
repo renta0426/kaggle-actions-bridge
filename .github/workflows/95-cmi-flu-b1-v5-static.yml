@@ -6,11 +6,13 @@ on:
       - .github/workflows/95-cmi-flu-b1-v5-static.yml
       - .github/workflows/96-cmi-flu-b1-launch-v5.yml
       - requests/cmi-flu-b1-launch-v5.json
+      - docs/CMI_FLU_B1_ADMISSION_POLICY.md
   pull_request:
     paths:
       - .github/workflows/95-cmi-flu-b1-v5-static.yml
       - .github/workflows/96-cmi-flu-b1-launch-v5.yml
       - requests/cmi-flu-b1-launch-v5.json
+      - docs/CMI_FLU_B1_ADMISSION_POLICY.md
 
 permissions: {}
 
@@ -20,7 +22,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate queued global lock and single-file kernel 005
+    name: Validate resumable queued single-file kernel 005
     if: github.repository == 'renta0426/kaggle-actions-bridge'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -50,6 +52,7 @@ jobs:
 
           request = json.loads(read("requests/cmi-flu-b1-launch-v5.json", 32768))
           launch = read(".github/workflows/96-cmi-flu-b1-launch-v5.yml", 131072).decode("utf-8")
+          policy = read("docs/CMI_FLU_B1_ADMISSION_POLICY.md", 32768).decode("utf-8")
           if request["schema_version"] != 5 or request["request_id"] != "20260902-cmi-flu-b1-005":
               raise SystemExit("request identity mismatch")
           if request["parent_request_id"] != "20260902-cmi-flu-b1-004":
@@ -62,6 +65,7 @@ jobs:
               raise SystemExit("queued concurrency contract mismatch")
           required_launch = (
               "permissions: {}",
+              "workflow_dispatch:",
               "group: kaggle-resource-global",
               "queue: max",
               "environment: kaggle-readonry",
@@ -70,6 +74,11 @@ jobs:
               '"enable_gpu": False',
               '"enable_tpu": False',
               '"enable_internet": False',
+              "id: admission",
+              "CMI_B1_005_DEFERRED",
+              'handle.write("can_launch=false\\n")',
+              "if: steps.admission.outputs.can_launch == 'true'",
+              "if: steps.admission.outputs.can_launch == 'false'",
               "python_count=",
               '[[ "${python_count}" -eq 1 ]]',
               'kernels push -p "${kernel_dir}" --timeout 1800',
@@ -79,8 +88,13 @@ jobs:
                   raise SystemExit(f"launch guard missing: {marker}")
           if "cancel-in-progress: true" in launch:
               raise SystemExit("resource launch must not cancel an in-progress run")
+          if "another Kaggle kernel is active; count=" in launch:
+              raise SystemExit("account contention must defer instead of hard-failing")
           if launch.count("kernels push") != 1:
               raise SystemExit("launch must contain exactly one kernels push")
+          for marker in ("deferred, not executed", "no automatic retry or polling", "fresh protected-Environment approval", "workflow_dispatch"):
+              if marker not in policy:
+                  raise SystemExit(f"admission policy marker missing: {marker}")
 
           source = request["source"]
           raw = read(source["path"], 100000)
@@ -107,5 +121,5 @@ jobs:
               raise SystemExit("patched request id missing")
           if 'run_id = "b01-anchor-standalone-005"' not in text:
               raise SystemExit("patched run id missing")
-          print(f"CMI_B1_005_STATIC PASS patched_sha256={hashlib.sha256(text.encode()).hexdigest()}")
+          print(f"CMI_B1_005_STATIC PASS patched_sha256={hashlib.sha256(text.encode()).hexdigest()} admission=deferred-resumable")
           PY
