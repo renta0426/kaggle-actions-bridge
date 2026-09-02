@@ -1,56 +1,300 @@
 # kaggle-actions-bridge
 
-GitHub-hosted runnerからKaggle APIを限定的に操作するための、公開・専用ブリッジです。
+GitHub-hosted runnerからKaggleを**限定的・監査可能・人間承認付き**で操作するための公開ブリッジです。
+
+このリポジトリの目的は、AIエージェントにKaggleの一般目的shellを与えることではありません。KaggleのCompetition Rules、Terms of Use、Acceptable Use Policy、Community Guidelines、APIのrate limit、Notebook quotaを守りながら、事前定義したML・データサイエンス操作だけを再現可能に実行することです。
+
+> [!CAUTION]
+> Kaggleの無料CPU/GPU/TPU、Notebook、Dataset、Model、API、storageを、汎用計算、サーバーファーム、ジョブファーム、無料ストレージ、クローラ、回避用プロキシとして使用してはいけません。Kaggleの上限値は「使い切る権利」ではなく、プラットフォーム側の最大値です。
 
 ## 現在の状態
 
-**Bootstrap diagnostic: PASS**
+次の経路をGitHub-hosted Ubuntu runner上で確認済みです。
 
-Secretなしで、runner種別、実行主体、権限、外向き通信を確認しました。結果は[Bootstrap Diagnostic Result](docs/BOOTSTRAP_RESULT.md)に記録しています。保護されたEnvironmentと新しいKaggle tokenが設定されるまで、認証付きKaggle操作は有効化しません。
+- Bootstrap diagnostic
+- `KAGGLE_API_TOKEN`による認証
+- SHA-256 lock付きKaggle公式CLI 2.2.4
+- commit固定したNVIDIA `nvidia-kaggle` skillのread-only操作
+- private Datasetの作成とファイル存在確認
+- 参加済みCompetitionの指定ファイルdownload
+- Competition Discussion一覧とthread/commentの取得
+- 所有するprivate Notebookのlatest versionのpull
+
+private Notebookの`scriptVersionId`を指定したhistorical version取得は、latest pullとは別機能です。現時点ではNVIDIAのarchive経路とKaggle内部API経路で成功していないため、production capabilityとして扱いません。要求された識別子を無視してlatestへ黙って置換することも禁止します。
+
+Notebook push/run、Competition submission、Model操作、削除、公開範囲変更は、個別の検証と承認フローが完成するまで汎用操作として有効化しません。
+
+現在の保護Environment名は、既存設定に合わせて次の文字列です。
+
+```text
+kaggle-readonry
+```
+
+## ルールの優先順位
+
+AIエージェントは、実行のたびに次の順で最新情報を確認します。READMEの過去の記載や以前の成功runを、現在の許可根拠にしてはいけません。
+
+1. 対象Competitionの`Rules`
+2. Competitionの`Overview`、`Code Requirements`、`Data`、Host/Kaggle Staffの公式告知
+3. [Kaggle Terms of Use](https://www.kaggle.com/terms)
+4. [Kaggle Acceptable Use Policy](https://www.kaggle.com/aup)
+5. [Kaggle Community Guidelines](https://www.kaggle.com/community-guidelines)
+6. [Kaggle Public API documentation](https://www.kaggle.com/docs/api)
+7. [Kaggle Notebook documentation](https://www.kaggle.com/docs/notebooks)
+8. このリポジトリのポリシー
+
+上位の公式ルールがこのリポジトリより厳しい場合は公式ルールを適用します。このリポジトリの方が厳しい場合は、このリポジトリの制約を維持します。ルールを取得できない、内容が曖昧、Host告知とRulesが矛盾する、または対象操作への適用が判断できない場合は**fail closed**とし、実行しません。
+
+## Biohub Competitionで確認した例
+
+2026-09-02に、[Biohub - Cell Tracking During DevelopmentのRules](https://www.kaggle.com/competitions/biohub-cell-tracking-during-development/rules)とCompetition pageを確認しました。これは確認方法の例であり、他Competitionへ転用する共通ルールではありません。
+
+Competition固有の主な条件は次のとおりです。
+
+- 1日最大5 Submissions、Final Submissionsは最大2件
+- Teamは最大5名
+- Team外でのCompetition code/dataのprivate sharingは禁止
+- SubmissionはKaggle Notebook経由
+- CPU NotebookとGPU Notebookはそれぞれ12時間以内
+- Submission rerunではInternet accessを無効化
+- 出力ファイル名は`submission.csv`
+- External data/modelは、公開され、全参加者が実質的に利用可能で、過度な費用を要しないこと
+- 勝者は、training/inference code、計算環境、必要resourceを含む再現可能な説明を求められる
+
+RulesにはCompetition Dataの利用条件としてCC0が記載される一方、未同意者への無断提供を防ぐ合理的措置も要求されています。この公開ブリッジでは、Competition data、hidden-test関連情報、private Notebook、Notebook outputをGit、public log、cache、artifactへ保存しません。
+
+リソース面で特に重要なのは、Competitionの「12時間以内」は提出Notebookの適格性に関する上限であり、連続起動、quotaの意図的な消化、複数アカウント、汎用計算、storage abuseを許可する条項ではないことです。Competition Rulesに書かれていない利用態様にも、KaggleのAUP、Terms、Community Guidelinesが適用されます。
+
+## Kaggleのリソース関連ポリシー
+
+KaggleのAUPは、提供resourceを使ったcryptomining、DDoS、server farming、malware/hacking/circumvention、ML・データサイエンスと無関係な活動、過剰なcontent crawlingを禁止しています。
+
+Community Guidelinesでは、duplicate accountや、free storageなどのkernel resource abuseが即時banの対象になり得ることが明記されています。Termsでも、複数のactive Kaggle accountを保有・支配・運用することは禁止されています。
+
+Public APIにはdynamic rate limitingがあります。HTTP 429または`Too many requests`を受けた場合、即時再試行や別endpointへの迂回をせず、処理を停止して、意図しないloop・重複call・過剰paginationがないか確認します。
+
+## 絶対禁止事項
+
+このリポジトリを利用する全エージェントは、次を実行してはいけません。
+
+- 複数Kaggle account、代理account、別account tokenを使ってquota、submission limit、concurrency limit、banを回避する
+- Notebookをworker node、常駐server、generic batch farm、無料GPU farmとして運用する
+- cryptomining、DDoS、port scan、credential testing、malware、hacking tool、回避・難読化toolを実行する
+- ML・データサイエンスと無関係な計算やcontent生成をKaggle resourceへ載せる
+- keep-alive、再接続、無限loop、自動再起動によりsession/runtime制限を実質的に延長する
+- quotaを消費するためだけにCPU/GPU/TPUを起動する、または不要なacceleratorを選択する
+- Kaggle Dataset/Model/Notebook outputを一般的なbackup、artifact store、file relay、分割archive置場として使う
+- 未使用・無関係なDatasetやModelをNotebookへattachする
+- Kaggle contentを高頻度でcrawl、mirror、全件反復downloadする
+- Competitionのsubmission上限まで自動的に連続提出する
+- Competition data、private code、private Notebook、credentialをpublic repository、Actions log、cache、artifactへ出す
+- 外部PR、Issue、comment、fork、任意URL、任意shell文字列をSecret付きjobで実行する
+- exact version、file、dataset、competition等の要求を、成功させるために別resourceへ黙って置換する
+- CIを緑にする目的で、要求条件、検証条件、security check、resource guardrailを弱める
+
+## AIエージェント実行契約
+
+### 1. 実行前のRule Preflight
+
+認証付き操作やresource消費操作の前に、エージェントは最低限次を確認します。
+
+- Competition slugと対象resourceの完全な識別子
+- Rules、Overview/Code Requirements、Data、関連する公式告知の取得日時
+- Submission/day、Final Submission、Team、code/data sharing、external data、Internet、runtimeの各制約
+- Kaggle Terms、AUP、Community Guidelines上の禁止事項
+- 現在のactive session/runと、利用可能なCPU/GPU/TPU quota
+- download対象のファイル名、version、概算size
+- API call上限、pagination上限、poll interval
+- side effect、rollback、cleanup方法
+- 同じ`request_id`が未実行であること
+
+確認結果は、token、cookie、private contentを含まない短いmanifestとしてPRまたはrun logに残します。公式ページが取得できなければ、過去のcacheだけで実行してはいけません。
+
+### 2. Request Manifest
+
+resourceを消費する操作には、自由文ではなく検証可能なmanifestを使います。
+
+```json
+{
+  "schema_version": 1,
+  "request_id": "20260902-example-001",
+  "competition": "competition-slug",
+  "operation": "kernel_run",
+  "target": "owner/notebook-slug",
+  "resource": {
+    "accelerator": "gpu",
+    "expected_runtime_minutes": 180,
+    "hard_timeout_minutes": 210,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 50,
+    "poll_interval_seconds": 300,
+    "max_pages": 5
+  },
+  "side_effects": [
+    "create one private notebook version"
+  ],
+  "automatic_compute_retries": 0,
+  "rules_checked_at_utc": "YYYY-MM-DDTHH:MM:SSZ"
+}
+```
+
+未知field、自由なshell/Python、任意URL、任意package、未検証slug、上限のない整数を拒否します。manifestの承認後に内容を変更した場合は、承認を取り直します。
+
+### 3. 人間承認
+
+Environment approvalは、**そのcommit、そのmanifest、その1回のrun**だけを許可します。将来のrunへの包括承認ではありません。
+
+- public metadataのread-only確認を除き、認証付き操作は保護Environmentを通す
+- Dataset/Model/Notebookの作成・更新、download、resource起動、submission、delete、公開範囲変更は事前承認を必須とする
+- resourceを消費するrunの自動retryは禁止し、新しい原因確認と新しい承認を必要とする
+- submissionとFinal Submission選択は、Notebook実行承認と分離する
+- destructive operationとpublic化は、通常のwrite operationと分離する
+
+### 4. Resource concurrency
+
+複数エージェントが同じKaggle accountを同時に操作しても、安全性とquotaは共有されます。
+
+- resourceを消費するKaggle runは、account全体で原則1件だけactiveにする
+- GPU/TPU/CPU runを別workflowから同時起動しない
+- 全resource-consuming workflowで共通のglobal concurrency groupまたは排他的leaseを使用する
+- 起動前にKaggle側のactive session/runを再確認する
+- stateを確認できない場合は、新しいrunを起動しない
+- 1 requestからKaggle runを開始するAPI callは1回だけにする
+- timeout、network error、5xxで結果が不明な場合、再送前にKaggle側で作成済みか確認する
+
+並列実行が実験上必要な場合でも、Competition Rules、account quota、Kaggleの通常UIが認める範囲を確認し、目的、同時数、合計resource見積りを明示して個別承認を取ります。許容される同時数をquota消化の目標にしてはいけません。
+
+### 5. Notebook run
+
+- CPUで足りる処理にGPU/TPUを割り当てない
+- accelerator type、expected runtime、hard timeout、Internet設定をmanifestで固定する
+- hard timeoutはCompetition/platformの上限以下とし、上限ぎりぎりを意図的な通常運用にしない
+- `enable_internet`はCompetitionの提出条件に従う
+- 無限学習、無限探索、無期限待機、外部job worker化を禁止する
+- progressがない、入力が欠ける、output pathが想定外、quota情報が矛盾する場合は早期終了する
+- 失敗後にparameterを変えて自動再実行しない
+- 完了後は不要なactive sessionが残っていないことを確認する
+
+GitHub Actionsは長時間Notebookを監視し続けません。原則として、1回だけKaggle runを開始して終了し、状態確認は間隔を空けた別のbounded operationで行います。
+
+### 6. API、polling、crawl
+
+- unbounded loopと無制限paginationを禁止する
+- API call総数と最大page数をmanifestに明記する
+- 同じimmutable metadata/fileを1 request内で繰り返し取得しない
+- status pollingは既定300秒以上、明示的理由がある場合でも60秒未満にしない
+- HTTP 429では最低15分停止し、同じrun内で連打しない
+- 403、401、404を別endpoint・別account・header偽装で迂回しない
+- 5xx retryは指数backoff付きの少数回に限定し、write requestはidempotency確認なしに再送しない
+- Discussion、Notebook、Datasetの全件取得は、目的、page上限、保存先、cleanupを明示する
+- Web page scrapingよりKaggle公式CLI/APIを優先する
+
+### 7. Downloadとdata handling
+
+- 先にfile listとsizeを確認し、必要なnamed fileだけを取得する
+- full Competition datasetの反復downloadを避ける
+- 大容量dataをGitHub Actions経由で往復させず、可能ならKaggle Notebook内で直接使用する
+- public Actions logへresponse body、Notebook source、Discussion本文、Competition dataを出さない
+- GitHub cache/artifactをCompetition dataの保管場所にしない
+- runner-local dataはjob終了時に削除する
+- Team外へのprivate sharingを行わない
+- licenseが公開可能に見えても、対象CompetitionのData Security条項を毎回確認する
+
+### 8. Dataset、Model、storage
+
+Kaggleへのuploadは、対象ML作業に直接必要なartifactだけに限定します。
+
+- 既定はprivate
+- title、owner、用途、source、license、作成request IDを記録する
+- file countと合計sizeに明示的上限を置く
+- generic backup、checkpoint倉庫、temporary relay、重複versionの量産を禁止する
+- 作成後に存在、privacy、file一覧を確認する
+- 不要になったresourceの削除は、別のdestructive approvalで行う
+- synthetic dataはKaggleの表示要件に従って明示する
+
+### 9. Submission
+
+- Competitionの当日上限とremaining slotsを直前に再確認する
+- 1承認につき最大1 Submission
+- build/test成功を理由に自動submitしない
+- network timeout後に重複submitしない。submission historyを先に確認する
+- message、Notebook version、output file、checksumを固定する
+- Final Submissionの選択は別の明示承認とする
+- 複数accountやTeam mergeでsubmission上限を迂回しない
+
+### 10. Auditと失敗時の扱い
+
+run logへ残してよいのは、request ID、対象の公開識別子、operation、HTTP status class、件数、byte数、checksum、開始・終了時刻、resource種別、成功/失敗などの非機密metadataだけです。
+
+次を検知したら直ちに停止します。
+
+- 予期しないactive run、duplicate run、quota急減
+- HTTP 429、ban/suspension警告、abuse警告
+- 予期しない外向き通信
+- token、cookie、XSRF、private contentのlog出力
+- manifest外のDataset/Model/Notebook/submission作成
+- cleanup失敗
+
+停止後は、実行中runのcancel、GitHub Actionsの無効化、Kaggle tokenの失効、Environment Secret削除、run/audit確認の順で対応します。詳細は[Incident Response](docs/INCIDENT_RESPONSE.md)を参照してください。
+
+## 標準実行フロー
+
+```text
+1. 対象Competitionと操作を確定
+2. 最新Rules/AUP/Guidelinesを取得
+3. resource・API・side effectをmanifest化
+4. Secretなしvalidation
+5. PRでimmutable workflow/requestを確認
+6. mainへmerge
+7. Environmentで人間がその1回を承認
+8. 1つの定型operationだけ実行
+9. side effect、quota、active runを確認
+10. runner-local dataを削除し、最小metadataを記録
+```
+
+## CLIとNVIDIA skillの参照先
+
+CLI commandやNVIDIA skillの操作手順は、このREADMEへ複製しません。実際のcommand、metadata形式、Notebook/Dataset/Submission workflowは、利用するcommitに固定したupstream documentationを参照します。
+
+- [NVIDIA/nvidia-kaggle](https://github.com/NVIDIA/nvidia-kaggle)
+- [固定して検証したcommitのskill documentation](https://github.com/NVIDIA/nvidia-kaggle/tree/2b78cf29f5f30680764292a6592de8d53d4147a8/skills/nvidia-kaggle-skill)
+- [Kaggle公式CLI](https://github.com/Kaggle/kaggle-cli)
+- [Kaggle Public API documentation](https://www.kaggle.com/docs/api)
+
+upstreamの手順は「どう操作するか」を定義し、このREADMEは「その操作をこのブリッジから実行してよい条件」を定義します。両方を満たさない操作は実行しません。
 
 ## セキュリティ境界
 
-このリポジトリは次の原則で運用します。
-
-- GitHub-hosted runnerのみを使用する。self-hosted runnerは禁止する。
-- ローカルPCでは、このリポジトリのコードやworkflowを実行しない。
-- GitHub Personal Access Token、SSH秘密鍵、クラウド資格情報を登録しない。
-- workflowの設定可能な`GITHUB_TOKEN`権限は原則として空にする。GitHubが残す`metadata: read`以外を付与しない。
-- Kaggle認証情報は、承認付きEnvironment Secretとしてのみ保持する。
-- 外部Pull Request、Issue、コメント、fork由来のコードをSecret付きjobで実行しない。
-- `pull_request_target`、任意shell入力、任意URL取得、任意package指定を禁止する。
-- Kaggle competition data、Notebook出力、モデル、認証情報をcommit・cache・artifactへ保存しない。
-- 外部Actionを必要最小限にし、利用時は完全なcommit SHAへ固定して内容を監査する。
+- GitHub-hosted runnerのみを使用し、self-hosted runnerは禁止する
+- ローカルPCではこのリポジトリのworkflowを実行しない
+- GitHub PAT、SSH秘密鍵、deploy key、クラウド長期資格情報を登録しない
+- `permissions: {}`を既定とする
+- Kaggle tokenは承認付きEnvironment Secretとしてのみ保持する
+- 外部PR、fork、Issue、comment、`pull_request_target`、`workflow_run`からSecret付きjobを起動しない
+- 外部Actionは原則不使用とし、必要時は完全なcommit SHAへ固定して動的依存まで監査する
+- dependencyはversionとSHA-256を固定する
 
 詳細は[SECURITY.md](SECURITY.md)と[THREAT_MODEL.md](THREAT_MODEL.md)を参照してください。
 
 ## 想定アーキテクチャ
 
 ```text
-ChatGPT / GitHub Connector
+AI agent / GitHub Connector
         |
-        | 許可された定型requestだけをcommit
+        | allowlist済みmanifestをPR
         v
 Public GitHub repository
         |
-        | GitHub-hosted runner / permissions: {}
+        | protected main + Environment approval
         v
-Kaggle API
+GitHub-hosted runner / permissions: {}
+        |
+        | bounded official CLI/API operation
+        v
+Kaggle
 ```
-
-GitHub Actionsは任意コマンド実行基盤として使用しません。許可されたoperationをschemaで列挙し、入力値を検証してから固定実装を呼び出します。
-
-## Bootstrap診断
-
-`.github/workflows/00-bootstrap-diagnostic.yml`は次だけを行います。
-
-- repository、actor、event、refの確認
-- GitHub-hosted runnerであることの確認
-- 危険な資格情報用環境変数が存在しないことの確認
-- Kaggle、PyPI、GitHubへの認証なしHTTPS到達性確認
-- Python、Git、pipのバージョン確認
-
-外部Action、checkout、package install、Secret、cache、artifactは使用しません。
 
 ## 運用文書
 
@@ -62,4 +306,4 @@ GitHub Actionsは任意コマンド実行基盤として使用しません。許
 
 ## 非目標
 
-このリポジトリは、一般用途のCI、任意コードの実行、Kaggleデータの保管、private repositoryへのアクセス、ローカルPCの遠隔操作を目的としません。
+このリポジトリは、一般用途CI、任意コード実行、Kaggle resourceの最大消費、Kaggle dataの保管、private repositoryへのアクセス、ローカルPCの遠隔操作、複数account管理、resource limitの回避を目的としません。
