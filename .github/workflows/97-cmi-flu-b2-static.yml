@@ -17,11 +17,10 @@ on:
       - requests/cmi-flu-b2-launch-v1.json
       - payloads/cmi-flu-b2-001/**
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: "cmi-flu-b2-static-${{ github.ref }}"
+  group: cmi-flu-b2-static-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -29,12 +28,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out exact source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
       - name: Enforce secret-free validation boundary
         shell: bash
         run: |
@@ -42,22 +35,41 @@ jobs:
           for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
-          [[ "$(git rev-parse HEAD)" == "${GITHUB_SHA}" ]]
+          [[ "${GITHUB_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+          [[ "${GITHUB_ACTOR}" == "renta0426" ]]
 
-      - name: Reconstruct and validate immutable payload
+      - name: Fetch, reconstruct, and validate immutable payload
         shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from __future__ import annotations
           import hashlib
           import json
+          import os
           import pathlib
+          import ssl
           import subprocess
           import sys
+          import urllib.request
 
-          root = pathlib.Path('.').resolve()
-          request = json.loads((root / 'requests/cmi-flu-b2-launch-v1.json').read_text(encoding='utf-8'))
+          repository = 'renta0426/kaggle-actions-bridge'
+          sha = os.environ['EVENT_SHA']
+          if len(sha) != 40 or any(character not in '0123456789abcdef' for character in sha):
+              raise SystemExit('event SHA is not canonical')
+          base = f'https://raw.githubusercontent.com/{repository}/{sha}/'
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f'file exceeds byte budget: {path}')
+              return data
+
+          request = json.loads(read('requests/cmi-flu-b2-launch-v1.json', 32768))
           expected = {
               'schema_version': 1,
               'request_id': '20260903-cmi-flu-b2-001',
@@ -102,20 +114,19 @@ jobs:
           if payload != expected_payload:
               raise SystemExit('payload contract mismatch')
 
-          parts_dir = root / payload['parts_dir']
           expected_names = [f'part-{index:02d}' for index in range(payload['part_count'])]
-          actual_names = sorted(path.name for path in parts_dir.glob('part-*') if path.is_file())
-          if actual_names != expected_names:
-              raise SystemExit(f'fragment set mismatch: {actual_names}')
-          source = b''.join((parts_dir / name).read_bytes() for name in expected_names)
+          source = b''.join(
+              read(f"{payload['parts_dir']}/{name}", 4800)
+              for name in expected_names
+          )
           if len(source) != payload['size_bytes']:
               raise SystemExit(f'payload size mismatch: {len(source)}')
           digest = hashlib.sha256(source).hexdigest()
           if digest != payload['source_sha256']:
               raise SystemExit(f'payload SHA-256 mismatch: {digest}')
-          if (parts_dir / 'SHA256SUMS').read_text(encoding='utf-8') != f"{digest}  run_b2_kaggle_bundle.py\n":
+          if read(f"{payload['parts_dir']}/SHA256SUMS", 256).decode('utf-8') != f"{digest}  run_b2_kaggle_bundle.py\n":
               raise SystemExit('SHA256SUMS mismatch')
-          if (parts_dir / 'SIZE').read_text(encoding='utf-8') != '92839 scripts/run_b2_kaggle_bundle.py\n':
+          if read(f"{payload['parts_dir']}/SIZE", 256).decode('utf-8') != '92839 scripts/run_b2_kaggle_bundle.py\n':
               raise SystemExit('SIZE contract mismatch')
 
           text = source.decode('utf-8')
