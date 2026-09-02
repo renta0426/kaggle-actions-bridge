@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-poisoned-chalice-stage1-resume003-status-001",
+  "parent_request_id": "20260903-poisoned-chalice-stage1-resume-003",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_status_output",
+  "target": "renta0426/stage1-raw-fim-resume-v1",
+  "expected_kernel_version": 1,
+  "source_kernel_version": 3,
+  "output_allowlist": [
+    "run_manifest.json",
+    "submission.csv",
+    "feature_schema.json",
+    "source_shards.json"
+  ],
+  "base_verifier_path": "scripts/validate_poisoned_chalice_stage1_resume_output.py",
+  "base_verifier_blob_sha": "50307d5cc4ce305cda95f69d4dbf354cc9d743a6",
+  "provenance_verifier_path": "scripts/validate_poisoned_chalice_stage1_resume003_output.py",
+  "provenance_verifier_blob_sha": "1f5f3790e346e270249dbce2aae4494274979731",
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": []
+}
