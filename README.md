@@ -4,7 +4,9 @@ GitHub-hosted runnerからKaggle APIを限定的に操作するための、公�
 
 ## 現在の状態
 
-**Bootstrap phase**です。現時点ではKaggleトークンを使用せず、runner種別、実行主体、権限、外向き通信だけを診断します。診断と保護設定が完了するまで、認証付きKaggle操作は有効化しません。
+**Bootstrap diagnostic: PASS**
+
+Secretなしで、runner種別、実行主体、権限、外向き通信を確認しました。結果は[Bootstrap Diagnostic Result](docs/BOOTSTRAP_RESULT.md)に記録しています。保護されたEnvironmentと新しいKaggle tokenが設定されるまで、認証付きKaggle操作は有効化しません。
 
 ## セキュリティ境界
 
@@ -13,7 +15,7 @@ GitHub-hosted runnerからKaggle APIを限定的に操作するための、公�
 - GitHub-hosted runnerのみを使用する。self-hosted runnerは禁止する。
 - ローカルPCでは、このリポジトリのコードやworkflowを実行しない。
 - GitHub Personal Access Token、SSH秘密鍵、クラウド資格情報を登録しない。
-- workflowの`permissions`は原則として空にする。
+- workflowの設定可能な`GITHUB_TOKEN`権限は原則として空にする。GitHubが残す`metadata: read`以外を付与しない。
 - Kaggle認証情報は、承認付きEnvironment Secretとしてのみ保持する。
 - 外部Pull Request、Issue、コメント、fork由来のコードをSecret付きjobで実行しない。
 - `pull_request_target`、任意shell入力、任意URL取得、任意package指定を禁止する。
@@ -44,7 +46,7 @@ GitHub Actionsは任意コマンド実行基盤として使用しません。許
 
 - repository、actor、event、refの確認
 - GitHub-hosted runnerであることの確認
--危険な資格情報用環境変数が存在しないことの確認
+- 危険な資格情報用環境変数が存在しないことの確認
 - Kaggle、PyPI、GitHubへの認証なしHTTPS到達性確認
 - Python、Git、pipのバージョン確認
 
@@ -52,6 +54,7 @@ GitHub Actionsは任意コマンド実行基盤として使用しません。許
 
 ## 運用文書
 
+- [Bootstrap result](docs/BOOTSTRAP_RESULT.md)
 - [Operations](docs/OPERATIONS.md)
 - [Incident response](docs/INCIDENT_RESPONSE.md)
 - [Security policy](SECURITY.md)
