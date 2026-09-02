@@ -76,6 +76,16 @@ def literal_constants(tree: ast.Module) -> dict[str, object]:
     return values
 
 
+def imported_roots(tree: ast.Module) -> set[str]:
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            roots.add(node.module.split(".", 1)[0])
+    return roots
+
+
 def validate_status_request(payload: dict) -> None:
     expected = {
         "schema_version": 1,
@@ -140,8 +150,13 @@ def validate_provenance_verifier(data: bytes) -> None:
         ),
         "resume003 provenance verifier",
     )
-    if "subprocess" in source or "urllib" in source or "requests" in source:
-        raise RuntimeError("resume003 provenance verifier gained external execution or network access")
+    forbidden_imports = imported_roots(tree).intersection(
+        {"subprocess", "urllib", "requests", "socket", "http", "ftplib"}
+    )
+    if forbidden_imports:
+        raise RuntimeError(
+            f"resume003 provenance verifier gained external access imports: {sorted(forbidden_imports)}"
+        )
     if any(name in source for name in SECRET_NAMES):
         raise RuntimeError("resume003 provenance verifier references a credential")
 
