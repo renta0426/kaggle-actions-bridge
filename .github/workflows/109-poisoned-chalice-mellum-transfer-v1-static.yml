@@ -10,14 +10,20 @@ on:
     paths:
       - .github/workflows/109-poisoned-chalice-mellum-transfer-v1-static.yml
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   static:
-    name: Probe workflow startup without credentials
+    name: Probe pinned checkout without credentials
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
+      - name: Check out event revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 1
+          persist-credentials: false
       - name: Startup probe
         shell: bash
-        run: echo "MELLUM_STATIC_STARTUP PASS"
+        run: echo "MELLUM_STATIC_CHECKOUT PASS"
