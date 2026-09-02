@@ -1,0 +1,298 @@
+name: CMI-Flu B1 status and output verification
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/cmi-flu-b1-status-v1.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-b1-status-v1.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_KERNEL: renta0426/cmi-flu-b1-anchor-20260902-001
+
+jobs:
+  status:
+    name: Check one status and verify bounded outputs
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/71-cmi-flu-b1-status.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected CMI-Flu B1 status boundary: PASS"
+
+      - name: Validate fixed status request and prepare locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          request_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${REQUEST_PATH}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${request_url}" "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          from __future__ import annotations
+          import json
+          import re
+          import ssl
+          import sys
+          import urllib.request
+          from urllib.parse import urlparse
+
+          request_url, lock_url, lock_output = sys.argv[1:]
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def read(url: str, limit: int) -> bytes:
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected raw source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit("input exceeds fixed byte budget")
+              return data
+
+          request = json.loads(read(request_url, 16384))
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260902-cmi-flu-b1-status-001",
+              "parent_request_id": "20260902-cmi-flu-b1-001",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "kernel_status_output",
+              "target": "renta0426/cmi-flu-b1-anchor-20260902-001",
+              "api_budget": {"max_calls": 8, "max_pages": 1},
+              "side_effects": [],
+          }
+          if request != expected:
+              raise SystemExit("status request differs from fixed allowlist")
+
+          data = read(lock_url, 65536)
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          open(lock_output, "w", encoding="utf-8").write(text)
+          print("Fixed CMI-Flu B1 status request: PASS")
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl
+          import urllib.request
+          context = ssl.create_default_context()
+          for url in (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+          ):
+              request = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print("Current Kaggle policy/API page reachability: PASS")
+          PY
+
+      - name: Check live Competition pages and kernel status once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os
+          import re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+
+          api = KaggleApi()
+          api.authenticate()
+          pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          names = {
+              str((page.to_dict() if hasattr(page, "to_dict") else dict(page)).get("name") or "").strip().lower()
+              for page in pages
+          }
+          if "rules" not in names or "evaluation" not in names or not any("data" in name for name in names):
+              raise SystemExit("live Competition policy pages unavailable")
+          status = api.kernels_status(os.environ["TARGET_KERNEL"])
+          value = str(getattr(status, "status", status)).upper()
+          if "COMPLETE" in value:
+              print("KERNEL_STATUS state=complete")
+          elif "RUNNING" in value or "QUEUED" in value:
+              print("KERNEL_STATUS state=active")
+              raise SystemExit(3)
+          else:
+              print("KERNEL_STATUS state=failed_or_unknown")
+              raise SystemExit(4)
+          PY
+
+      - name: Download only allowlisted output files and verify aggregate metadata
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          output_dir="${WORKDIR}/output"
+          mkdir -p "${output_dir}"
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels output "${TARGET_KERNEL}" \
+            -p "${output_dir}" -q -o --page-size 20 \
+            --file-pattern '^(bridge-result\.json|summary\.md|submission\.csv)$' \
+            >"${WORKDIR}/output.stdout" 2>"${WORKDIR}/output.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/output.stdout" "${WORKDIR}/output.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "ERROR: bounded Kaggle output download failed; response suppressed"
+            exit 1
+          fi
+
+          "${WORKDIR}/venv/bin/python" - "${output_dir}" <<'PY'
+          from __future__ import annotations
+          import csv
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          expected_files = {"bridge-result.json", "summary.md", "submission.csv"}
+          files = {path.name for path in root.rglob("*") if path.is_file()}
+          if files != expected_files:
+              raise SystemExit(f"output file allowlist mismatch: {sorted(files)}")
+
+          metadata_path = next(root.rglob("bridge-result.json"))
+          submission_path = next(root.rglob("submission.csv"))
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          required = {
+              "schema_version", "request_id", "competition", "kernel_stage",
+              "cmi_commit", "python_version", "package_versions", "audit_passed",
+              "audit_checks", "run_id", "submission_rows", "submission_sha256",
+              "task_unique_counts", "minus99_tasks",
+          }
+          if set(metadata) != required:
+              raise SystemExit("bridge-result schema differs from fixed allowlist")
+          if metadata["schema_version"] != 1 or metadata["request_id"] != "20260902-cmi-flu-b1-001":
+              raise SystemExit("bridge-result request identity mismatch")
+          if metadata["competition"] != "cmi-flu-first-prediction-challenge":
+              raise SystemExit("bridge-result competition mismatch")
+          if metadata["kernel_stage"] != "b1_anchor":
+              raise SystemExit("bridge-result stage mismatch")
+          if metadata["cmi_commit"] != "1e075cfa565698f708e872d22be629f97704a24f":
+              raise SystemExit("bridge-result source commit mismatch")
+          if metadata["audit_passed"] is not True or metadata["submission_rows"] != 40:
+              raise SystemExit("B1 aggregate audit/submission contract failed")
+          if metadata["minus99_tasks"] != []:
+              raise SystemExit("B1 submission unexpectedly contains all--99 task")
+          expected_tasks = {"Task1.1", "Task1.2", "Task1.3", "Task1.4", "Task2.1", "Task2.2", "Task2.3"}
+          if set(metadata["task_unique_counts"]) != expected_tasks:
+              raise SystemExit("B1 task set mismatch")
+          if any(int(value) < 2 for value in metadata["task_unique_counts"].values()):
+              raise SystemExit("B1 contains a constant task")
+
+          digest = hashlib.sha256(submission_path.read_bytes()).hexdigest()
+          if digest != metadata["submission_sha256"]:
+              raise SystemExit("submission SHA-256 differs from kernel metadata")
+          with submission_path.open(newline="", encoding="utf-8") as handle:
+              rows = list(csv.reader(handle))
+          expected_header = [
+              "participant_id", "Task1.1", "Task1.2", "Task1.3", "Task1.4",
+              "Task2.1", "Task2.2", "Task2.3",
+          ]
+          if rows[0] != expected_header or len(rows) != 41:
+              raise SystemExit("submission CSV shape/header mismatch")
+
+          print(
+              "B1_OUTPUT_VERIFIED "
+              f"submission_sha256={digest} "
+              f"rows={metadata['submission_rows']} "
+              f"audit_checks={len(metadata['audit_checks'])} "
+              f"python={metadata['python_version']}"
+          )
+          for name in sorted(metadata["audit_checks"]):
+              item = metadata["audit_checks"][name]
+              print(
+                  "B1_AUDIT "
+                  f"name={name} rows={item['rows']} participants={item['participants']} "
+                  f"studies={item['studies']} passed={item['passed']}"
+              )
+          for name in sorted(metadata["package_versions"]):
+              print(f"B1_PACKAGE name={name} version={metadata['package_versions'][name]}")
+          PY
+
+      - name: Cleanup runner-local output
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Runner-local Kaggle output removed"
