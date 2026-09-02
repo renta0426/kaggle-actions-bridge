@@ -9,6 +9,7 @@ on:
       - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml
       - requests/poisoned-chalice-mellum-transfer-v1-launch.json
       - scripts/materialize_poisoned_chalice_mellum_v1.py
+      - scripts/materialize_poisoned_chalice_mellum_v1_private.py
       - scripts/validate_poisoned_chalice_mellum_v1.py
   pull_request:
     paths:
@@ -16,25 +17,34 @@ on:
       - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml
       - requests/poisoned-chalice-mellum-transfer-v1-launch.json
       - scripts/materialize_poisoned_chalice_mellum_v1.py
+      - scripts/materialize_poisoned_chalice_mellum_v1_private.py
       - scripts/validate_poisoned_chalice_mellum_v1.py
 
 permissions: {}
 
+concurrency:
+  group: poisoned-chalice-mellum-transfer-v1-static-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   static:
-    name: Validate request, materializer, bundle, and protected launch
+    name: Validate request and separated credential boundaries
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
-      - name: Fetch the exact event revision without credentials
+      - name: Fetch exact event files without credentials
         shell: bash
         env:
           SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
           EVENT_REPOSITORY: ${{ github.repository }}
           EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
           EVENT_ACTOR: ${{ github.actor }}
           EVENT_ACTOR_ID: ${{ github.actor_id }}
           EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           [[ "${EVENT_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
@@ -43,8 +53,15 @@ jobs:
           [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
           [[ "${EVENT_SENDER_ID}" == "71638068" ]]
           [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY; do
-            [[ -z "${!name-}" ]] || { echo "unexpected Kaggle credential: ${name}"; exit 1; }
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            [[ "${PR_HEAD_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+            [[ "${PR_AUTHOR}" == "renta0426" ]]
+          elif [[ "${EVENT_NAME}" != "push" ]]; then
+            echo "unexpected event: ${EVENT_NAME}"
+            exit 1
+          fi
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
           python3 - "${SOURCE_SHA}" <<'PY'
           from __future__ import annotations
@@ -53,16 +70,11 @@ jobs:
 
           sha = sys.argv[1]
           root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
-          paths = (
-              ".github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml",
-              "requests/poisoned-chalice-mellum-transfer-v1-launch.json",
-              "scripts/materialize_poisoned_chalice_mellum_v1.py",
-              "scripts/validate_poisoned_chalice_mellum_v1.py",
-          )
-          limits = {
+          paths = {
               ".github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml": 131072,
               "requests/poisoned-chalice-mellum-transfer-v1-launch.json": 32768,
               "scripts/materialize_poisoned_chalice_mellum_v1.py": 131072,
+              "scripts/materialize_poisoned_chalice_mellum_v1_private.py": 131072,
               "scripts/validate_poisoned_chalice_mellum_v1.py": 131072,
           }
 
@@ -75,51 +87,31 @@ jobs:
               urllib.request.HTTPSHandler(context=ssl.create_default_context()),
               RejectRedirects(),
           )
-          for path in paths:
+          for path, limit in paths.items():
               url = root + path
               parsed = urlparse(url)
               if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
                   raise SystemExit("unexpected bridge source origin")
               with opener.open(url, timeout=30) as response:
-                  data = response.read(limits[path] + 1)
-              if len(data) > limits[path]:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
                   raise SystemExit(f"bridge source exceeds byte budget: {path}")
               destination = pathlib.Path(path)
               destination.parent.mkdir(parents=True, exist_ok=True)
               destination.write_bytes(data)
-          print("MELLUM_STATIC_SOURCE PASS files=4 credentials=absent")
+          print("MELLUM_STATIC_SOURCE PASS files=5 credentials=absent")
           PY
 
-      - name: Install pinned credential-free validation dependencies
+      - name: Validate immutable request and separated secret steps
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m venv .static-venv
-          .static-venv/bin/python -m pip install \
-            --disable-pip-version-check --no-input --only-binary=:all: \
-            pandas==2.3.2 pyarrow==21.0.0 nbformat==5.10.4 >/dev/null
-          .static-venv/bin/python -m pip check >/dev/null
+          python3 scripts/validate_poisoned_chalice_mellum_v1.py
 
-      - name: Diagnose full credential-free Mellum materialization
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/mellum-static-materialize /tmp/mellum-static-bundle
-          .static-venv/bin/python scripts/materialize_poisoned_chalice_mellum_v1.py \
-            --request requests/poisoned-chalice-mellum-transfer-v1-launch.json \
-            --work-root /tmp/mellum-static-materialize \
-            --bundle-root /tmp/mellum-static-bundle
-
-      - name: Run complete bundle and protected-launch validation
-        shell: bash
-        run: |
-          set -euo pipefail
-          .static-venv/bin/python scripts/validate_poisoned_chalice_mellum_v1.py
-
-      - name: Cleanup validation environment
+      - name: Cleanup fetched validation files
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .static-venv /tmp/mellum-static-materialize /tmp/mellum-static-bundle
+          rm -rf .github requests scripts
           echo "MELLUM_STATIC_TEMPORARY_MATERIAL_REMOVED"
