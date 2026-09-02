@@ -22,7 +22,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.actor == 'renta0426' &&
       github.actor_id == '71638068'
-    environment: kaggle-readonly
+    # Keep the existing protected Environment name as created in GitHub Settings.
+    environment: kaggle-readonry
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -130,7 +131,7 @@ jobs:
 
           token = os.environ.get("KAGGLE_API_TOKEN", "")
           if not token:
-              fail("kaggle-readonly does not expose KAGGLE_API_TOKEN")
+              fail("kaggle-readonry does not expose KAGGLE_API_TOKEN")
           if token != token.strip():
               fail("KAGGLE_API_TOKEN contains surrounding whitespace")
           if not token.startswith("KGAT_"):
