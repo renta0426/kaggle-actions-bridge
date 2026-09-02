@@ -1,0 +1,340 @@
+name: Poisoned Chalice Stage1 request005 verified submission
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-request005-submit-v1.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-submit-poisoned-chalice-stage1-request005
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-request005-submit-v1.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/stage1-raw-fim-submission-v1
+  EXPECTED_KERNEL_VERSION: "2"
+
+jobs:
+  submit:
+    name: Reverify request005 version 2 and submit once
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Enforce protected submission boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/82-poisoned-chalice-stage1-request005-submit.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "POISONED_CHALICE_REQUEST005_SUBMISSION_BOUNDARY PASS"
+
+      - name: Validate exact submission request and prepare locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          request_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA}/${REQUEST_PATH}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA}/${LOCK_RELATIVE_PATH}"
+          python3 - "${request_url}" "${lock_url}" "${workdir}/kaggle.lock" "${workdir}/request.json" <<'PY'
+          from __future__ import annotations
+          import json
+          import re
+          import ssl
+          import sys
+          import urllib.request
+          from urllib.parse import urlparse
+
+          request_url, lock_url, lock_output, request_output = sys.argv[1:]
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def read(url: str, limit: int) -> bytes:
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected raw source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit("input exceeds fixed byte budget")
+              return data
+
+          request = json.loads(read(request_url, 16384))
+          expected_fields = {
+              "schema_version", "request_id", "parent_status_request_id",
+              "parent_kernel_request_id", "competition", "operation", "target",
+              "expected_kernel_version", "submission_file", "submission_sha256",
+              "submission_message", "api_budget", "side_effects",
+              "automatic_submission_retries",
+          }
+          if set(request) != expected_fields:
+              raise SystemExit("request005 submission schema differs from fixed allowlist")
+          if request["schema_version"] != 1:
+              raise SystemExit("unsupported submission request schema")
+          if request["request_id"] != "20260903-poisoned-chalice-stage1-request005-submit-001":
+              raise SystemExit("unexpected request005 submission request id")
+          if request["parent_status_request_id"] != "20260903-poisoned-chalice-stage1-request005-status-001":
+              raise SystemExit("unexpected parent status request")
+          if request["parent_kernel_request_id"] != "20260902-poisoned-chalice-stage1-raw-fim-005":
+              raise SystemExit("unexpected parent kernel request")
+          if request["competition"] != "poisoned-chalice-icse27" or request["operation"] != "competition_submit":
+              raise SystemExit("competition/operation mismatch")
+          if request["target"] != "renta0426/stage1-raw-fim-submission-v1":
+              raise SystemExit("target mismatch")
+          if request["expected_kernel_version"] != 2:
+              raise SystemExit("expected kernel version mismatch")
+          if request["submission_file"] != "submission.csv":
+              raise SystemExit("submission file mismatch")
+          if not re.fullmatch(r"[0-9a-f]{64}", str(request["submission_sha256"])):
+              raise SystemExit("invalid frozen submission SHA-256")
+          expected_message = "Stage1 raw_plus_fim frozen 10k OOF AUC 0.664524; no Public-LB tuning"
+          if request["submission_message"] != expected_message:
+              raise SystemExit("submission message mismatch")
+          if request["api_budget"] != {"max_calls": 10, "max_pages": 1}:
+              raise SystemExit("submission API budget mismatch")
+          if request["side_effects"] != ["submit one verified submission.csv to poisoned-chalice-icse27"]:
+              raise SystemExit("submission side-effect allowlist mismatch")
+          if request["automatic_submission_retries"] != 0:
+              raise SystemExit("automatic submission retries are prohibited")
+          pathlib = __import__("pathlib")
+          pathlib.Path(request_output).write_text(json.dumps(request, sort_keys=True), encoding="utf-8")
+
+          text = read(lock_url, 65536).decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          open(lock_output, "w", encoding="utf-8").write(text)
+          print("REQUEST005_SUBMISSION_REQUEST PASS automatic_retries=0")
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+
+      - name: Recheck rules, allowance, private version, and completed kernel
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os
+          import re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          api = KaggleApi()
+          api.authenticate()
+          competition = os.environ["TARGET_COMPETITION"]
+          pages = api.competition_list_pages(competition) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("live Competition policy pages unavailable")
+          rules = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", content["rules"])).casefold()
+          if any(phrase in rules for phrase in ("submissions are not allowed", "submissions are closed")):
+              raise SystemExit("live Competition rules indicate submission is unavailable")
+
+          limits = api.competition_get_submission_limits(competition)
+          allowed = int(getattr(limits, "num_allowed_now", 0) or 0)
+          today = int(getattr(limits, "num_today", 0) or 0)
+          total = int(getattr(limits, "num_total", 0) or 0)
+          if allowed < 1:
+              raise SystemExit("no Kaggle submission allowance remains at execution time")
+
+          with api.build_kaggle_client() as client:
+              request = ApiGetKernelRequest()
+              request.user_name = "renta0426"
+              request.kernel_slug = "stage1-raw-fim-submission-v1"
+              latest = client.kernels.kernels_api_client.get_kernel(request)
+          version = int(latest.metadata.current_version_number)
+          private = bool(latest.metadata.is_private)
+          if version != int(os.environ["EXPECTED_KERNEL_VERSION"]) or not private:
+              raise SystemExit(f"unexpected target version/privacy: version={version} private={private}")
+
+          status = api.kernels_status(os.environ["TARGET_KERNEL"])
+          value = str(getattr(status, "status", status)).upper()
+          if "COMPLETE" not in value:
+              raise SystemExit(f"target Kaggle kernel is not COMPLETE: {value}")
+          print(f"REQUEST005_SUBMISSION_PREFLIGHT PASS version={version} today={today} total={total} allowed_now={allowed}")
+          PY
+
+      - name: Download and revalidate exact frozen output
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          output_dir="${WORKDIR}/output"
+          mkdir -p "${output_dir}"
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels output "${TARGET_KERNEL}" \
+            -p "${output_dir}" -q -o --page-size 50 \
+            --file-pattern '^(run_manifest\.json|submission\.csv)$' \
+            >"${WORKDIR}/output.stdout" 2>"${WORKDIR}/output.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/output.stdout" "${WORKDIR}/output.stderr"
+          [[ "${rc}" -eq 0 ]] || { echo "ERROR: bounded Kaggle output download failed; response suppressed"; exit 1; }
+
+          "${WORKDIR}/venv/bin/python" - "${output_dir}" "${WORKDIR}/request.json" <<'PY'
+          from __future__ import annotations
+          import csv
+          import hashlib
+          import json
+          import math
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          request = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+          files = [path for path in root.rglob("*") if path.is_file()]
+          if {path.name for path in files} != {"run_manifest.json", "submission.csv"}:
+              raise SystemExit("output file allowlist mismatch")
+          manifest_path = next(path for path in files if path.name == "run_manifest.json")
+          submission_path = next(path for path in files if path.name == "submission.csv")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+          expected = {
+              "status": "complete",
+              "method": "raw_plus_fim",
+              "core_commit": "bcf6d44db86fdda4ac9dd07b2d0172de471ab67a",
+              "source_commit": "28c34307c71db733dab2744ec9ec46549e54d424",
+              "model_id": "bigcode/starcoder2-3b",
+              "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+              "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+              "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+              "train_rows": 10000,
+              "validation_rows": 5000,
+              "submission_rows": 5000,
+              "hidden_validation_labels_used": False,
+              "public_leaderboard_tuning_used": False,
+              "validation_labels_used_for_fit_or_feature_selection": False,
+              "assembled_from_private_kaggle_sources": True,
+          }
+          for key, value in expected.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"kernel manifest mismatch for {key}")
+          counts = manifest.get("feature_counts") or {}
+          if counts != {"base": 113, "structure_raw": 50, "fim": 11, "total": 174, "cdf_added_at_fit": 3}:
+              raise SystemExit("feature-family contract mismatch")
+          auc = float((manifest.get("reproduced_oof") or {}).get("auc", float("nan")))
+          if not math.isfinite(auc) or abs(auc - 0.664524) > 0.002:
+              raise SystemExit(f"frozen OOF reproduction mismatch: {auc}")
+
+          digest = hashlib.sha256(submission_path.read_bytes()).hexdigest()
+          if digest != request["submission_sha256"] or digest != manifest.get("submission_sha256"):
+              raise SystemExit("submission SHA-256 differs from request or manifest")
+          with submission_path.open(newline="", encoding="utf-8") as handle:
+              reader = csv.DictReader(handle)
+              if reader.fieldnames != ["sample_id", "membership_score"]:
+                  raise SystemExit("submission header mismatch")
+              rows = list(reader)
+          if len(rows) != 5000 or len({row["sample_id"] for row in rows}) != 5000:
+              raise SystemExit("submission sample coverage mismatch")
+          if not all(math.isfinite(float(row["membership_score"])) for row in rows):
+              raise SystemExit("submission contains non-finite score")
+          print(f"REQUEST005_FROZEN_SUBMISSION_VERIFIED sha256={digest} rows=5000 oof_auc={auc:.6f}")
+          PY
+
+      - name: Submit exactly once with no automatic retry
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - "${WORKDIR}/output" "${WORKDIR}/request.json" <<'PY'
+          from __future__ import annotations
+          import json
+          import os
+          import pathlib
+          import sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+
+          output = pathlib.Path(sys.argv[1])
+          request = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+          submission_path = next(output.rglob("submission.csv"))
+          api = KaggleApi()
+          api.authenticate()
+          response = api.competition_submit(
+              str(submission_path),
+              request["submission_message"],
+              os.environ["TARGET_COMPETITION"],
+              quiet=True,
+          )
+          reference = str(getattr(response, "ref", "") or getattr(response, "submission_ref", "") or "")
+          message = str(getattr(response, "message", "") or "")
+          if not reference and not message:
+              raise SystemExit("Kaggle submission response contained no confirmation")
+          print(f"REQUEST005_SUBMISSION_ACCEPTED ref={reference or '<not-returned>'} automatic_retries=0")
+          PY
+
+      - name: Cleanup runner-local output
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "REQUEST005_SUBMISSION_TEMPORARY_MATERIAL_REMOVED"
