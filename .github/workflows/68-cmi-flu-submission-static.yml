@@ -1,0 +1,110 @@
+name: CMI-Flu submission bridge static validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/68-cmi-flu-submission-static.yml
+      - .github/workflows/72-cmi-flu-b1-submit.yml
+      - .github/workflows/73-cmi-flu-b1-score.yml
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-submission-static-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Validate submission and score workflow security text
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Fetch exact PR-head workflows without credentials
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          python3 - <<'PY'
+          from __future__ import annotations
+          import os
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          repo = os.environ["HEAD_REPO"]
+          sha = os.environ["HEAD_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+          paths = {
+              "submit": ".github/workflows/72-cmi-flu-b1-submit.yml",
+              "score": ".github/workflows/73-cmi-flu-b1-score.yml",
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def fetch(path: str) -> str:
+              url = base + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(131073)
+              if len(data) > 131072:
+                  raise SystemExit(f"workflow too large: {path}")
+              return data.decode("utf-8")
+
+          workflows = {name: fetch(path) for name, path in paths.items()}
+          for name, text in workflows.items():
+              for required in (
+                  "permissions: {}",
+                  "runs-on: ubuntu-24.04",
+                  "environment: kaggle-readonry",
+                  "github.event_name == 'push'",
+                  "github.ref == 'refs/heads/main'",
+              ):
+                  if required not in text:
+                      raise SystemExit(f"required guard missing in {name}: {required}")
+              for forbidden in (
+                  "pull_request_target:",
+                  "workflow_run:",
+                  "issue_comment:",
+                  "runs-on: self-hosted",
+                  "set -x",
+                  "actions/checkout@",
+              ):
+                  if forbidden in text:
+                      raise SystemExit(f"forbidden construct in {name}: {forbidden}")
+
+          submit = workflows["submit"]
+          if submit.count('competitions submit "${TARGET_COMPETITION}"') != 1:
+              raise SystemExit("submission workflow must contain exactly one Competition submit call")
+          if "--wait" in submit:
+              raise SystemExit("submission workflow must not poll scoring")
+          if "competition_get_submission_limits" not in submit:
+              raise SystemExit("submission workflow must check live submission limits")
+          if "duplicate request refused" not in submit:
+              raise SystemExit("submission workflow must enforce idempotency")
+
+          score = workflows["score"]
+          if score.count("api.get_submission(str(ref))") != 1:
+              raise SystemExit("score workflow must read exactly one submission record")
+          if "competitions submit" in score:
+              raise SystemExit("score workflow must remain read-only")
+          if "20260902-cmi-flu-b1-score-00[1-3]" not in score:
+              raise SystemExit("score workflow must bound one-shot request identifiers")
+          print("CMI-Flu submission bridge static validation: PASS")
+          PY
