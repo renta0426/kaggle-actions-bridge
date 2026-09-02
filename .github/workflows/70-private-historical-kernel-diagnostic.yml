@@ -1,0 +1,441 @@
+name: Private historical kernel compatibility diagnostic
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/70-private-historical-kernel-diagnostic.yml
+
+permissions: {}
+
+concurrency:
+  group: private-historical-kernel-diagnostic
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  KAGGLE_CLI_VERSION: "2.2.4"
+  NVIDIA_KAGGLE_COMMIT: 2b78cf29f5f30680764292a6592de8d53d4147a8
+  NVIDIA_RUNTIME_BLOB: 7b46f7a702b2f82d5c1777011c1369f0ba88e00b
+  NVIDIA_ARCHIVE_BLOB: 78b643b4d8d041379e2f26b2a07faa072bf91adb
+  NVIDIA_ARCHIVE_CLI_BLOB: 1e4b1855c9159898f70183aa31960b16c0f06de9
+  TARGET_KERNEL_OWNER: renta0426
+  TARGET_KERNEL_SLUG: rsna-knee-public0033-meniscus-10-percent-residual
+  TARGET_SCRIPT_VERSION_ID: "346645650"
+  PUBLIC_CONTROL_KERNEL: cdeotte/titanic-wcg-xgboost-0-84688
+
+jobs:
+  verify-source:
+    name: Verify pinned NVIDIA archive source without secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Enforce secret-free boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          echo "SECRET_FREE_BOUNDARY PASS"
+
+      - name: Verify NVIDIA archive implementation at exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          git init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/NVIDIA/nvidia-kaggle.git
+          git -C "${workdir}/repo" -c protocol.version=2 fetch -q --depth=1 origin "${NVIDIA_KAGGLE_COMMIT}"
+          [[ "$(git -C "${workdir}/repo" rev-parse FETCH_HEAD)" == "${NVIDIA_KAGGLE_COMMIT}" ]]
+          git -C "${workdir}/repo" -c core.hooksPath=/dev/null checkout -q --detach FETCH_HEAD
+          base="skills/nvidia-kaggle-skill/scripts"
+          [[ "$(git -C "${workdir}/repo" rev-parse "HEAD:${base}/runtime.py")" == "${NVIDIA_RUNTIME_BLOB}" ]]
+          [[ "$(git -C "${workdir}/repo" rev-parse "HEAD:${base}/kernels/archive.py")" == "${NVIDIA_ARCHIVE_BLOB}" ]]
+          [[ "$(git -C "${workdir}/repo" rev-parse "HEAD:${base}/kernel_archive.py")" == "${NVIDIA_ARCHIVE_CLI_BLOB}" ]]
+          python3 -m py_compile \
+            "${workdir}/repo/${base}/runtime.py" \
+            "${workdir}/repo/${base}/kernels/archive.py" \
+            "${workdir}/repo/${base}/kernel_archive.py"
+          echo "PINNED_NVIDIA_ARCHIVE_SOURCE PASS"
+
+  live-diagnostic:
+    name: Compare official CLI and NVIDIA archive on private history
+    needs: verify-source
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/70-private-historical-kernel-diagnostic.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "PROTECTED_DIAGNOSTIC_BOUNDARY PASS"
+
+      - name: Prepare hash-locked Kaggle CLI and pinned NVIDIA source before secret exposure
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          import re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock too large")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle CLI pin missing")
+          open(output, "w", encoding="utf-8").write(text)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "${KAGGLE_CLI_VERSION}" >/dev/null
+
+          git init -q "${workdir}/nvidia"
+          git -C "${workdir}/nvidia" remote add origin https://github.com/NVIDIA/nvidia-kaggle.git
+          git -C "${workdir}/nvidia" -c protocol.version=2 fetch -q --depth=1 origin "${NVIDIA_KAGGLE_COMMIT}"
+          [[ "$(git -C "${workdir}/nvidia" rev-parse FETCH_HEAD)" == "${NVIDIA_KAGGLE_COMMIT}" ]]
+          git -C "${workdir}/nvidia" -c core.hooksPath=/dev/null checkout -q --detach FETCH_HEAD
+          base="skills/nvidia-kaggle-skill/scripts"
+          [[ "$(git -C "${workdir}/nvidia" rev-parse "HEAD:${base}/runtime.py")" == "${NVIDIA_RUNTIME_BLOB}" ]]
+          [[ "$(git -C "${workdir}/nvidia" rev-parse "HEAD:${base}/kernels/archive.py")" == "${NVIDIA_ARCHIVE_BLOB}" ]]
+          echo "LOCKED_RUNTIME_AND_PINNED_SOURCE PASS"
+
+      - name: Run bounded read-only compatibility diagnostic
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+          import sys
+          from dataclasses import dataclass
+
+          import requests
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          token = os.environ["KAGGLE_API_TOKEN"]
+          if not token.startswith("KGAT_"):
+              raise SystemExit("protected Kaggle token unavailable or malformed")
+
+          owner = os.environ["TARGET_KERNEL_OWNER"]
+          slug = os.environ["TARGET_KERNEL_SLUG"]
+          private_ref = f"{owner}/{slug}"
+          script_version_id = int(os.environ["TARGET_SCRIPT_VERSION_ID"])
+          public_ref = os.environ["PUBLIC_CONTROL_KERNEL"]
+          workdir = pathlib.Path(os.environ["WORKDIR"])
+          kaggle_cli = str(workdir / "venv" / "bin" / "kaggle")
+          scripts_dir = workdir / "nvidia" / "skills" / "nvidia-kaggle-skill" / "scripts"
+          sys.path.insert(0, str(scripts_dir))
+
+          from kernels.archive import (  # noqa: E402
+              LIST_VERSIONS,
+              SOURCE,
+              _get_view_model,
+              archive_kernel_version,
+              parse_kernel_ref,
+          )
+
+          @dataclass
+          class ServiceFailure(RuntimeError):
+              method: str
+              status: int
+              def __str__(self):
+                  return f"{self.method} HTTP {self.status}"
+
+          class BoundedWebClient:
+              def __init__(self, max_calls: int = 20):
+                  self.max_calls = max_calls
+                  self.calls: list[tuple[str, int]] = []
+                  self.session = requests.Session()
+                  self.session.trust_env = False
+                  self.session.headers.update({
+                      "Authorization": f"Bearer {token}",
+                      "User-Agent": "kaggle-actions-bridge-historical-diagnostic/1.0",
+                  })
+                  seed = self.session.get("https://www.kaggle.com", timeout=30)
+                  seed.raise_for_status()
+                  self.xsrf = self.session.cookies.get("XSRF-TOKEN")
+                  if not self.xsrf:
+                      raise RuntimeError("missing XSRF cookie")
+
+              def _request(self, method: str, body: dict):
+                  if len(self.calls) >= self.max_calls:
+                      raise RuntimeError("internal API call budget exceeded")
+                  response = self.session.post(
+                      f"https://www.kaggle.com/api/i/{method}",
+                      json=body,
+                      headers={"Content-Type": "application/json", "X-XSRF-TOKEN": self.xsrf},
+                      timeout=60,
+                      allow_redirects=False,
+                  )
+                  self.calls.append((method, response.status_code))
+                  if response.status_code != 200:
+                      raise ServiceFailure(method, response.status_code)
+                  return response
+
+              def post(self, method: str, body: dict):
+                  return self._request(method, body).json()
+
+              def post_text(self, method: str, body: dict):
+                  return self._request(method, body).text
+
+          def cli_pull(ref: str, label: str):
+              dest = workdir / label
+              shutil.rmtree(dest, ignore_errors=True)
+              dest.mkdir(parents=True, exist_ok=True)
+              cp = subprocess.run(
+                  [kaggle_cli, "kernels", "pull", ref, "-p", str(dest), "-m"],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  env=os.environ.copy(),
+                  timeout=180,
+                  check=False,
+              )
+              files = [p for p in dest.rglob("*") if p.is_file()]
+              source_files = [p for p in files if p.name != "kernel-metadata.json"]
+              total_bytes = sum(p.stat().st_size for p in source_files)
+              digest = None
+              if source_files:
+                  h = hashlib.sha256()
+                  for p in sorted(source_files):
+                      h.update(p.read_bytes())
+                  digest = h.hexdigest()
+              return cp.returncode, len(files), len(source_files), total_bytes, digest
+
+          # Official API metadata for the private notebook.
+          api = KaggleApi()
+          api.authenticate()
+          with api.build_kaggle_client() as client:
+              req = ApiGetKernelRequest()
+              req.user_name = owner
+              req.kernel_slug = slug
+              latest = client.kernels.kernels_api_client.get_kernel(req)
+          kernel_id = int(latest.metadata.id)
+          current_version = int(latest.metadata.current_version_number)
+          is_private = bool(latest.metadata.is_private)
+          if kernel_id <= 0 or current_version <= 0 or not is_private:
+              raise RuntimeError("unexpected private kernel metadata")
+          print(f"OFFICIAL_PRIVATE_METADATA PASS kernel_id={kernel_id} current_version={current_version} is_private={is_private}")
+
+          latest_rc, latest_files, latest_sources, latest_bytes, latest_hash = cli_pull(private_ref, "official-latest")
+          if latest_rc != 0 or latest_sources == 0:
+              raise RuntimeError("official latest private pull failed")
+          print(f"OFFICIAL_PRIVATE_LATEST PASS rc={latest_rc} files={latest_files} source_files={latest_sources} bytes={latest_bytes} sha256={latest_hash}")
+
+          web = BoundedWebClient(max_calls=20)
+
+          # Public/private A/B for the first NVIDIA archive dependency.
+          public_status = "PASS"
+          try:
+              public_view = _get_view_model(web, parse_kernel_ref(public_ref), tab="output")
+              public_kernel_id = int((public_view.get("kernel") or {}).get("id") or 0)
+              if public_kernel_id <= 0:
+                  public_status = "FAIL_NO_KERNEL_ID"
+          except ServiceFailure as exc:
+              public_status = f"FAIL_HTTP_{exc.status}"
+          print(f"NVIDIA_VIEW_MODEL_PUBLIC_CONTROL {public_status}")
+
+          private_view_status = "PASS"
+          try:
+              _get_view_model(web, parse_kernel_ref(private_ref), tab="output")
+          except ServiceFailure as exc:
+              private_view_status = f"HTTP_{exc.status}"
+          print(f"NVIDIA_VIEW_MODEL_PRIVATE status={private_view_status}")
+
+          # Bypass GetKernelViewModel using kernel_id supplied by the official API.
+          list_status = "PASS"
+          version_items = []
+          try:
+              listing = web.post(
+                  LIST_VERSIONS,
+                  {"kernelId": kernel_id, "sortOption": "VERSION_ID", "pageSize": max(current_version + 20, 200)},
+              )
+              version_items = listing.get("items") or []
+              if not isinstance(version_items, list):
+                  raise RuntimeError("ListKernelVersions items not list")
+          except ServiceFailure as exc:
+              list_status = f"HTTP_{exc.status}"
+          print(f"PRIVATE_LIST_KERNEL_VERSIONS status={list_status} returned={len(version_items)}")
+
+          mapped_version = None
+          mapped_field = None
+          mapped_run_id = None
+          for item in version_items:
+              version = item.get("version") or {}
+              run = item.get("run") or {}
+              version_number = int(version.get("versionNumber") or 0)
+              version_id = int(version.get("id") or 0)
+              run_id = int(run.get("id") or 0)
+              if version_id == script_version_id:
+                  mapped_version = version_number
+                  mapped_field = "version.id"
+                  mapped_run_id = run_id
+                  break
+              if run_id == script_version_id:
+                  mapped_version = version_number
+                  mapped_field = "run.id"
+                  mapped_run_id = run_id
+                  break
+          if mapped_version:
+              print(f"SCRIPT_VERSION_ID_MAPPING PASS field={mapped_field} version_number={mapped_version}")
+          else:
+              print("SCRIPT_VERSION_ID_MAPPING NOT_FOUND_IN_LIST_KERNEL_VERSIONS")
+
+          # Prefer the exact mapped version; otherwise test a tiny bounded set of historical version numbers.
+          candidates = []
+          if mapped_version and mapped_version != current_version:
+              candidates.append(mapped_version)
+          for candidate in (current_version - 1, current_version - 2, 1):
+              if 0 < candidate < current_version and candidate not in candidates:
+                  candidates.append(candidate)
+          candidates = candidates[:3]
+
+          historical_version = None
+          historical_result = None
+          for candidate in candidates:
+              result = cli_pull(f"{private_ref}/{candidate}", f"official-v{candidate}")
+              rc, file_count, source_count, byte_count, digest = result
+              print(f"OFFICIAL_PRIVATE_VERSION_PROBE version={candidate} rc={rc} files={file_count} source_files={source_count} bytes={byte_count}")
+              if rc == 0 and source_count > 0:
+                  historical_version = candidate
+                  historical_result = result
+                  break
+          if historical_version is None:
+              print("OFFICIAL_PRIVATE_HISTORICAL FAIL no tested historical version was retrievable")
+          else:
+              rc, file_count, source_count, byte_count, digest = historical_result
+              print(f"OFFICIAL_PRIVATE_HISTORICAL PASS version={historical_version} files={file_count} source_files={source_count} bytes={byte_count} sha256={digest}")
+
+          # scriptVersionId is an opaque URL id, not assumed to be a version number.
+          sid_rc, sid_files, sid_sources, sid_bytes, _ = cli_pull(
+              f"{private_ref}/{script_version_id}", "official-script-id-as-version"
+          )
+          print(f"OFFICIAL_SCRIPT_VERSION_ID_AS_VERSION rc={sid_rc} files={sid_files} source_files={sid_sources} bytes={sid_bytes}")
+
+          # If the internal list mapped the URL id to a run/session id, test the exact NVIDIA source endpoint once.
+          if mapped_run_id:
+              try:
+                  source_response = web._request(
+                      SOURCE,
+                      {"kernelSessionId": mapped_run_id, "includeOutputIfAvailable": False},
+                  )
+                  print(f"NVIDIA_PRIVATE_SOURCE_ENDPOINT status=HTTP_{source_response.status_code} bytes={len(source_response.content)}")
+              except ServiceFailure as exc:
+                  print(f"NVIDIA_PRIVATE_SOURCE_ENDPOINT status=HTTP_{exc.status}")
+
+          # Run NVIDIA's actual archive_kernel_version algorithm with the same private historical version.
+          nvidia_archive_status = "NOT_RUN_NO_HISTORICAL_VERSION"
+          if historical_version is not None:
+              try:
+                  archive_kernel_version(
+                      private_ref,
+                      workdir / "nvidia-private-archive",
+                      historical_version,
+                      include_outputs=False,
+                      force=True,
+                      client=web,
+                  )
+                  nvidia_archive_status = "PASS"
+              except ServiceFailure as exc:
+                  nvidia_archive_status = f"FAIL service={exc.method} http={exc.status}"
+              except Exception as exc:
+                  nvidia_archive_status = f"FAIL error_type={type(exc).__name__}"
+          print(f"NVIDIA_PRIVATE_EXACT_ARCHIVE {nvidia_archive_status}")
+
+          print(f"INTERNAL_API_CALLS_USED count={len(web.calls)} budget={web.max_calls}")
+          print("DIAGNOSTIC_COMPLETE content_not_logged=true side_effects=none")
+          PY
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" ]] && [[ -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "DIAGNOSTIC_TEMPORARY_CONTENT_REMOVED"
