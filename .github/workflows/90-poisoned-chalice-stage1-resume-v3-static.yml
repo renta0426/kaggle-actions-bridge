@@ -1,0 +1,128 @@
+name: Poisoned Chalice Stage1 cached continuation v3 static validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/90-poisoned-chalice-stage1-resume-v3-static.yml
+      - .github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml
+      - requests/poisoned-chalice-stage1-resume-v3.json
+      - scripts/poisoned_chalice_stage1_resume_builder.py
+      - scripts/poisoned_chalice_stage1_resume_v3_patch.py
+      - scripts/poisoned_chalice_stage1_dataset_shards.py
+      - scripts/validate_poisoned_chalice_stage1_resume_v3.py
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/90-poisoned-chalice-stage1-resume-v3-static.yml
+      - .github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml
+      - requests/poisoned-chalice-stage1-resume-v3.json
+      - scripts/poisoned_chalice_stage1_resume_builder.py
+      - scripts/poisoned_chalice_stage1_resume_v3_patch.py
+      - scripts/poisoned_chalice_stage1_dataset_shards.py
+      - scripts/validate_poisoned_chalice_stage1_resume_v3.py
+
+permissions: {}
+
+concurrency:
+  group: poisoned-chalice-stage1-resume-v3-static-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static:
+    name: Validate full-path CPU continuation boundary
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact event sources without credentials
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "1354356687" ]]
+          [[ "${EVENT_ACTOR}" == "renta0426" ]]
+          [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
+          [[ "${EVENT_SENDER_ID}" == "71638068" ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            [[ "${PR_HEAD_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+            [[ "${PR_AUTHOR}" == "renta0426" ]]
+          elif [[ "${EVENT_NAME}" != "push" ]]; then
+            echo "unexpected event: ${EVENT_NAME}"
+            exit 1
+          fi
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${SOURCE_SHA}" <<'PY'
+          from __future__ import annotations
+          import pathlib, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha = sys.argv[1]
+          files = {
+              ".github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml": 131072,
+              "requests/poisoned-chalice-stage1-resume-v3.json": 32768,
+              "scripts/poisoned_chalice_stage1_resume_builder.py": 131072,
+              "scripts/poisoned_chalice_stage1_resume_v3_patch.py": 32768,
+              "scripts/poisoned_chalice_stage1_dataset_shards.py": 32768,
+              "scripts/validate_poisoned_chalice_stage1_resume_v3.py": 131072,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path, limit in files.items():
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              destination = pathlib.Path(path)
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+          print("STAGE1_RESUME_V3_STATIC_SOURCE PASS files=6 credentials=absent")
+          PY
+
+      - name: Run request, builder, patcher, shard, notebook, and launch validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_poisoned_chalice_stage1_resume_v3.py \
+            --request requests/poisoned-chalice-stage1-resume-v3.json \
+            --builder scripts/poisoned_chalice_stage1_resume_builder.py \
+            --patcher scripts/poisoned_chalice_stage1_resume_v3_patch.py \
+            --shard-validator scripts/poisoned_chalice_stage1_dataset_shards.py \
+            --launch-workflow .github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml
+          echo "STAGE1_RESUME_V3_STATIC PASS source_version=3 full_path_inventory=true cpu=true gpu=false"
+
+      - name: Cleanup fetched source
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github requests scripts
+          echo "STAGE1_RESUME_V3_STATIC_TEMPORARY_MATERIAL_REMOVED"
