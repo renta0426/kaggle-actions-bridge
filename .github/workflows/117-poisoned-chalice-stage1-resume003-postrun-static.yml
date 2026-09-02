@@ -130,7 +130,7 @@ jobs:
           blob = hashlib.sha1(
               b"blob " + str(len(validator)).encode("ascii") + b"\0" + validator
           ).hexdigest()
-          if blob != "5df90d63dc4789a9738017a910afa6d078dba2c0":
+          if blob != "bf65fb2dcf1cf0bfd06a600a34e629e28acbd995":
               raise SystemExit("post-run validator Git blob changed")
           compile(validator, "validate_poisoned_chalice_stage1_resume003_postrun.py", "exec")
           print(
