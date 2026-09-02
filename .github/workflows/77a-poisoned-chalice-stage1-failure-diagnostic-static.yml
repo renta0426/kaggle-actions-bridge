@@ -1,0 +1,101 @@
+name: Poisoned Chalice failed-kernel diagnostic static validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/77-poisoned-chalice-stage1-failure-diagnostic.yml
+      - .github/workflows/77a-poisoned-chalice-stage1-failure-diagnostic-static.yml
+      - requests/poisoned-chalice-stage1-raw-fim-failure-diagnostic-v1.json
+
+permissions: {}
+
+jobs:
+  static:
+    name: Validate read-only failed-kernel diagnostic contract
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact PR-head files and enforce no-side-effect contract
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 - "${HEAD_SHA}" <<'PY'
+          from __future__ import annotations
+          import json
+          import ssl
+          import sys
+          import urllib.request
+
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+          context = ssl.create_default_context()
+
+          def read(path: str, limit: int) -> str:
+              req = urllib.request.Request(root + path, headers={"User-Agent": "kaggle-actions-bridge-static/1"})
+              with urllib.request.urlopen(req, timeout=30, context=context) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {path}")
+              return data.decode("utf-8")
+
+          request_path = "requests/poisoned-chalice-stage1-raw-fim-failure-diagnostic-v1.json"
+          workflow_path = ".github/workflows/77-poisoned-chalice-stage1-failure-diagnostic.yml"
+          request = json.loads(read(request_path, 16384))
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260902-poisoned-chalice-stage1-raw-fim-failure-diagnostic-001",
+              "parent_request_id": "20260902-poisoned-chalice-stage1-raw-fim-003",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_failure_diagnostic",
+              "target": "renta0426/stage1-raw-fim-submission-v1",
+              "api_budget": {"max_calls": 4, "max_pages": 1},
+              "side_effects": [],
+          }
+          if request != expected:
+              raise SystemExit("diagnostic request differs from exact allowlist")
+
+          workflow = read(workflow_path, 131072)
+          required = (
+              "permissions: {}",
+              "environment: kaggle-readonry",
+              "api.kernels_status(target)",
+              "api.kernels_logs(target)",
+              "KERNEL_SANITIZED_EXCEPTION_BEGIN",
+              "READ_ONLY_FAILURE_DIAGNOSTIC PASS api_calls=3 max_calls=4 side_effects=none",
+              "automatic",
+          )
+          for token in required[:-1]:
+              if token not in workflow:
+                  raise SystemExit(f"diagnostic workflow contract missing: {token}")
+
+          forbidden = (
+              "kernels push",
+              "competitions submit",
+              "competition_submit",
+              "datasets create",
+              "models create",
+              "kernels delete",
+              "datasets delete",
+              "models delete",
+              "cancel_kernel",
+              "actions/upload-artifact",
+              "actions/cache",
+              "workflow_dispatch",
+          )
+          lowered = workflow.casefold()
+          for token in forbidden:
+              if token.casefold() in lowered:
+                  raise SystemExit(f"side-effect or persistence token forbidden in diagnostic workflow: {token}")
+
+          if "print(log_text)" in workflow or "echo \"${KAGGLE_API_TOKEN}" in workflow:
+              raise SystemExit("raw private log or token could be emitted")
+          print("POISONED_CHALICE_FAILURE_DIAGNOSTIC_STATIC PASS parent_request=003 side_effects=none")
+          PY
