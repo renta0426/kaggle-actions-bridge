@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-poisoned-chalice-mellum-transfer-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/mellum-transfer-v1",
+  "prerequisite_kernel": "renta0426/stage1-raw-fim-submission-v1",
+  "research_source": {
+    "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+    "commit": "9f6be68c27dc1f3326d68bed4e2abf80db893748",
+    "files": [
+      {
+        "path": "scripts/build_mellum_transfer_notebook.py",
+        "git_blob_sha": "095725f10279431a0982e7ebb38faa5b03a7754e",
+        "max_bytes": 131072
+      },
+      {
+        "path": "src/poisoned_chalice/stage2.py",
+        "git_blob_sha": "9c2086f3c73ec5998ac3b50d7a4e166f6b1b4443",
+        "max_bytes": 131072
+      },
+      {
+        "path": "configs/mellum_transfer_v1.json",
+        "git_blob_sha": "2fa4b6cbe346283c9047b9228f6764bb52cecdd7",
+        "max_bytes": 32768
+      },
+      {
+        "path": "experiments/pseudo-stage2-transfer-v1/transfer_sample_manifest.parquet",
+        "git_blob_sha": "dedfd34d43e53c158398ae3cc99ed508cbe37f66",
+        "max_bytes": 2097152
+      }
+    ]
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 180,
+    "max_active_runs": 1,
+    "min_remaining_quota_hours": 4.0
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private notebook version and start one T4 GPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "artifact_retention_days": 1
+}
