@@ -6,24 +6,110 @@ on:
       - main
     paths:
       - .github/workflows/109-poisoned-chalice-mellum-transfer-v1-static.yml
+      - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml
+      - requests/poisoned-chalice-mellum-transfer-v1-launch.json
+      - scripts/materialize_poisoned_chalice_mellum_v1.py
+      - scripts/validate_poisoned_chalice_mellum_v1.py
   pull_request:
     paths:
       - .github/workflows/109-poisoned-chalice-mellum-transfer-v1-static.yml
+      - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml
+      - requests/poisoned-chalice-mellum-transfer-v1-launch.json
+      - scripts/materialize_poisoned_chalice_mellum_v1.py
+      - scripts/validate_poisoned_chalice_mellum_v1.py
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   static:
-    name: Probe pinned checkout without credentials
+    name: Validate request, materializer, bundle, and protected launch
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 15
     steps:
-      - name: Check out event revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Startup probe
+      - name: Fetch the exact event revision without credentials
         shell: bash
-        run: echo "MELLUM_STATIC_CHECKOUT PASS"
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "1354356687" ]]
+          [[ "${EVENT_ACTOR}" == "renta0426" ]]
+          [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
+          [[ "${EVENT_SENDER_ID}" == "71638068" ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected Kaggle credential: ${name}"; exit 1; }
+          done
+          python3 - "${SOURCE_SHA}" <<'PY'
+          from __future__ import annotations
+          import pathlib, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+          paths = (
+              ".github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml",
+              "requests/poisoned-chalice-mellum-transfer-v1-launch.json",
+              "scripts/materialize_poisoned_chalice_mellum_v1.py",
+              "scripts/validate_poisoned_chalice_mellum_v1.py",
+          )
+          limits = {
+              ".github/workflows/110-poisoned-chalice-mellum-transfer-v1-launch.yml": 131072,
+              "requests/poisoned-chalice-mellum-transfer-v1-launch.json": 32768,
+              "scripts/materialize_poisoned_chalice_mellum_v1.py": 131072,
+              "scripts/validate_poisoned_chalice_mellum_v1.py": 131072,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path in paths:
+              url = root + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limits[path] + 1)
+              if len(data) > limits[path]:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              destination = pathlib.Path(path)
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+          print("MELLUM_STATIC_SOURCE PASS files=4 credentials=absent")
+          PY
+
+      - name: Install pinned credential-free validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .static-venv
+          .static-venv/bin/python -m pip install \
+            --disable-pip-version-check --no-input --only-binary=:all: \
+            pandas==2.3.2 pyarrow==21.0.0 nbformat==5.10.4 >/dev/null
+          .static-venv/bin/python -m pip check >/dev/null
+
+      - name: Run full credential-free Mellum materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          .static-venv/bin/python scripts/validate_poisoned_chalice_mellum_v1.py
+
+      - name: Cleanup validation environment
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .static-venv
+          echo "MELLUM_STATIC_TEMPORARY_MATERIAL_REMOVED"
