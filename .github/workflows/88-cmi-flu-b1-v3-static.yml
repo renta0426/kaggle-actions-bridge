@@ -1,0 +1,172 @@
+name: CMI-Flu B1 request 003 static validation
+
+on:
+  push:
+    paths:
+      - .github/workflows/88-cmi-flu-b1-v3-static.yml
+      - .github/workflows/90-cmi-flu-b1-launch-v3.yml
+      - .github/workflows/91-cmi-flu-b1-status-v3.yml
+      - scripts/cmi_flu_b1_kernel_impl.py
+      - scripts/cmi_flu_b1_kernel_v3.py
+      - requests/cmi-flu-b1-launch-v3.json
+  pull_request:
+    paths:
+      - .github/workflows/88-cmi-flu-b1-v3-static.yml
+      - .github/workflows/90-cmi-flu-b1-launch-v3.yml
+      - .github/workflows/91-cmi-flu-b1-status-v3.yml
+      - scripts/cmi_flu_b1_kernel_impl.py
+      - scripts/cmi_flu_b1_kernel_v3.py
+      - requests/cmi-flu-b1-launch-v3.json
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-b1-v3-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate bridge-contained source and request 003
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact event sources without credentials
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "${SOURCE_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AZURE_CLIENT_SECRET GOOGLE_APPLICATION_CREDENTIALS; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import ssl
+          import sys
+          import tempfile
+          import urllib.request
+          from urllib.parse import urlparse
+
+          repo, sha = os.environ["SOURCE_REPO"], os.environ["SOURCE_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+          paths = {
+              "impl": "scripts/cmi_flu_b1_kernel_impl.py",
+              "entry": "scripts/cmi_flu_b1_kernel_v3.py",
+              "request": "requests/cmi-flu-b1-launch-v3.json",
+          }
+
+          def read(path: str, limit: int) -> bytes:
+              url = base + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with urllib.request.urlopen(url, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              return data
+
+          impl = read(paths["impl"], 100_000)
+          entry = read(paths["entry"], 16_384)
+          request = json.loads(read(paths["request"], 32_768))
+          blob = lambda data: hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+          expected = {
+              "schema_version": 3,
+              "request_id": "20260902-cmi-flu-b1-003",
+              "parent_request_id": "20260902-cmi-flu-b1-002",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "kernel_run",
+              "target": "renta0426/cmi-flu-b1-anchor-20260902-003",
+              "kernel_files": {
+                  "implementation": {"path": paths["impl"], "blob_sha": blob(impl)},
+                  "entrypoint": {"path": paths["entry"], "blob_sha": blob(entry)},
+              },
+              "cmi_contract_commit": "6362cd8596cd996d13f66615eb1833ad26af1b39",
+              "cmi_standalone_runner_blob": "7e28ed606f63883f9c2e230dfea1382389dce23b",
+              "resource": {"accelerator": "cpu", "expected_runtime_minutes": 15, "hard_timeout_minutes": 30, "max_active_runs": 1},
+              "api_budget": {"max_calls": 20, "poll_interval_seconds": 300, "max_pages": 2},
+              "side_effects": ["create one private notebook version and start one CPU run"],
+              "automatic_compute_retries": 0,
+              "enable_internet": False,
+              "rules_checked_at_utc": "2026-09-02T13:40:00Z",
+          }
+          if request != expected:
+              raise SystemExit("request 003 differs from fixed allowlist")
+
+          impl_text, entry_text = impl.decode("utf-8"), entry.decode("utf-8")
+          compile(impl_text, paths["impl"], "exec")
+          compile(entry_text, paths["entry"], "exec")
+          imports = set()
+          for node in ast.walk(ast.parse(impl_text)):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name.split(".")[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split(".")[0])
+          forbidden = {"requests", "httpx", "socket", "subprocess", "urllib"}
+          if imports & forbidden:
+              raise SystemExit(f"standalone implementation has forbidden network/process imports: {sorted(imports & forbidden)}")
+          for literal in ("https://", "http://", "github.com", "drive.google.com", "git fetch", "pip install"):
+              if literal in impl_text:
+                  raise SystemExit(f"unexpected runtime external dependency literal: {literal}")
+          for required in (
+              'REQUEST_ID = "20260902-cmi-flu-b1-003"',
+              'CMI_CONTRACT_COMMIT = "6362cd8596cd996d13f66615eb1833ad26af1b39"',
+              'CMI_STANDALONE_RUNNER_BLOB = "7e28ed606f63883f9c2e230dfea1382389dce23b"',
+              "implementation.REQUEST_ID = REQUEST_ID",
+              "implementation.CMI_COMMIT = CMI_CONTRACT_COMMIT",
+          ):
+              if required not in entry_text:
+                  raise SystemExit(f"entrypoint provenance marker missing: {required}")
+
+          with tempfile.TemporaryDirectory() as tmp:
+              root = pathlib.Path(tmp)
+              (root / "cmi_flu_b1_kernel_impl.py").write_bytes(impl)
+              (root / "cmi_flu_b1_kernel_v3.py").write_bytes(entry)
+              sys.path.insert(0, str(root))
+              try:
+                  import cmi_flu_b1_kernel_impl as module
+                  import cmi_flu_b1_kernel_v3 as entrypoint  # noqa: F401
+                  assert module.REQUEST_ID == "20260902-cmi-flu-b1-003"
+                  assert module.CMI_COMMIT == "6362cd8596cd996d13f66615eb1833ad26af1b39"
+                  assert module.SOURCE_BLOBS["run_b1_kaggle_standalone.py"] == "7e28ed606f63883f9c2e230dfea1382389dce23b"
+                  try:
+                      import numpy as np
+                      import pandas as pd
+                  except ModuleNotFoundError:
+                      print("CMI_B1_V3_SYNTHETIC skipped=scientific_stack_unavailable")
+                  else:
+                      assert module.canonical_timepoint("Day 0") == "0"
+                      assert module.canonical_cytokine("IP10") == "CXCL10"
+                      assert module.canonical_flow("ASC") == "Antibody-secreting_cells_(ASC)"
+                      assert module.canonical_aim("CON") == "Conserved"
+                      assert module.canonical_strain("H3N2 A/Test_cell").endswith("_MDCK")
+                      frame = pd.DataFrame({"participant_id": ["p", "p", "p"], "timepoint": [-14, 0, "Pre-vacc"], "value": [10.0, 20.0, 99.0]})
+                      pre = module.select_pre_vacc(frame, ["participant_id"])
+                      assert float(pre.loc[0, "pre_vacc"]) == 99.0
+                      fallback = module.select_pre_vacc(frame.iloc[:2].copy(), ["participant_id"])
+                      assert float(fallback.loc[0, "pre_vacc"]) == 15.0
+                      assert np.allclose(module.percentile_rank([10.0, 20.0, 30.0], -1), [1.0, 0.5, 0.0])
+                      hai = pd.DataFrame({
+                          "participant_id": ["a", "a", "b", "b"],
+                          "subject": ["a", "a", "b", "b"],
+                          "study_accession": ["s", "s", "s", "s"],
+                          "timepoint": ["Pre-vacc"] * 4,
+                          "virus_strain": ["x", "y", "x", "y"],
+                          "assay": ["HAI"] * 4,
+                          "value": [10.0, 40.0, 20.0, 80.0],
+                      })
+                      anchors = module.build_hai_anchor(hai, ["x", "y"])
+                      assert np.allclose(sorted(anchors["anchor"]), [20.0, 40.0])
+                      print("CMI_B1_V3_SYNTHETIC PASS")
+              finally:
+                  sys.path.remove(str(root))
+          print(f"CMI_B1_V3_STATIC PASS impl_blob={blob(impl)} entry_blob={blob(entry)}")
+          PY
