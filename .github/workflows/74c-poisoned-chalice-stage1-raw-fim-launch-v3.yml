@@ -1,0 +1,359 @@
+name: Poisoned Chalice Stage1 raw+FIM corrected private GPU launch v3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-raw-fim-launch-v3.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-raw-fim-launch-v3.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/stage1-raw-fim-submission-v1
+  SOURCE_BASE_KERNEL: renta0426/starter-plus-10k-v2-continuation
+  SOURCE_FIM_KERNEL: renta0426/selective-fim-10k-v1
+
+jobs:
+  validate:
+    name: Validate corrected request without secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact request, source pins, and owner boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${EVENT_SHA}" <<'PY'
+          import hashlib, json, ssl, sys, urllib.request
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+          def read(path, limit):
+              with urllib.request.urlopen(root + path, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"input too large: {path}")
+              return data
+          request = json.loads(read("requests/poisoned-chalice-stage1-raw-fim-launch-v3.json", 32768))
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260902-poisoned-chalice-stage1-raw-fim-004",
+              "parent_failed_request_id": "20260902-poisoned-chalice-stage1-raw-fim-003",
+              "failure_diagnostic_request_id": "20260902-poisoned-chalice-stage1-raw-fim-failure-diagnostic-001",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_run",
+              "target": "renta0426/stage1-raw-fim-submission-v1",
+              "builder_path": "scripts/poisoned_chalice_stage1_kernel_builder.py",
+              "builder_blob_sha": "5d8c4dc7d8a0572fc2d12c38c06479c106d37c89",
+              "patcher_path": "scripts/poisoned_chalice_stage1_namespace_patch.py",
+              "patcher_blob_sha": "1187bc6b3b14d2a4cdbf50bd6ef49b95363aac46",
+              "private_source_kernels": {
+                  "base": "renta0426/starter-plus-10k-v2-continuation",
+                  "fim_structure": "renta0426/selective-fim-10k-v1",
+              },
+              "resource": {
+                  "accelerator": "gpu", "machine_shape": "NvidiaTeslaT4",
+                  "min_remaining_quota_hours": 5.0, "max_active_runs": 1,
+              },
+              "side_effects": [
+                  "pull two existing private source notebooks",
+                  "create one corrected private notebook version on the existing target and start one T4 GPU run",
+              ],
+              "automatic_compute_retries": 0,
+              "enable_internet": True,
+              "failure_fix": "namespace flattened runner constants so Starter++ EXPECTED_TRAIN_ROWS remains the per-language dictionary; add stable nbformat cell ids",
+          }
+          if request != expected:
+              raise SystemExit("corrected request differs from exact allowlist")
+          for path, expected_blob in (
+              (request["builder_path"], request["builder_blob_sha"]),
+              (request["patcher_path"], request["patcher_blob_sha"]),
+          ):
+              data = read(path, 131072)
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != expected_blob:
+                  raise SystemExit(f"source blob mismatch: {path}")
+          print("CORRECTED_REQUEST_004_STATIC PASS")
+          PY
+
+  launch:
+    name: Verify failed v1 and launch exactly one corrected T4 version
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/74c-poisoned-chalice-stage1-raw-fim-launch-v3.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "PROTECTED_CORRECTED_LAUNCH_BOUNDARY PASS"
+
+      - name: Prepare SHA-256 locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA}/${LOCK_RELATIVE_PATH}"
+          python3 - "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          import re, ssl, sys, urllib.request
+          url, output = sys.argv[1:]
+          with urllib.request.urlopen(url, timeout=30, context=ssl.create_default_context()) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock too large")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          open(output, "w", encoding="utf-8").write(text)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+          echo "LOCKED_KAGGLE_CLI PASS"
+
+      - name: Recheck live rules, quota, failed target version, sources, and active sessions
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          import os, re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api = KaggleApi(); api.authenticate()
+          pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("live Competition rules/evaluation unavailable")
+          def plain(text):
+              return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text.replace(r"\%", "%"))).casefold()
+          evaluation = plain(content["evaluation"])
+          if not all(term in evaluation for term in ("auc", "novelty", "1%", "false-positive")):
+              raise SystemExit("live evaluation contract mismatch")
+          rules = plain(content["rules"])
+          for phrase in (
+              "external data is not allowed", "external data are not allowed",
+              "internet access is prohibited", "internet must be disabled",
+              "pretrained models are not allowed", "pre-trained models are not allowed",
+              "gpu use is prohibited",
+          ):
+              if phrase in rules:
+                  raise SystemExit(f"live rule conflict: {phrase}")
+          quota = api.quota_view()
+          gpu = getattr(quota, "gpu_quota", None)
+          used = getattr(gpu, "time_used", None) if gpu is not None else None
+          total = getattr(gpu, "total_time_allowed", None) if gpu is not None else None
+          if used is None or total is None:
+              raise SystemExit("GPU quota unavailable")
+          remaining = max(0.0, (total - used).total_seconds() / 3600.0)
+          if remaining < 5.0:
+              raise SystemExit(f"insufficient GPU quota: {remaining:.2f}h")
+          for ref in (os.environ["SOURCE_BASE_KERNEL"], os.environ["SOURCE_FIM_KERNEL"]):
+              state = str(getattr(api.kernels_status(ref), "status", "")).upper()
+              if "COMPLETE" not in state:
+                  raise SystemExit(f"source kernel not COMPLETE: {ref}")
+          target_state = str(getattr(api.kernels_status(os.environ["TARGET_KERNEL"]), "status", "")).upper()
+          if "ERROR" not in target_state and "FAILED" not in target_state:
+              raise SystemExit(f"target is no longer the failed request-003 kernel: {target_state}")
+          with api.build_kaggle_client() as client:
+              req = ApiGetKernelRequest()
+              req.user_name = "renta0426"
+              req.kernel_slug = "stage1-raw-fim-submission-v1"
+              latest = client.kernels.kernels_api_client.get_kernel(req)
+          current_version = int(latest.metadata.current_version_number)
+          if current_version != 1 or not bool(latest.metadata.is_private):
+              raise SystemExit(f"unexpected target version/privacy before corrected retry: version={current_version}")
+          active = []
+          for item in (api.kernels_list(user="renta0426", sort_by="dateRun", page_size=10) or [])[:10]:
+              ref = str(getattr(item, "ref", ""))
+              if not ref or ref == os.environ["TARGET_KERNEL"]:
+                  continue
+              state = str(getattr(api.kernels_status(ref), "status", "")).upper()
+              if any(token in state for token in ("RUNNING", "QUEUED", "PENDING")):
+                  active.append(ref)
+          if active:
+              raise SystemExit(f"another Kaggle kernel is active; count={len(active)}")
+          print(f"CORRECTED_LIVE_PREFLIGHT PASS target_version=1 target_state=error quota_remaining_hours={remaining:.2f}")
+          PY
+
+      - name: Pull only the two allowlisted private source notebooks
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          base_dir="${WORKDIR}/source-base"; fim_dir="${WORKDIR}/source-fim"
+          mkdir -p "${base_dir}" "${fim_dir}"
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels pull "${SOURCE_BASE_KERNEL}" -p "${base_dir}" -m >"${WORKDIR}/base.stdout" 2>"${WORKDIR}/base.stderr"
+          base_rc=$?
+          "${WORKDIR}/venv/bin/kaggle" kernels pull "${SOURCE_FIM_KERNEL}" -p "${fim_dir}" -m >"${WORKDIR}/fim.stdout" 2>"${WORKDIR}/fim.stderr"
+          fim_rc=$?
+          set -e
+          rm -f "${WORKDIR}/base.stdout" "${WORKDIR}/base.stderr" "${WORKDIR}/fim.stdout" "${WORKDIR}/fim.stderr"
+          [[ "${base_rc}" -eq 0 && "${fim_rc}" -eq 0 ]] || { echo "PRIVATE_SOURCE_PULL FAIL content_logged=false"; exit 1; }
+          "${WORKDIR}/venv/bin/python" - "${base_dir}" "${fim_dir}" <<'PY'
+          import json, pathlib, sys
+          expected = {
+              pathlib.Path(sys.argv[1]): "renta0426/starter-plus-10k-v2-continuation",
+              pathlib.Path(sys.argv[2]): "renta0426/selective-fim-10k-v1",
+          }
+          for root, expected_id in expected.items():
+              notebooks = list(root.glob("*.ipynb")); metadata = list(root.glob("kernel-metadata.json"))
+              if len(notebooks) != 1 or len(metadata) != 1:
+                  raise SystemExit(f"unexpected source shape: {root.name}")
+              if json.loads(metadata[0].read_text(encoding="utf-8")).get("id") != expected_id:
+                  raise SystemExit(f"source metadata mismatch: {root.name}")
+          print("PRIVATE_SOURCE_PULL PASS notebooks=2")
+          PY
+
+      - name: Build, namespace-patch, and statically verify corrected target
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          kernel_dir="${WORKDIR}/kernel"; mkdir -p "${kernel_dir}"
+          "${WORKDIR}/venv/bin/python" - "${EVENT_SHA}" "${kernel_dir}" <<'PY'
+          import hashlib, json, os, pathlib, ssl, subprocess, sys, urllib.request
+          sha, kernel_dir_value = sys.argv[1:]
+          kernel_dir = pathlib.Path(kernel_dir_value); workdir = pathlib.Path(os.environ["WORKDIR"])
+          root = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{sha}/"
+          request = json.loads(urllib.request.urlopen(root + os.environ["REQUEST_PATH"], timeout=30, context=ssl.create_default_context()).read(32768))
+          materialized = {}
+          for key, blob_key in (("builder_path", "builder_blob_sha"), ("patcher_path", "patcher_blob_sha")):
+              data = urllib.request.urlopen(root + request[key], timeout=30, context=ssl.create_default_context()).read(131073)
+              if len(data) > 131072:
+                  raise SystemExit(f"source too large: {key}")
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != request[blob_key]:
+                  raise SystemExit(f"source blob mismatch: {key}")
+              path = workdir / pathlib.Path(request[key]).name
+              path.write_bytes(data); materialized[key] = path
+          base = list((workdir / "source-base").glob("*.ipynb")); fim = list((workdir / "source-fim").glob("*.ipynb"))
+          if len(base) != 1 or len(fim) != 1:
+              raise SystemExit("source notebook count mismatch")
+          subprocess.run([sys.executable, str(materialized["builder_path"]), "--base-notebook", str(base[0]), "--fim-notebook", str(fim[0]), "--output-dir", str(kernel_dir)], check=True, timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          notebook_path = kernel_dir / "stage1-raw-fim-submission-v1.ipynb"
+          subprocess.run([sys.executable, str(materialized["patcher_path"]), str(notebook_path)], check=True, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          notebook = json.loads(notebook_path.read_text(encoding="utf-8")); metadata = json.loads((kernel_dir / "kernel-metadata.json").read_text(encoding="utf-8"))
+          expected_metadata = {
+              "id": "renta0426/stage1-raw-fim-submission-v1", "code_file": "stage1-raw-fim-submission-v1.ipynb",
+              "kernel_type": "notebook", "is_private": True, "enable_gpu": True, "enable_tpu": False,
+              "enable_internet": True, "machine_shape": "NvidiaTeslaT4",
+          }
+          for key, value in expected_metadata.items():
+              if metadata.get(key) != value:
+                  raise SystemExit(f"target metadata mismatch: {key}")
+          if not all(cell.get("id") == f"pc-stage1-{index:02d}" for index, cell in enumerate(notebook.get("cells", []))):
+              raise SystemExit("stable notebook cell IDs missing")
+          texts = ["".join(cell.get("source", [])) if isinstance(cell.get("source"), list) else str(cell.get("source", "")) for cell in notebook.get("cells", [])]
+          runner = next((text for text in texts if "STAGE1_EXPECTED_TRAIN_ROWS = 10000" in text), None)
+          if runner is None:
+              raise SystemExit("namespaced runner cell missing")
+          for token in ("STAGE1_METHOD = \"raw_plus_fim\"", "STAGE1_EXPECTED_OOF_AUC = 0.664524", "bigcode/starcoder2-3b", "hidden_validation_labels_used"):
+              if token not in runner and token not in "\n".join(texts):
+                  raise SystemExit(f"corrected target contract missing: {token}")
+          if "EXPECTED_TRAIN_ROWS = 10000" in runner:
+              raise SystemExit("request-003 namespace collision still present")
+          if not any("EXPECTED_TRAIN_ROWS = {" in text for text in texts):
+              raise SystemExit("Starter++ per-language EXPECTED_TRAIN_ROWS dictionary missing")
+          print(f"CORRECTED_SELF_CONTAINED_TARGET PASS cells={len(notebook.get('cells', []))} bytes={notebook_path.stat().st_size}")
+          PY
+
+      - name: Push corrected existing private T4 notebook exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${WORKDIR}/kernel" >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "CORRECTED_KERNEL_LAUNCH FAIL response_logged=false automatic_retries=0"
+            exit 1
+          fi
+          echo "CORRECTED_KERNEL_LAUNCH PASS request_id=20260902-poisoned-chalice-stage1-raw-fim-004 target=${TARGET_KERNEL} accelerator=gpu machine=NvidiaTeslaT4 automatic_retries=0"
+
+      - name: Cleanup runner-local private material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "RUNNER_LOCAL_PRIVATE_MATERIAL_REMOVED"
