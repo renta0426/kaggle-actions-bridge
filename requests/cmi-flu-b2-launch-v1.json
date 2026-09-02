@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-cmi-flu-b2-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b2-taskwise-compact-20260903-001",
+  "payload": {
+    "parts_dir": "payloads/cmi-flu-b2-001",
+    "part_count": 20,
+    "size_bytes": 92839,
+    "source_sha256": "a039b5689dbcd3ae47fc7c07cd91a6505c28180f8495cf9a149066b72fb8f383",
+    "source_commit": "1596ba5b7ab2369c0b70c9da178aec1d71c80658",
+    "merged_cmi_commit": "1503f5989feb00313f2851602e2c4eda8685000a",
+    "package_zip_sha256": "390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0",
+    "replacement": {
+      "old": "REQUEST_ID = \"__REQUEST_ID__\"",
+      "new": "REQUEST_ID = \"20260903-cmi-flu-b2-001\"",
+      "count": 1
+    }
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 240,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-02T23:55:00Z"
+}
