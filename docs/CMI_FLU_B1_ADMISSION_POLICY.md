@@ -4,7 +4,7 @@ This note defines how an immutable CMI-Flu B1 launch request is handled when ano
 
 ## Admission defer
 
-A live account-wide active-kernel check occurs immediately before any `kernels push` call. If another Kaggle kernel is active, the CMI-Flu request is **deferred**, not executed.
+A live account-wide active-kernel check occurs immediately before any `kernels push` call. If another Kaggle kernel is active, the CMI-Flu request is deferred, not executed.
 
 A deferred admission has all of the following properties:
 
