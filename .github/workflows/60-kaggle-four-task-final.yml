@@ -1,0 +1,241 @@
+name: Kaggle four-task final verification
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/60-kaggle-four-task-final.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-four-task-final
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL: renta0426/rsna-knee-public0033-meniscus-10-percent-residual
+  EXISTING_PRIVATE_DATASET: renta0426/kaggle-actions-bridge-smoke-33618328051-1
+  TARGET_COMPETITION: biohub-cell-tracking-during-development
+  TARGET_COMPETITION_FILE: sample_submission.csv
+
+jobs:
+  verify:
+    name: Verify all four requested Kaggle capabilities
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/60-kaggle-four-task-final.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected four-task boundary: PASS"
+
+      - name: Prepare SHA-256 locked Kaggle CLI before secret exposure
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          import re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock too large")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle pin missing")
+          open(output, "w", encoding="utf-8").write(text)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version >/dev/null
+          echo "Locked Kaggle CLI prepared: PASS"
+
+      - name: Execute four requested capability checks
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KAGGLE_API_TOKEN}" ]] || [[ "${KAGGLE_API_TOKEN}" != KGAT_* ]]; then
+            echo "ERROR: protected Kaggle token unavailable or malformed"
+            exit 1
+          fi
+
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import csv
+          import io
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          root = pathlib.Path(os.environ["WORKDIR"])
+          kaggle = str(root / "venv" / "bin" / "kaggle")
+          kernel = os.environ["TARGET_KERNEL"]
+          dataset = os.environ["EXISTING_PRIVATE_DATASET"]
+          competition = os.environ["TARGET_COMPETITION"]
+          competition_file = os.environ["TARGET_COMPETITION_FILE"]
+
+          def run(args: list[str], timeout: int = 240) -> subprocess.CompletedProcess[bytes]:
+              return subprocess.run(
+                  [kaggle, *args],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  env=os.environ.copy(),
+                  timeout=timeout,
+                  check=False,
+              )
+
+          # 1) Private notebook retrieval. This checks the private notebook itself
+          # through the supported official-CLI latest-version path. Historical
+          # scriptVersionId access is tracked separately and is not this capability gate.
+          nb_dir = root / "private-notebook"
+          nb_dir.mkdir(parents=True, exist_ok=True)
+          nb = run(["kernels", "pull", kernel, "-p", str(nb_dir), "-m"])
+          nb_files = [p for p in nb_dir.rglob("*") if p.is_file()]
+          if nb.returncode != 0 or not nb_files:
+              raise SystemExit(f"PRIVATE_NOTEBOOK_PULL FAIL rc={nb.returncode} files={len(nb_files)}")
+          print(f"PRIVATE_NOTEBOOK_PULL PASS files={len(nb_files)}")
+
+          # 2) Verify the private dummy dataset created by the earlier authorized
+          # write test still exists and contains the uploaded dummy file.
+          ds = run(["datasets", "files", dataset, "-v"])
+          if ds.returncode != 0 or b"bridge-smoke.txt" not in ds.stdout:
+              raise SystemExit(f"PRIVATE_DATASET_UPLOAD_VERIFY FAIL rc={ds.returncode}")
+          print("PRIVATE_DATASET_UPLOAD_VERIFY PASS file=bridge-smoke.txt")
+
+          # 3) Download the requested competition file.
+          listed = run(["competitions", "files", competition, "-v", "-q"])
+          if listed.returncode != 0 or competition_file.encode() not in listed.stdout:
+              raise SystemExit(f"COMPETITION_FILE_LIST FAIL rc={listed.returncode}")
+          comp_dir = root / "competition-data"
+          comp_dir.mkdir(parents=True, exist_ok=True)
+          dl = run([
+              "competitions", "download", competition,
+              "-f", competition_file,
+              "-p", str(comp_dir), "-q",
+          ], timeout=300)
+          candidates = [p for p in comp_dir.rglob("*") if p.is_file()]
+          target = next((p for p in candidates if competition_file in p.name), None)
+          if dl.returncode != 0 or target is None or target.stat().st_size <= 0:
+              raise SystemExit(f"COMPETITION_FILE_DOWNLOAD FAIL rc={dl.returncode} files={len(candidates)}")
+          print(f"COMPETITION_FILE_DOWNLOAD PASS file={target.name} bytes={target.stat().st_size}")
+
+          # 4) Download the active/recent-comment discussion listing and each
+          # thread returned on the first page. Contents remain runner-local.
+          topics = run([
+              "competitions", "topics", "list", competition,
+              "--sort-by", "active", "--page-size", "100", "-v", "-q",
+          ])
+          sort_used = "active"
+          if topics.returncode != 0:
+              topics = run([
+                  "competitions", "topics", "list", competition,
+                  "--sort-by", "recent", "--page-size", "100", "-v", "-q",
+              ])
+              sort_used = "recent"
+          if topics.returncode != 0 or not topics.stdout.strip():
+              raise SystemExit(f"DISCUSSION_LIST FAIL rc={topics.returncode}")
+
+          text = topics.stdout.decode("utf-8", errors="replace")
+          reader = csv.DictReader(io.StringIO(text))
+          ids: list[str] = []
+          for row in reader:
+              value = str(row.get("id") or row.get("topicId") or "").strip()
+              if value.isdigit():
+                  ids.append(value)
+          if not ids:
+              ids = list(dict.fromkeys(re.findall(r"(?m)^\s*(\d{4,})\b", text)))
+          if not ids:
+              raise SystemExit("DISCUSSION_LIST FAIL no topic ids")
+
+          discussion_dir = root / "discussions"
+          discussion_dir.mkdir(parents=True, exist_ok=True)
+          success = 0
+          for topic_id in ids:
+              shown = run([
+                  "competitions", "topics", "show", competition, topic_id,
+                  "--page-size", "100", "-v", "-q",
+              ])
+              if shown.returncode == 0 and shown.stdout.strip():
+                  (discussion_dir / f"topic-{topic_id}.csv").write_bytes(shown.stdout)
+                  success += 1
+          if success != len(ids):
+              raise SystemExit(f"DISCUSSION_DOWNLOAD FAIL listed={len(ids)} downloaded={success}")
+          print(f"DISCUSSION_DOWNLOAD PASS sort={sort_used} topics={len(ids)} threads={success}")
+
+          print("FOUR_TASK_VERIFICATION PASS 4/4")
+          PY
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" ]] && [[ -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Runner-local private notebook, competition data, and discussions removed"
