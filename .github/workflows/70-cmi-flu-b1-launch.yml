@@ -337,13 +337,11 @@ jobs:
               digest = hashlib.sha256(content[name].encode("utf-8")).hexdigest()
               print(f"LIVE_PAGE_HASH name={name} sha256={digest}")
 
-          # Request-idempotency check: this target must not already exist.
           existing = api.kernels_list(user="renta0426", search="cmi-flu-b1-anchor-20260902-001", page_size=5) or []
           refs = {str(getattr(item, "ref", "")) for item in existing}
           if target in refs:
               raise SystemExit("target kernel already exists; refusing duplicate request")
 
-          # Account-wide bounded active-run check over the five most recently run kernels.
           recent = api.kernels_list(user="renta0426", sort_by="dateRun", page_size=5) or []
           active = []
           for item in recent[:5]:
@@ -385,7 +383,7 @@ jobs:
           if len(data) > 64000:
               raise SystemExit("kernel source too large")
           git_blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
-          if git_blob != "32230457a10c951b4d5a4d41a9c56e705259fb63":
+          if git_blob != "b6c89ceab08de37d1e2885ddbdcf0cb66b2e7401":
               raise SystemExit("kernel source blob mismatch")
           open(output, "wb").write(data)
           PY
