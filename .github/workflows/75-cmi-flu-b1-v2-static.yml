@@ -1,0 +1,135 @@
+name: CMI-Flu B1 v2 bridge static validation
+
+on:
+  push:
+    paths:
+      - .github/workflows/75-cmi-flu-b1-v2-static.yml
+      - .github/workflows/76-cmi-flu-b1-v2-launch.yml
+      - scripts/cmi_flu_b1_kernel_v2.py
+      - requests/cmi-flu-b1-launch-v2.json
+  pull_request:
+    paths:
+      - .github/workflows/75-cmi-flu-b1-v2-static.yml
+      - .github/workflows/76-cmi-flu-b1-v2-launch.yml
+      - scripts/cmi_flu_b1_kernel_v2.py
+      - requests/cmi-flu-b1-launch-v2.json
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-b1-v2-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate fixed standalone source and launch boundary
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact event SHA files and validate without credentials
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AZURE_CLIENT_SECRET GOOGLE_APPLICATION_CREDENTIALS; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast
+          import hashlib
+          import json
+          import os
+          import re
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          repo = os.environ["EVENT_REPOSITORY"]
+          sha = os.environ["EVENT_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+
+          def fetch(path: str, limit: int) -> bytes:
+              url = base + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected raw origin")
+              with urllib.request.urlopen(url, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {path}")
+              return data
+
+          source_path = "scripts/cmi_flu_b1_kernel_v2.py"
+          request_path = "requests/cmi-flu-b1-launch-v2.json"
+          launch_path = ".github/workflows/76-cmi-flu-b1-v2-launch.yml"
+          source = fetch(source_path, 96000)
+          request = json.loads(fetch(request_path, 32768))
+          launch = fetch(launch_path, 100000).decode("utf-8")
+
+          blob = hashlib.sha1(b"blob " + str(len(source)).encode() + b"\0" + source).hexdigest()
+          if request.get("kernel_source_blob_sha") != blob:
+              raise SystemExit("request/source Git blob mismatch")
+          if request.get("request_id") != "20260902-cmi-flu-b1-002":
+              raise SystemExit("request id mismatch")
+          if request.get("target") != "renta0426/cmi-flu-b1-anchor-20260902-002":
+              raise SystemExit("target mismatch")
+          if request.get("source_commit") != "1e075cfa565698f708e872d22be629f97704a24f":
+              raise SystemExit("CMI source commit mismatch")
+          if request.get("implementation") != "standalone_equivalent":
+              raise SystemExit("implementation mismatch")
+          if request.get("enable_internet") is not False:
+              raise SystemExit("B1 v2 must disable Kaggle internet")
+          if request.get("automatic_compute_retries") != 0:
+              raise SystemExit("automatic retry must stay disabled")
+          if request.get("resource") != {
+              "accelerator": "cpu",
+              "expected_runtime_minutes": 15,
+              "hard_timeout_minutes": 30,
+              "max_active_runs": 1,
+          }:
+              raise SystemExit("resource contract mismatch")
+
+          text = source.decode("utf-8")
+          compile(text, source_path, "exec")
+          tree = ast.parse(text)
+          imports = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module)
+          forbidden = {"requests", "httpx", "socket", "subprocess", "urllib", "urllib.request"}
+          if imports & forbidden:
+              raise SystemExit(f"forbidden runtime imports: {sorted(imports & forbidden)}")
+          for literal in ("https://", "http://", "github.com", "drive.google.com", "pip install", "git fetch"):
+              if literal in text:
+                  raise SystemExit(f"unexpected network/process literal in standalone kernel: {literal}")
+          for required in (
+              'REQUEST_ID = "20260902-cmi-flu-b1-002"',
+              'CMI_COMMIT = "1e075cfa565698f708e872d22be629f97704a24f"',
+              '"Task1.1": (127, 127, 4)',
+              '"HAI_D28_challenge_overlap": (10_617, 2_689, 33)',
+              '"HAI_D365_challenge_overlap": (4_878, 914, 8)',
+              'OUTPUT_FAILURE = OUTPUT_DIR / "bridge-failure.json"',
+          ):
+              if required not in text:
+                  raise SystemExit(f"missing standalone contract marker: {required}")
+
+          if launch.count("kernels push") != 1:
+              raise SystemExit("launch workflow must contain exactly one kernel push")
+          if "--timeout 1800" not in launch:
+              raise SystemExit("launch hard timeout missing")
+          if '"enable_internet": False' not in launch:
+              raise SystemExit("kernel metadata must disable internet")
+          if '"enable_gpu": False' not in launch or '"enable_tpu": False' not in launch:
+              raise SystemExit("accelerators must be disabled")
+          if "environment: kaggle-readonry" not in launch or "permissions: {}" not in launch:
+              raise SystemExit("protected Environment/permissions boundary missing")
+          if "pull_request_target" in launch or "workflow_run" in launch or "issue_comment" in launch:
+              raise SystemExit("unsafe secret trigger found")
+          print(f"CMI_B1_V2_STATIC PASS source_blob={blob} source_bytes={len(source)}")
+          PY
