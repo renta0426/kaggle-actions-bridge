@@ -90,8 +90,9 @@ jobs:
               raise SystemExit("resource launch must not cancel an in-progress run")
           if "another Kaggle kernel is active; count=" in launch:
               raise SystemExit("account contention must defer instead of hard-failing")
-          if launch.count("kernels push") != 1:
-              raise SystemExit("launch must contain exactly one kernels push")
+          executable_push = 'kernels push -p "${kernel_dir}" --timeout 1800'
+          if launch.count(executable_push) != 1:
+              raise SystemExit("launch must contain exactly one executable kernels push")
           for marker in ("deferred, not executed", "no automatic retry or polling", "fresh protected-Environment approval", "workflow_dispatch"):
               if marker not in policy:
                   raise SystemExit(f"admission policy marker missing: {marker}")
