@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-cmi-flu-b2-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b2-taskwise-compact-20260903-001",
+  "source": {
+    "cmi_commit": "342c9c1208f1dba28e58c1698fc399f7eca4b5be",
+    "implementation": "b2_taskwise_compact_standalone_v1",
+    "payload_directory": "payloads/cmi-flu-b2-001",
+    "payload_parts": [
+      {
+        "path": "payloads/cmi-flu-b2-001/script.py.gz.b64.part00",
+        "sha256": "3c8229939c8a6a76b85b46cdb1f38fc62f99744bbb5857515c8cdde2b2f88583",
+        "bytes": 6000
+      },
+      {
+        "path": "payloads/cmi-flu-b2-001/script.py.gz.b64.part01",
+        "sha256": "ba373e07b304aa3993879ceed0bbd210e6b67302a8e691971cd78c10eb41e29a",
+        "bytes": 6000
+      },
+      {
+        "path": "payloads/cmi-flu-b2-001/script.py.gz.b64.part02",
+        "sha256": "43553c27967b666d780e1347ec5996983965502da1357f0417ace533125a1ea4",
+        "bytes": 6000
+      },
+      {
+        "path": "payloads/cmi-flu-b2-001/script.py.gz.b64.part03",
+        "sha256": "ab20c4965732e100187dae423d5f4eba8229f7750fe3ffba7c01b364e99cd551",
+        "bytes": 6000
+      },
+      {
+        "path": "payloads/cmi-flu-b2-001/script.py.gz.b64.part04",
+        "sha256": "cbdce963a82b06e87609b53a9700300686a9589003625f0c8c8389ad77816579",
+        "bytes": 4969
+      }
+    ],
+    "base64_bytes": 28969,
+    "gzip_sha256": "72ea790f5e2e779226630e3ac487fbdbce4615beedbf1fecc1b506906451a1b7",
+    "script_sha256": "5893d3bb39608ec7ae429a3a9fb54738e8d9d44cff620cafd792b6e22b4acd7d",
+    "script_bytes": 101577
+  },
+  "packaging": {
+    "python_files": 1,
+    "code_file": "script.py"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 180,
+    "max_active_runs_in_class": 1
+  },
+  "validation": {
+    "full_md5": true,
+    "aggregate_audit": true,
+    "negative_controls": true,
+    "grouped_oof": true,
+    "hai_stress_tests": true
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false
+}
