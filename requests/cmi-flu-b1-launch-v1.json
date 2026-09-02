@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "request_id": "20260902-cmi-flu-b1-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b1-anchor-20260902-001",
+  "kernel_source_path": "scripts/cmi_flu_b1_kernel.py",
+  "kernel_source_blob_sha": "5171caee24adf4da2003f9e87714e9e7704a381a",
+  "source_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "source_commit": "1e075cfa565698f708e872d22be629f97704a24f",
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 10,
+    "hard_timeout_minutes": 30,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "rules_checked_at_utc": "2026-09-02T12:11:00Z"
+}
