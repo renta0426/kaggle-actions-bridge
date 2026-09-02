@@ -1,0 +1,253 @@
+name: Exact private notebook retrieval retry
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/51-private-notebook-exact-retry.yml
+
+permissions: {}
+
+concurrency:
+  group: private-notebook-exact-retry
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL_OWNER: renta0426
+  TARGET_KERNEL_SLUG: rsna-knee-public0033-meniscus-10-percent-residual
+  TARGET_SCRIPT_VERSION_ID: "346645650"
+
+jobs:
+  retry:
+    name: Retrieve exact private notebook source
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/51-private-notebook-exact-retry.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected notebook retry boundary: PASS"
+
+      - name: Prepare hash-locked Kaggle runtime before secret exposure
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          import re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock too large")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle pin missing")
+          open(output, "w", encoding="utf-8").write(text)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          echo "Locked runtime prepared: PASS"
+
+      - name: Resolve scriptVersionId and retrieve exact source
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import requests
+          import subprocess
+
+          token = os.environ["KAGGLE_API_TOKEN"]
+          owner = os.environ["TARGET_KERNEL_OWNER"]
+          slug = os.environ["TARGET_KERNEL_SLUG"]
+          target = int(os.environ["TARGET_SCRIPT_VERSION_ID"])
+          workdir = pathlib.Path(os.environ["WORKDIR"])
+          kaggle = str(workdir / "venv" / "bin" / "kaggle")
+
+          if not token.startswith("KGAT_"):
+              raise SystemExit("protected Kaggle token unavailable or malformed")
+
+          session = requests.Session()
+          session.trust_env = False
+          session.headers.update({"Authorization": f"Bearer {token}", "User-Agent": "kaggle-actions-bridge-private-notebook-retry/1.0"})
+          seed = session.get("https://www.kaggle.com", timeout=30)
+          seed.raise_for_status()
+          xsrf = session.cookies.get("XSRF-TOKEN")
+          if not xsrf:
+              raise SystemExit("STAGE seed: missing XSRF cookie")
+
+          def post(method, body):
+              r = session.post(
+                  f"https://www.kaggle.com/api/i/{method}",
+                  json=body,
+                  headers={"Content-Type": "application/json", "X-XSRF-TOKEN": xsrf},
+                  timeout=60,
+                  allow_redirects=False,
+              )
+              if r.status_code != 200:
+                  raise RuntimeError(f"{method} HTTP {r.status_code}")
+              return r
+
+          view_method = "kernels.LegacyKernelsService/GetKernelViewModel"
+          list_method = "kernels.KernelsService/ListKernelVersions"
+          source_method = "kernels.KernelsService/GetKernelSessionSource"
+
+          try:
+              initial = post(view_method, {"authorUserName": owner, "kernelSlug": slug, "tab": "output"}).json()
+          except Exception as exc:
+              raise SystemExit(f"STAGE view-model failed: {type(exc).__name__}: {exc}")
+
+          kernel_id = (initial.get("kernel") or {}).get("id")
+          total = int(initial.get("totalVersionCount") or 0)
+          if not kernel_id:
+              raise SystemExit("STAGE view-model: kernel id unavailable")
+          print(f"PRIVATE_NOTEBOOK_VIEW_MODEL PASS total_versions={total}")
+
+          try:
+              listing = post(list_method, {"kernelId": int(kernel_id), "sortOption": "VERSION_ID", "pageSize": max(total, 200)}).json()
+          except Exception as exc:
+              raise SystemExit(f"STAGE list-versions failed: {type(exc).__name__}: {exc}")
+
+          items = listing.get("items") or []
+          print(f"PRIVATE_NOTEBOOK_VERSION_LIST PASS returned_versions={len(items)}")
+
+          matches = []
+          for item in items:
+              version = item.get("version") or {}
+              run = item.get("run") or {}
+              version_id = int(version.get("id") or 0)
+              run_id = int(run.get("id") or 0)
+              version_number = int(version.get("versionNumber") or 0)
+              if version_id == target:
+                  matches.append(("version.id", version_number, version_id, run_id))
+              if run_id == target:
+                  matches.append(("run.id", version_number, version_id, run_id))
+
+          if not matches:
+              # Probe whether the supplied value itself is a usable kernelSessionId.
+              direct_status = None
+              try:
+                  direct = post(source_method, {"kernelSessionId": target, "includeOutputIfAvailable": False})
+                  direct_status = len(direct.content)
+              except Exception:
+                  pass
+              raise SystemExit(
+                  f"STAGE resolve-id: target absent from version.id/run.id; direct_source_bytes={direct_status or 0}"
+              )
+
+          # Prefer the semantic URL field version.id if both somehow match.
+          matches.sort(key=lambda row: 0 if row[0] == "version.id" else 1)
+          match_field, version_number, version_id, run_id = matches[0]
+          if version_number <= 0 or run_id <= 0:
+              raise SystemExit("STAGE resolve-id: invalid resolved version metadata")
+
+          try:
+              source = post(source_method, {"kernelSessionId": run_id, "includeOutputIfAvailable": False}).content
+          except Exception as exc:
+              raise SystemExit(f"STAGE source-download failed: {type(exc).__name__}: {exc}")
+          if not (32 <= len(source) <= 100_000_000):
+              raise SystemExit(f"STAGE source-download: unexpected bytes={len(source)}")
+
+          digest = hashlib.sha256(source).hexdigest()
+          local = workdir / "private-notebook-exact"
+          local.mkdir(parents=True, exist_ok=True)
+          (local / "source.bin").write_bytes(source)
+
+          # Independently verify that the official CLI can pull the resolved exact version number.
+          cli_dir = workdir / "private-notebook-cli"
+          cli_dir.mkdir(parents=True, exist_ok=True)
+          cp = subprocess.run(
+              [kaggle, "kernels", "pull", f"{owner}/{slug}/{version_number}", "-p", str(cli_dir), "-m"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              env=os.environ.copy(),
+              timeout=180,
+              check=False,
+          )
+          cli_files = [p for p in cli_dir.rglob("*") if p.is_file()]
+          if cp.returncode != 0 or not cli_files:
+              raise SystemExit(f"STAGE cli-pull failed: rc={cp.returncode} files={len(cli_files)}")
+
+          print(
+              "PRIVATE_NOTEBOOK_EXACT PASS "
+              f"scriptVersionId={target} matched={match_field} version_number={version_number} "
+              f"kernel_session_id={run_id} source_bytes={len(source)} sha256={digest} cli_files={len(cli_files)}"
+          )
+          print("Private notebook content was not logged")
+          PY
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" ]] && [[ -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Private notebook retry temporary content removed"
