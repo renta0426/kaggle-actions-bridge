@@ -6,7 +6,9 @@ on:
       - .github/workflows/69-cmi-flu-b1-static.yml
       - .github/workflows/70-cmi-flu-b1-launch.yml
       - .github/workflows/71-cmi-flu-b1-status.yml
+      - .github/workflows/71-cmi-flu-b1-status-v2.yml
       - requests/cmi-flu-b1-launch-v1.json
+      - requests/cmi-flu-b1-status-v2.json
       - scripts/cmi_flu_b1_kernel.py
 
 permissions: {}
@@ -47,10 +49,12 @@ jobs:
           sha = os.environ["HEAD_SHA"]
           base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
           files = {
-              "request": "requests/cmi-flu-b1-launch-v1.json",
+              "launch_request": "requests/cmi-flu-b1-launch-v1.json",
+              "status_v2_request": "requests/cmi-flu-b1-status-v2.json",
               "runner": "scripts/cmi_flu_b1_kernel.py",
               "launch": ".github/workflows/70-cmi-flu-b1-launch.yml",
               "status": ".github/workflows/71-cmi-flu-b1-status.yml",
+              "status_v2": ".github/workflows/71-cmi-flu-b1-status-v2.yml",
           }
 
           class RejectRedirects(urllib.request.HTTPRedirectHandler):
@@ -74,7 +78,7 @@ jobs:
                   raise SystemExit(f"file too large: {path}")
               return data
 
-          request = json.loads(fetch(files["request"], 32768))
+          request = json.loads(fetch(files["launch_request"], 32768))
           runner = fetch(files["runner"], 64000)
           ast.parse(runner.decode("utf-8"), filename=files["runner"])
           blob = hashlib.sha1(b"blob " + str(len(runner)).encode() + b"\0" + runner).hexdigest()
@@ -91,8 +95,36 @@ jobs:
           if 'kernels push -p "${kernel_dir}" --timeout 1800' not in launch_text:
               raise SystemExit("launch workflow must enforce the 30-minute Kaggle session timeout")
 
-          for name in ("launch", "status"):
-              text = launch_text if name == "launch" else fetch(files[name]).decode("utf-8")
+          status_v2_request = json.loads(fetch(files["status_v2_request"], 16384))
+          expected_status_v2 = {
+              "schema_version": 1,
+              "request_id": "20260902-cmi-flu-b1-status-002",
+              "parent_request_id": "20260902-cmi-flu-b1-001",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "kernel_status_output",
+              "target": "renta0426/cmi-flu-b1-anchor-20260902-001",
+              "api_budget": {"max_calls": 8, "max_pages": 1},
+              "side_effects": [],
+          }
+          if status_v2_request != expected_status_v2:
+              raise SystemExit("corrected status request differs from fixed allowlist")
+
+          status_v2_text = fetch(files["status_v2"]).decode("utf-8")
+          for required in (
+              "from kagglesdk.kernels.types.kernels_enums import KernelWorkerStatus",
+              "status = KernelWorkerStatus(raw)",
+              "status is KernelWorkerStatus.COMPLETE",
+              'REQUEST_PATH: requests/cmi-flu-b1-status-v2.json',
+          ):
+              if required not in status_v2_text:
+                  raise SystemExit(f"corrected status guard missing: {required}")
+
+          workflows = {
+              "launch": launch_text,
+              "status": fetch(files["status"]).decode("utf-8"),
+              "status_v2": status_v2_text,
+          }
+          for name, text in workflows.items():
               if "permissions: {}" not in text:
                   raise SystemExit(f"{name} workflow must use empty permissions")
               if "runs-on: ubuntu-24.04" not in text:
