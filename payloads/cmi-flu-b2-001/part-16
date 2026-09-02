@@ -1,0 +1,98 @@
+nents: 1}, target_transform: log1p, clip_min: 0.0}\n    - {name: pls_2, family: pls, params: {n_components: 2}, target_transform: log1p, clip_min: 0.0}\n    - {name: pls_3, family: pls, params: {n_components: 3}, target_transform: log1p, clip_min: 0.0}\n    - {name: pls_5, family: pls, params: {n_components: 5}, target_transform: log1p, clip_min: 0.0}\n  hai:\n    - {name: ridge_subtype_a0.1, family: ridge, params: {alpha: 0.1}, drop_columns: [virus_strain, strain_substrate, strain_isolation_year]}\n    - {name: ridge_subtype_a1, family: ridge, params: {alpha: 1.0}, drop_columns: [virus_strain, strain_substrate, strain_isolation_year]}\n    - {name: ridge_subtype_a10, family: ridge, params: {alpha: 10.0}, drop_columns: [virus_strain, strain_substrate, strain_isolation_year]}\n    - {name: ridge_subtype_a100, family: ridge, params: {alpha: 100.0}, drop_columns: [virus_strain, strain_substrate, strain_isolation_year]}\n    - {name: ridge_exact_a0.1, family: ridge, params: {alpha: 0.1}}\n    - {name: ridge_exact_a1, family: ridge, params: {alpha: 1.0}}\n    - {name: ridge_exact_a10, family: ridge, params: {alpha: 10.0}}\n    - {name: ridge_exact_a100, family: ridge, params: {alpha: 100.0}}\n    - {name: et_subtype_d3_l5, family: extra_trees, params: {n_estimators: 500, max_depth: 3, min_samples_leaf: 5, max_features: sqrt}, drop_columns: [virus_strain, strain_substrate, strain_isolation_year]}\n    - {name: et_subtype_d5_l10, family: extra_trees, params: {n_estimators: 500, max_depth: 5, min_samples_leaf: 10, max_features: sqrt}, drop_columns: [virus_strain, strain_substrate, strain_isolation_year]}\n'
+TASK_COLUMNS = (
+    "Task1.1", "Task1.2", "Task1.3", "Task1.4",
+    "Task2.1", "Task2.2", "Task2.3",
+)
+PUBLIC_PROXY_TASKS = ("Task1.1", "Task1.2", "Task1.3", "Task2.1", "Task2.2")
+CORE_FILES = (
+    "participants.tsv",
+    "investigations_260821.tsv",
+    "publicData_cytokine.tsv",
+    "publicData_ex_vivo_flow.tsv",
+    "publicData_serology_260821.tsv",
+    "2025LJI_aim.tsv",
+    "2025LJI_cytokine.tsv",
+    "2025LJI_ex_vivo_flow.tsv",
+    "2025LJI_serology.tsv",
+    "sample_submission_part1.csv",
+    "md5sum",
+)
+REFERENCE_PLACEHOLDERS = {
+    "cytokine_name_map.csv": "source,target\n",
+    "flow_name_revised.csv": "source,target\n",
+    "hai_map.csv": "source,target\n",
+    "strain_sequences.csv": "virus_strain,sequence\n",
+    "vaccine_strains_per_season.txt": "# Not used by the compact B2 runner.\n",
+}
+
+
+class BundleContractError(RuntimeError):
+    """Raised when the generated bundle or Kaggle runtime violates its contract."""
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input-dir", type=Path)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("/kaggle/working/cmi-flu-b2"),
+    )
+    parser.add_argument("--self-test", action="store_true")
+    return parser.parse_args()
+
+
+def package_bytes() -> bytes:
+    encoded = "".join(PACKAGE_B64.split())
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except Exception as error:
+        raise BundleContractError("embedded package is not valid base64") from error
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != PACKAGE_ZIP_SHA256:
+        raise BundleContractError("embedded package SHA-256 mismatch")
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        bad = archive.testzip()
+        names = set(archive.namelist())
+    if bad is not None:
+        raise BundleContractError(f"embedded package has a corrupt member: {bad}")
+    required = {
+        "cmi_flu/__init__.py",
+        "cmi_flu/runner.py",
+        "cmi_flu/evaluation.py",
+        "cmi_flu/datasets.py",
+        "cmi_flu/models.py",
+    }
+    missing = sorted(required - names)
+    if missing:
+        raise BundleContractError(f"embedded package is missing modules: {missing}")
+    return data
+
+
+def self_test() -> int:
+    data = package_bytes()
+    print(
+        "CMI_FLU_B2_BUNDLE_SELF_TEST PASS "
+        f"source_commit={SOURCE_COMMIT} package_bytes={len(data)} "
+        f"package_sha256={PACKAGE_ZIP_SHA256}"
+    )
+    return 0
+
+
+def locate_competition_data(explicit: Path | None) -> Path:
+    candidates: list[Path] = []
+    if explicit is not None:
+        candidates.append(explicit)
+    candidates.append(Path("/kaggle/input") / COMPETITION)
+    kaggle_input = Path("/kaggle/input")
+    if kaggle_input.is_dir():
+        candidates.extend(sorted(path for path in kaggle_input.iterdir() if path.is_dir()))
+    candidates.extend((Path.cwd(), Path.cwd() / "data" / "raw"))
+
+    seen: set[Path] = set()
+    valid: list[Path] = []
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            cont
