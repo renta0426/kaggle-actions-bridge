@@ -1,0 +1,35 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+kaggle.json
+access_token
+.kaggle/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Kaggle data and generated outputs
+data/
+downloads/
+outputs/
+artifacts/
+models/
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Editors and OS
+.DS_Store
+.vscode/
+.idea/
