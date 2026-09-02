@@ -28,19 +28,13 @@ concurrency:
 jobs:
   static:
     name: Validate request, materializer, bundle, and protected launch
-    if: >-
-      github.repository == 'renta0426/kaggle-actions-bridge' &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.user.login == 'renta0426'))
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out the exact event head without retaining credentials
+      - name: Check out the exact event revision without retaining credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -48,26 +42,29 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_SHA: ${{ github.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
           EVENT_ACTOR_ID: ${{ github.actor_id }}
           EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           [[ "${EVENT_REPOSITORY_ID}" == "1354356687" ]]
+          [[ "${EVENT_ACTOR}" == "renta0426" ]]
           [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
           [[ "${EVENT_SENDER_ID}" == "71638068" ]]
           if [[ "${EVENT_NAME}" == "pull_request" ]]; then
-            expected_sha="${PR_HEAD_SHA}"
-          else
-            expected_sha="${EVENT_SHA}"
+            [[ "${PR_HEAD_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+            [[ "${PR_AUTHOR}" == "renta0426" ]]
+          elif [[ "${EVENT_NAME}" != "push" ]]; then
+            echo "unexpected event: ${EVENT_NAME}"
+            exit 1
           fi
-          [[ "$(git rev-parse HEAD)" == "${expected_sha}" ]]
           for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY; do
             [[ -z "${!name-}" ]] || { echo "unexpected Kaggle credential: ${name}"; exit 1; }
           done
-          echo "MELLUM_STATIC_BOUNDARY PASS credentials=absent"
+          echo "MELLUM_STATIC_BOUNDARY PASS event=${EVENT_NAME} credentials=absent"
 
       - name: Install pinned credential-free validation dependencies
         shell: bash
