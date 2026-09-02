@@ -1,0 +1,472 @@
+name: Poisoned Chalice Stage1 raw+FIM private GPU launch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-raw-fim-launch-v1.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-raw-fim-launch-v1.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/stage1-raw-fim-submission-v1
+
+jobs:
+  validate:
+    name: Validate frozen request without secrets
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate owner boundary and immutable notebook source
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+
+          forbidden=(
+            KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY
+            GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY
+            AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AZURE_CLIENT_SECRET
+            GOOGLE_APPLICATION_CREDENTIALS
+          )
+          for name in "${forbidden[@]}"; do
+            [[ -z "${!name-}" ]] || {
+              echo "ERROR: unexpected credential variable present: ${name}"
+              exit 1
+            }
+          done
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          import re
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          bridge_repo = os.environ["EXPECTED_REPOSITORY"]
+          bridge_sha = os.environ["EVENT_SHA_VALUE"]
+          request_url = f"https://raw.githubusercontent.com/{bridge_repo}/{bridge_sha}/{os.environ['REQUEST_PATH']}"
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def fetch(url: str, limit: int) -> bytes:
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected raw source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit("source exceeds fixed byte budget")
+              return data
+
+          request = json.loads(fetch(request_url, 32768))
+          expected_fields = {
+              "schema_version", "request_id", "competition", "operation", "target",
+              "kernel_notebook_path", "kernel_notebook_blob_sha",
+              "kernel_metadata_path", "kernel_metadata_blob_sha",
+              "source_repository", "source_commit", "module_commit",
+              "resource", "api_budget", "side_effects", "automatic_compute_retries",
+              "enable_internet", "rules_checked_at_utc",
+          }
+          if set(request) != expected_fields:
+              raise SystemExit("request schema differs from fixed allowlist")
+          if request["schema_version"] != 1:
+              raise SystemExit("unsupported request schema")
+          if request["request_id"] != "20260902-poisoned-chalice-stage1-raw-fim-001":
+              raise SystemExit("unexpected request id")
+          if request["competition"] != os.environ["TARGET_COMPETITION"]:
+              raise SystemExit("competition mismatch")
+          if request["operation"] != "kernel_run" or request["target"] != os.environ["TARGET_KERNEL"]:
+              raise SystemExit("operation or target mismatch")
+          if request["source_repository"] != "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation":
+              raise SystemExit("source repository mismatch")
+          if request["source_commit"] != "28c34307c71db733dab2744ec9ec46549e54d424":
+              raise SystemExit("source commit mismatch")
+          if request["module_commit"] != "bcf6d44db86fdda4ac9dd07b2d0172de471ab67a":
+              raise SystemExit("module commit mismatch")
+          if request["resource"] != {
+              "accelerator": "gpu",
+              "machine_shape": "NvidiaTeslaT4",
+              "expected_runtime_minutes": 300,
+              "hard_timeout_minutes": 600,
+              "max_active_runs": 1,
+              "min_remaining_quota_hours": 5.0,
+          }:
+              raise SystemExit("resource manifest mismatch")
+          if request["api_budget"] != {
+              "max_calls": 30,
+              "poll_interval_seconds": 300,
+              "max_pages": 2,
+          }:
+              raise SystemExit("API budget mismatch")
+          if request["side_effects"] != ["create one private notebook version and start one T4 GPU run"]:
+              raise SystemExit("side effect mismatch")
+          if request["automatic_compute_retries"] != 0 or request["enable_internet"] is not True:
+              raise SystemExit("retry/internet policy mismatch")
+          if not re.fullmatch(r"2026-09-02T\d{2}:\d{2}:\d{2}Z", request["rules_checked_at_utc"]):
+              raise SystemExit("rules_checked_at_utc format mismatch")
+
+          source_base = (
+              f"https://raw.githubusercontent.com/{request['source_repository']}/"
+              f"{request['source_commit']}/"
+          )
+          notebook = fetch(source_base + request["kernel_notebook_path"], 262144)
+          metadata_raw = fetch(source_base + request["kernel_metadata_path"], 32768)
+          for label, data, expected in (
+              ("notebook", notebook, request["kernel_notebook_blob_sha"]),
+              ("metadata", metadata_raw, request["kernel_metadata_blob_sha"]),
+          ):
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != expected:
+                  raise SystemExit(f"{label} blob mismatch")
+          nb = json.loads(notebook)
+          metadata = json.loads(metadata_raw)
+          source_text = "\n".join(
+              "".join(cell.get("source", [])) if isinstance(cell.get("source"), list)
+              else str(cell.get("source", ""))
+              for cell in nb.get("cells", [])
+          )
+          if request["module_commit"] not in source_text:
+              raise SystemExit("notebook module commit lock missing")
+          expected_metadata = {
+              "id": os.environ["TARGET_KERNEL"],
+              "code_file": "stage1-raw-fim-submission-v1.ipynb",
+              "kernel_type": "notebook",
+              "is_private": True,
+              "enable_gpu": True,
+              "enable_tpu": False,
+              "enable_internet": True,
+              "machine_shape": "NvidiaTeslaT4",
+          }
+          for key, value in expected_metadata.items():
+              if metadata.get(key) != value:
+                  raise SystemExit(f"kernel metadata mismatch: {key}")
+          print("Poisoned Chalice immutable launch request validation: PASS")
+          PY
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl
+          import urllib.request
+          context = ssl.create_default_context()
+          for url in (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+          ):
+              request = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print("Current Kaggle policy/API page reachability: PASS")
+          PY
+
+  launch:
+    name: Live rules, quota, session gate and one T4 launch
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Enforce protected secret boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/74-poisoned-chalice-stage1-raw-fim-launch.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected Poisoned Chalice launch boundary: PASS"
+
+      - name: Prepare SHA-256 locked Kaggle CLI before secret exposure
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          import re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock too large")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          open(output, "w", encoding="utf-8").write(text)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version >/dev/null
+          echo "Locked Kaggle CLI prepared: PASS"
+
+      - name: Fetch live Competition rules and enforce GPU guardrails
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import os
+          import re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+
+          api = KaggleApi()
+          api.authenticate()
+          competition = os.environ["TARGET_COMPETITION"]
+          target = os.environ["TARGET_KERNEL"]
+
+          pages = api.competition_list_pages(competition) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("live Competition rules/evaluation unavailable")
+          description_names = [name for name in content if "description" in name]
+          data_names = [name for name in content if "data" in name]
+          if not description_names or not data_names:
+              raise SystemExit("live Competition description/data page unavailable")
+
+          def plain(text: str) -> str:
+              return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)).casefold()
+
+          description = " ".join(plain(content[name]) for name in description_names)
+          evaluation = plain(content["evaluation"])
+          rules = plain(content["rules"])
+          if not all(term in description for term in ("stage 1", "starcoder2", "stage 2")):
+              raise SystemExit("live Competition description differs from expected Stage 1/2 design")
+          if not all(term in evaluation for term in ("auc", "novelty", "1%")):
+              raise SystemExit("live Competition evaluation differs from expected AUC/novelty metric")
+          conflicts = (
+              "external data is not allowed",
+              "external data are not allowed",
+              "internet access is prohibited",
+              "internet must be disabled",
+              "pretrained models are not allowed",
+              "pre-trained models are not allowed",
+              "gpu use is prohibited",
+          )
+          conflict = next((phrase for phrase in conflicts if phrase in rules), None)
+          if conflict:
+              raise SystemExit(f"live Competition rule conflicts with frozen notebook: {conflict}")
+          for name in ("rules", "evaluation", *sorted(description_names), *sorted(data_names)):
+              digest = hashlib.sha256(content[name].encode("utf-8")).hexdigest()
+              print(f"LIVE_PAGE_HASH name={name} sha256={digest}")
+
+          quota = api.quota_view()
+          gpu = getattr(quota, "gpu_quota", None)
+          used = getattr(gpu, "time_used", None) if gpu is not None else None
+          total = getattr(gpu, "total_time_allowed", None) if gpu is not None else None
+          if used is None or total is None:
+              raise SystemExit("GPU quota information unavailable")
+          remaining_hours = max(0.0, (total - used).total_seconds() / 3600.0)
+          if remaining_hours < 5.0:
+              raise SystemExit(f"insufficient GPU quota: remaining={remaining_hours:.2f}h required=5.00h")
+
+          existing = api.kernels_list(
+              user="renta0426", search="stage1-raw-fim-submission-v1", page_size=5,
+          ) or []
+          if target in {str(getattr(item, "ref", "")) for item in existing}:
+              raise SystemExit("target kernel already exists; duplicate launch refused")
+
+          recent = api.kernels_list(user="renta0426", sort_by="dateRun", page_size=10) or []
+          active = []
+          checked = 0
+          for item in recent[:10]:
+              ref = str(getattr(item, "ref", ""))
+              if not ref:
+                  continue
+              checked += 1
+              status = api.kernels_status(ref)
+              value = str(getattr(status, "status", status)).upper()
+              if "RUNNING" in value or "QUEUED" in value or "PENDING" in value:
+                  active.append(ref)
+          if active:
+              raise SystemExit(f"another Kaggle kernel is active; count={len(active)}")
+          print(
+              "LIVE_RULE_RESOURCE_PREFLIGHT PASS "
+              f"pages={len(content)} status_checks={checked} accelerator=gpu "
+              f"machine=NvidiaTeslaT4 quota_remaining_hours={remaining_hours:.2f}"
+          )
+          PY
+
+      - name: Materialize frozen notebook and push exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          kernel_dir="${WORKDIR}/kernel"
+          mkdir -p "${kernel_dir}"
+          "${WORKDIR}/venv/bin/python" - "${kernel_dir}" <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          output = pathlib.Path(__import__("sys").argv[1])
+          bridge_url = (
+              f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/"
+              f"{os.environ['EVENT_SHA_VALUE']}/{os.environ['REQUEST_PATH']}"
+          )
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+          )
+
+          def fetch(url: str, limit: int) -> bytes:
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit("materialization input exceeds fixed byte budget")
+              return data
+
+          request = json.loads(fetch(bridge_url, 32768))
+          source_base = (
+              f"https://raw.githubusercontent.com/{request['source_repository']}/"
+              f"{request['source_commit']}/"
+          )
+          notebook = fetch(source_base + request["kernel_notebook_path"], 262144)
+          metadata = fetch(source_base + request["kernel_metadata_path"], 32768)
+          for label, data, expected in (
+              ("notebook", notebook, request["kernel_notebook_blob_sha"]),
+              ("metadata", metadata, request["kernel_metadata_blob_sha"]),
+          ):
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != expected:
+                  raise SystemExit(f"{label} source blob mismatch during materialization")
+          (output / "stage1-raw-fim-submission-v1.ipynb").write_bytes(notebook)
+          (output / "kernel-metadata.json").write_bytes(metadata)
+          PY
+
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" \
+            >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "ERROR: Kaggle kernel push/run failed; response content suppressed; automatic retry disabled"
+            exit 1
+          fi
+          echo "KERNEL_LAUNCH PASS request_id=20260902-poisoned-chalice-stage1-raw-fim-001 target=${TARGET_KERNEL} accelerator=gpu machine=NvidiaTeslaT4 automatic_retries=0"
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Runner-local notebook and temporary Kaggle client removed"
