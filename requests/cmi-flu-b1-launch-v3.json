@@ -1,0 +1,37 @@
+{
+  "schema_version": 3,
+  "request_id": "20260902-cmi-flu-b1-003",
+  "parent_request_id": "20260902-cmi-flu-b1-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b1-anchor-20260902-003",
+  "kernel_files": {
+    "implementation": {
+      "path": "scripts/cmi_flu_b1_kernel_impl.py",
+      "blob_sha": "5ef01cf2a7c4a4140bce0210151d407972b9e7f3"
+    },
+    "entrypoint": {
+      "path": "scripts/cmi_flu_b1_kernel_v3.py",
+      "blob_sha": "15394a4bc6fdc3e0750d1b496c50d1974efdbcad"
+    }
+  },
+  "cmi_contract_commit": "6362cd8596cd996d13f66615eb1833ad26af1b39",
+  "cmi_standalone_runner_blob": "7e28ed606f63883f9c2e230dfea1382389dce23b",
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 15,
+    "hard_timeout_minutes": 30,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-02T13:40:00Z"
+}
