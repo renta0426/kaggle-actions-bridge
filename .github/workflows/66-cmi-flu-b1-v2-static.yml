@@ -1,0 +1,70 @@
+name: CMI-Flu B1 v2 static validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/66-cmi-flu-b1-v2-static.yml
+      - .github/workflows/75-cmi-flu-b1-launch-v2.yml
+      - requests/cmi-flu-b1-launch-v2.json
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-b1-v2-static-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Validate no-internet CPU launch contract
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact PR-head files without credentials
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast, hashlib, json, os, ssl, urllib.request
+          from urllib.parse import urlparse
+          repo, sha = os.environ["HEAD_REPO"], os.environ["HEAD_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl): return None
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=ssl.create_default_context()), RejectRedirects())
+          def read(url: str, limit: int) -> bytes:
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com": raise SystemExit("unexpected source origin")
+              with opener.open(url, timeout=30) as response: data = response.read(limit + 1)
+              if len(data) > limit: raise SystemExit("source exceeds byte budget")
+              return data
+          request = json.loads(read(base + "requests/cmi-flu-b1-launch-v2.json", 32768))
+          if request["request_id"] != "20260902-cmi-flu-b1-002": raise SystemExit("request id mismatch")
+          if request["target"] != "renta0426/cmi-flu-b1-anchor-20260902-002": raise SystemExit("target mismatch")
+          if request["resource"] != {"accelerator": "cpu", "expected_runtime_minutes": 10, "hard_timeout_minutes": 30, "max_active_runs": 1}: raise SystemExit("resource mismatch")
+          if request["enable_internet"] is not False or request["automatic_compute_retries"] != 0: raise SystemExit("internet/retry mismatch")
+          source_url = f"https://raw.githubusercontent.com/{request['kernel_source_repository']}/{request['kernel_source_commit']}/{request['kernel_source_path']}"
+          source = read(source_url, 131072)
+          blob = hashlib.sha1(b"blob " + str(len(source)).encode() + b"\0" + source).hexdigest()
+          if blob != request["kernel_source_blob_sha"]: raise SystemExit("CMI source blob mismatch")
+          tree = ast.parse(source.decode("utf-8"))
+          imports = {node.names[0].name.split('.')[0] for node in ast.walk(tree) if isinstance(node, ast.Import)} | {node.module.split('.')[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
+          if "subprocess" in imports or "urllib" in imports or "requests" in imports: raise SystemExit("standalone kernel unexpectedly contains network/process dependency")
+          launch = read(base + ".github/workflows/75-cmi-flu-b1-launch-v2.yml", 131072).decode("utf-8")
+          for required in (
+              "permissions: {}", "runs-on: ubuntu-24.04", "environment: kaggle-readonry",
+              '"enable_gpu": False', '"enable_tpu": False', '"enable_internet": False',
+              'kernels push -p "${kernel_dir}" --timeout 1800', "automatic_compute_retries",
+          ):
+              if required not in launch: raise SystemExit(f"required launch guard missing: {required}")
+          for forbidden in ("pull_request_target:", "workflow_run:", "issue_comment:", "runs-on: self-hosted", "set -x", "actions/checkout@"):
+              if forbidden in launch: raise SystemExit(f"forbidden workflow construct: {forbidden}")
+          print("CMI-Flu B1 v2 static validation: PASS")
+          PY
