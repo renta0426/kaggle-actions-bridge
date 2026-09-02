@@ -1,0 +1,168 @@
+name: CMI-Flu B1 request 004 static validation
+
+on:
+  push:
+    paths:
+      - .github/workflows/92-cmi-flu-b1-v4-static.yml
+      - .github/workflows/93-cmi-flu-b1-launch-v4.yml
+      - requests/cmi-flu-b1-launch-v4.json
+      - scripts/cmi_flu_b1_kernel_impl.py
+  pull_request:
+    paths:
+      - .github/workflows/92-cmi-flu-b1-v4-static.yml
+      - .github/workflows/93-cmi-flu-b1-launch-v4.yml
+      - requests/cmi-flu-b1-launch-v4.json
+      - scripts/cmi_flu_b1_kernel_impl.py
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-b1-v4-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate deterministic single-file kernel
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Build and inspect exact patched script without credentials
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "${SOURCE_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast
+          import hashlib
+          import json
+          import os
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          repo, sha = os.environ["SOURCE_REPO"], os.environ["SOURCE_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+
+          def read(path: str, limit: int) -> bytes:
+              url = base + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with urllib.request.urlopen(url, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              return data
+
+          request = json.loads(read("requests/cmi-flu-b1-launch-v4.json", 32768))
+          expected = {
+              "schema_version": 4,
+              "request_id": "20260902-cmi-flu-b1-004",
+              "parent_request_id": "20260902-cmi-flu-b1-003",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "kernel_run",
+              "target": "renta0426/cmi-flu-b1-anchor-single-file-20260902-004",
+              "source": request["source"],
+              "cmi_contract_commit": "6362cd8596cd996d13f66615eb1833ad26af1b39",
+              "cmi_standalone_runner_blob": "7e28ed606f63883f9c2e230dfea1382389dce23b",
+              "packaging": {"python_files": 1, "code_file": "script.py"},
+              "resource": {"accelerator": "cpu", "expected_runtime_minutes": 15, "hard_timeout_minutes": 30, "max_active_runs": 1},
+              "api_budget": {"max_calls": 20, "poll_interval_seconds": 300, "max_pages": 2},
+              "side_effects": ["create one private notebook version and start one CPU run"],
+              "automatic_compute_retries": 0,
+              "enable_internet": False,
+              "rules_checked_at_utc": "2026-09-02T13:50:00Z",
+          }
+          if request != expected:
+              raise SystemExit("request 004 differs from fixed allowlist")
+          source_spec = request["source"]
+          if source_spec["path"] != "scripts/cmi_flu_b1_kernel_impl.py":
+              raise SystemExit("source path mismatch")
+          if source_spec["blob_sha"] != "5ef01cf2a7c4a4140bce0210151d407972b9e7f3":
+              raise SystemExit("source blob allowlist mismatch")
+          replacements = source_spec.get("replacements")
+          if not isinstance(replacements, list) or len(replacements) != 4:
+              raise SystemExit("replacement manifest mismatch")
+
+          raw = read(source_spec["path"], 100000)
+          blob = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+          if blob != source_spec["blob_sha"]:
+              raise SystemExit("base implementation blob mismatch")
+          text = raw.decode("utf-8")
+          for item in replacements:
+              if set(item) != {"old", "new", "count"} or not isinstance(item["count"], int):
+                  raise SystemExit("invalid replacement item")
+              actual = text.count(item["old"])
+              if actual != item["count"]:
+                  raise SystemExit(f"replacement occurrence mismatch expected={item['count']} actual={actual}")
+              text = text.replace(item["old"], item["new"])
+
+          compile(text, "script.py", "exec")
+          tree = ast.parse(text, filename="script.py")
+          imported_roots = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imported_roots.update(alias.name.split(".")[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imported_roots.add(node.module.split(".")[0])
+          forbidden = {"requests", "httpx", "socket", "subprocess", "urllib", "cmi_flu_b1_kernel_impl"}
+          if imported_roots & forbidden:
+              raise SystemExit(f"patched script has forbidden imports: {sorted(imported_roots & forbidden)}")
+          for required in (
+              'REQUEST_ID = "20260902-cmi-flu-b1-004"',
+              'CMI_COMMIT = "6362cd8596cd996d13f66615eb1833ad26af1b39"',
+              'run_id = "b01-anchor-standalone-004"',
+              '"run_b1_kaggle_standalone.py": "7e28ed606f63883f9c2e230dfea1382389dce23b"',
+              'if __name__ == "__main__":',
+          ):
+              if required not in text:
+                  raise SystemExit(f"patched script missing marker: {required}")
+          if "import cmi_flu_b1_kernel_impl" in text:
+              raise SystemExit("single-file script still imports sibling module")
+          digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+          print(f"CMI_B1_V4_STATIC PASS patched_sha256={digest} python_files=1")
+          PY
+
+      - name: Validate launch packaging contract
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, ssl, urllib.request
+          url = f"https://raw.githubusercontent.com/{os.environ['SOURCE_REPO']}/{os.environ['SOURCE_SHA']}/.github/workflows/93-cmi-flu-b1-launch-v4.yml"
+          with urllib.request.urlopen(url, timeout=30, context=ssl.create_default_context()) as response:
+              text = response.read(131073).decode("utf-8")
+          if len(text.encode()) > 131072:
+              raise SystemExit("launch workflow too large")
+          required = (
+              "permissions: {}",
+              "environment: kaggle-readonry",
+              "concurrency:\n  group: kaggle-resource-global",
+              '"code_file": "script.py"',
+              '"enable_gpu": False',
+              '"enable_tpu": False',
+              '"enable_internet": False',
+              'python_count="$(find "${kernel_dir}" -maxdepth 1 -type f -name \'*.py\' | wc -l)"',
+              '[[ "${python_count}" -eq 1 ]]',
+              'kernels push -p "${kernel_dir}" --timeout 1800',
+          )
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit(f"launch packaging marker missing: {marker}")
+          forbidden = ("actions/checkout@", "runs-on: self-hosted", "set -x", "cmi_flu_b1_kernel_v3.py")
+          for marker in forbidden:
+              if marker in text:
+                  raise SystemExit(f"forbidden launch construct: {marker}")
+          print("CMI_B1_V4_PACKAGING PASS")
+          PY

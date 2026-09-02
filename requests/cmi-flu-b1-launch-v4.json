@@ -1,0 +1,57 @@
+{
+  "schema_version": 4,
+  "request_id": "20260902-cmi-flu-b1-004",
+  "parent_request_id": "20260902-cmi-flu-b1-003",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b1-anchor-single-file-20260902-004",
+  "source": {
+    "path": "scripts/cmi_flu_b1_kernel_impl.py",
+    "blob_sha": "5ef01cf2a7c4a4140bce0210151d407972b9e7f3",
+    "replacements": [
+      {
+        "old": "REQUEST_ID = \"20260902-cmi-flu-b1-002\"",
+        "new": "REQUEST_ID = \"20260902-cmi-flu-b1-004\"",
+        "count": 1
+      },
+      {
+        "old": "1e075cfa565698f708e872d22be629f97704a24f",
+        "new": "6362cd8596cd996d13f66615eb1833ad26af1b39",
+        "count": 2
+      },
+      {
+        "old": "run_id = \"b01-anchor-standalone-002\"",
+        "new": "run_id = \"b01-anchor-standalone-004\"",
+        "count": 1
+      },
+      {
+        "old": "    \"targets.py\": \"154681d9a51e36abd635b596c6d8f7cee22c2d96\",\n}",
+        "new": "    \"targets.py\": \"154681d9a51e36abd635b596c6d8f7cee22c2d96\",\n    \"run_b1_kaggle_standalone.py\": \"7e28ed606f63883f9c2e230dfea1382389dce23b\",\n}",
+        "count": 1
+      }
+    ]
+  },
+  "cmi_contract_commit": "6362cd8596cd996d13f66615eb1833ad26af1b39",
+  "cmi_standalone_runner_blob": "7e28ed606f63883f9c2e230dfea1382389dce23b",
+  "packaging": {
+    "python_files": 1,
+    "code_file": "script.py"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 15,
+    "hard_timeout_minutes": 30,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-02T13:50:00Z"
+}
