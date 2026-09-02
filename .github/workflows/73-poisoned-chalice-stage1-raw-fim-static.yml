@@ -87,7 +87,7 @@ jobs:
               raise SystemExit("launch request schema differs from fixed allowlist")
           if request["schema_version"] != 1:
               raise SystemExit("unsupported launch request schema")
-          if request["request_id"] != "20260902-poisoned-chalice-stage1-raw-fim-001":
+          if request["request_id"] != "20260902-poisoned-chalice-stage1-raw-fim-002":
               raise SystemExit("unexpected launch request id")
           if request["competition"] != "poisoned-chalice-icse27" or request["operation"] != "kernel_run":
               raise SystemExit("competition/operation mismatch")
