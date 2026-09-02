@@ -1,0 +1,166 @@
+name: Kaggle CLI dependency lock probe
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/20-kaggle-cli-lock-probe.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-cli-lock-probe
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve and inspect kaggle 2.2.4 without secrets
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Enforce trusted secret-free boundary
+        shell: bash
+        env:
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+          EXPECTED_REPOSITORY_ID: "1354356687"
+          EXPECTED_ACTOR: renta0426
+          EXPECTED_ACTOR_ID: "71638068"
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/20-kaggle-cli-lock-probe.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+
+          forbidden=(
+            KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY
+            GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY
+            AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AZURE_CLIENT_SECRET
+            GOOGLE_APPLICATION_CREDENTIALS
+          )
+          for name in "${forbidden[@]}"; do
+            if [[ -n "${!name-}" ]]; then
+              echo "ERROR: unexpected credential variable present: ${name}"
+              exit 1
+            fi
+          done
+
+          echo "Secret-free boundary: PASS"
+
+      - name: Resolve exact wheel set and hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+
+          python3 -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            --dry-run \
+            --ignore-installed \
+            --only-binary=:all: \
+            --report "${workdir}/report.json" \
+            'kaggle==2.2.4' \
+            >/dev/null
+
+          REPORT_PATH="${workdir}/report.json" python3 - <<'PY'
+          import json
+          import os
+          import re
+          from urllib.parse import urlparse
+
+          report_path = os.environ["REPORT_PATH"]
+          with open(report_path, "r", encoding="utf-8") as handle:
+              report = json.load(handle)
+
+          installs = report.get("install")
+          if not isinstance(installs, list) or not installs:
+              raise SystemExit("pip report did not contain an install set")
+
+          rows = []
+          for item in installs:
+              metadata = item.get("metadata") or {}
+              name = metadata.get("name")
+              version = metadata.get("version")
+              download = item.get("download_info") or {}
+              url = download.get("url") or ""
+              archive = download.get("archive_info") or {}
+              hashes = archive.get("hashes") or {}
+              sha256 = hashes.get("sha256")
+
+              if not isinstance(name, str) or not isinstance(version, str):
+                  raise SystemExit("resolved package missing name/version metadata")
+              if urlparse(url).scheme != "https" or urlparse(url).hostname != "files.pythonhosted.org":
+                  raise SystemExit(f"unexpected package origin for {name}")
+              if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+                  raise SystemExit(f"missing/invalid SHA-256 for {name}")
+
+              canonical = re.sub(r"[-_.]+", "-", name).lower()
+              rows.append((canonical, version, sha256))
+
+          if not any(name == "kaggle" and version == "2.2.4" for name, version, _ in rows):
+              raise SystemExit("resolved set does not contain kaggle==2.2.4")
+
+          rows.sort()
+          print(f"Resolved package count: {len(rows)}")
+          print("LOCKFILE_BEGIN")
+          for name, version, sha256 in rows:
+              print(f"{name}=={version} --hash=sha256:{sha256}")
+          print("LOCKFILE_END")
+          PY
+
+      - name: Verify installability and CLI entry point without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            --only-binary=:all: \
+            'kaggle==2.2.4' \
+            >/dev/null
+
+          version_output="$("${workdir}/venv/bin/kaggle" --version)"
+          case "${version_output}" in
+            *2.2.4*) ;;
+            *) echo "ERROR: unexpected Kaggle CLI version output"; exit 1 ;;
+          esac
+
+          "${workdir}/venv/bin/kaggle" --help >/dev/null
+          echo "Official Kaggle CLI 2.2.4 secret-free execution: PASS"
+
+      - name: Complete lock probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Kaggle CLI dependency lock probe: PASS"
