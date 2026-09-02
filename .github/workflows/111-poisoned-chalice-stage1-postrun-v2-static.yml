@@ -1,0 +1,258 @@
+name: Poisoned Chalice Stage1 version 2 post-run static validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/111-poisoned-chalice-stage1-postrun-v2-static.yml
+      - .github/workflows/112-poisoned-chalice-stage1-raw-fim-status-v2.yml
+      - .github/workflows/113-poisoned-chalice-stage1-raw-fim-submit-v2.yml
+      - requests/poisoned-chalice-stage1-raw-fim-status-v2.json
+      - requests/poisoned-chalice-stage1-raw-fim-submit-v2.json
+  pull_request:
+    paths:
+      - .github/workflows/111-poisoned-chalice-stage1-postrun-v2-static.yml
+      - .github/workflows/112-poisoned-chalice-stage1-raw-fim-status-v2.yml
+      - .github/workflows/113-poisoned-chalice-stage1-raw-fim-submit-v2.yml
+      - requests/poisoned-chalice-stage1-raw-fim-status-v2.json
+      - requests/poisoned-chalice-stage1-raw-fim-submit-v2.json
+
+permissions: {}
+
+concurrency:
+  group: poisoned-chalice-stage1-postrun-v2-static-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static:
+    name: Validate read-only status and SHA-bound single submission
+    if: github.repository == 'renta0426/kaggle-actions-bridge'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact event files without credentials
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "1354356687" ]]
+          [[ "${EVENT_ACTOR}" == "renta0426" ]]
+          [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
+          [[ "${EVENT_SENDER_ID}" == "71638068" ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            [[ "${PR_HEAD_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+            [[ "${PR_AUTHOR}" == "renta0426" ]]
+          elif [[ "${EVENT_NAME}" != "push" ]]; then
+            echo "unexpected event: ${EVENT_NAME}"
+            exit 1
+          fi
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${SOURCE_SHA}" <<'PY'
+          from __future__ import annotations
+          import pathlib, ssl, sys, urllib.error, urllib.request
+          from urllib.parse import urlparse
+
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+          required = {
+              ".github/workflows/112-poisoned-chalice-stage1-raw-fim-status-v2.yml": 131072,
+              ".github/workflows/113-poisoned-chalice-stage1-raw-fim-submit-v2.yml": 131072,
+          }
+          optional = {
+              "requests/poisoned-chalice-stage1-raw-fim-status-v2.json": 16384,
+              "requests/poisoned-chalice-stage1-raw-fim-submit-v2.json": 16384,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+
+          def fetch(path: str, limit: int, *, missing_ok: bool) -> bool:
+              url = root + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              try:
+                  with opener.open(url, timeout=30) as response:
+                      data = response.read(limit + 1)
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return False
+                  raise
+              if len(data) > limit:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              destination = pathlib.Path(path)
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+              return True
+
+          for path, limit in required.items():
+              if not fetch(path, limit, missing_ok=False):
+                  raise SystemExit(f"required workflow missing: {path}")
+          found = sum(fetch(path, limit, missing_ok=True) for path, limit in optional.items())
+          print(f"STAGE1_POSTRUN_STATIC_SOURCE PASS workflows=2 optional_requests={found}")
+          PY
+
+      - name: Validate workflow and optional request contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+          import json, pathlib, re
+
+          status_path = pathlib.Path(
+              ".github/workflows/112-poisoned-chalice-stage1-raw-fim-status-v2.yml"
+          )
+          submit_path = pathlib.Path(
+              ".github/workflows/113-poisoned-chalice-stage1-raw-fim-submit-v2.yml"
+          )
+          status = status_path.read_text(encoding="utf-8")
+          submit = submit_path.read_text(encoding="utf-8")
+
+          def require(text: str, markers: tuple[str, ...], label: str) -> None:
+              for marker in markers:
+                  if marker not in text:
+                      raise SystemExit(f"{label} marker missing: {marker}")
+
+          require(status, (
+              "permissions: {}", "group: kaggle-api-global", "cancel-in-progress: false",
+              "environment: kaggle-readonry",
+              "requests/poisoned-chalice-stage1-raw-fim-status-v2.json",
+              "20260903-poisoned-chalice-stage1-raw-fim-status-002",
+              "20260902-poisoned-chalice-stage1-raw-fim-005",
+              '"expected_kernel_version": 2',
+              '"output_allowlist": ["run_manifest.json", "submission.csv"]',
+              "STAGE1_KERNEL_V2_COMPLETE PASS version=2 private=true",
+              "POISONED_CHALICE_STAGE1_V2_OUTPUT_VERIFIED",
+              "hidden_validation_labels_used", "public_leaderboard_tuning_used",
+              "validation_labels_used_for_fit_or_feature_selection",
+              "EXPECTED_OOF_AUC", "0.664524", "submission_sha256",
+              "STAGE1_STATUS_V2_LOCAL_OUTPUT_REMOVED",
+          ), "status")
+          require(submit, (
+              "permissions: {}", "group: kaggle-api-global", "cancel-in-progress: false",
+              "environment: kaggle-readonry",
+              "requests/poisoned-chalice-stage1-raw-fim-submit-v2.json",
+              "20260903-poisoned-chalice-stage1-raw-fim-submit-001",
+              "20260903-poisoned-chalice-stage1-raw-fim-status-002",
+              '"expected_kernel_version": 2',
+              '"submission_call_limit": 1',
+              '"automatic_submission_retries": 0',
+              '"select_as_final": False',
+              "EXPECTED_SUBMISSION_SHA256", "STAGE1_SHA_BOUND_OUTPUT PASS",
+              "STAGE1_COMPETITION_SUBMISSION PASS", "submit_calls=1",
+              "automatic_retries=0 final_selection=false",
+              "STAGE1_SUBMISSION_LOCAL_MATERIAL_REMOVED",
+          ), "submission")
+
+          if status.count("${{ secrets.KAGGLE_API_TOKEN }}") != 2:
+              raise SystemExit("status Kaggle token step count changed")
+          if submit.count("${{ secrets.KAGGLE_API_TOKEN }}") != 3:
+              raise SystemExit("submission Kaggle token step count changed")
+          if status.count("environment: kaggle-readonry") != 1:
+              raise SystemExit("status protected Environment count changed")
+          if submit.count("environment: kaggle-readonry") != 1:
+              raise SystemExit("submission protected Environment count changed")
+          if status.count('"${WORKDIR}/venv/bin/kaggle" kernels output') != 1:
+              raise SystemExit("status output-download call count changed")
+          if submit.count('"${WORKDIR}/venv/bin/kaggle" kernels output') != 1:
+              raise SystemExit("submission output-download call count changed")
+          if submit.count('"${WORKDIR}/venv/bin/kaggle" competitions submit') != 1:
+              raise SystemExit("competition submit call count must equal one")
+          if "competitions submit" in status:
+              raise SystemExit("read-only status workflow gained submission capability")
+          for label, text in (("status", status), ("submission", submit)):
+              for forbidden in (
+                  "actions/checkout", "actions/upload-artifact", "actions/download-artifact",
+                  "actions/cache", "workflow_dispatch", "continue-on-error: true",
+                  "kernels push", "kernels delete", "kernels cancel", "datasets create",
+              ):
+                  if forbidden in text:
+                      raise SystemExit(f"{label} workflow gained forbidden capability: {forbidden}")
+              if re.search(r"\bwhile\s+true\b|\bfor\s+\(\(\s*;\s*;", text):
+                  raise SystemExit(f"{label} workflow contains an unbounded loop")
+              if re.search(r"^\s*sleep\s+", text, flags=re.MULTILINE):
+                  raise SystemExit(f"{label} workflow must not poll")
+
+          status_request = pathlib.Path(
+              "requests/poisoned-chalice-stage1-raw-fim-status-v2.json"
+          )
+          if status_request.exists():
+              payload = json.loads(status_request.read_text(encoding="utf-8"))
+              expected = {
+                  "schema_version": 1,
+                  "request_id": "20260903-poisoned-chalice-stage1-raw-fim-status-002",
+                  "parent_request_id": "20260902-poisoned-chalice-stage1-raw-fim-005",
+                  "competition": "poisoned-chalice-icse27",
+                  "operation": "kernel_status_output",
+                  "target": "renta0426/stage1-raw-fim-submission-v1",
+                  "expected_kernel_version": 2,
+                  "output_allowlist": ["run_manifest.json", "submission.csv"],
+                  "api_budget": {"max_calls": 8, "max_pages": 1},
+                  "side_effects": [],
+              }
+              if payload != expected:
+                  raise SystemExit("status request differs from exact allowlist")
+
+          submit_request = pathlib.Path(
+              "requests/poisoned-chalice-stage1-raw-fim-submit-v2.json"
+          )
+          if submit_request.exists():
+              payload = json.loads(submit_request.read_text(encoding="utf-8"))
+              fixed = {
+                  "schema_version": 1,
+                  "request_id": "20260903-poisoned-chalice-stage1-raw-fim-submit-001",
+                  "parent_status_request_id": "20260903-poisoned-chalice-stage1-raw-fim-status-002",
+                  "competition": "poisoned-chalice-icse27",
+                  "operation": "competition_submit",
+                  "target_kernel": "renta0426/stage1-raw-fim-submission-v1",
+                  "expected_kernel_version": 2,
+                  "submission_file": "submission.csv",
+                  "submission_message": "Stage1 raw+structure+FIM 10k frozen; OOF AUC 0.6645; no Public-LB tuning",
+                  "submission_call_limit": 1,
+                  "side_effects": ["create one competition submission"],
+                  "automatic_submission_retries": 0,
+                  "select_as_final": False,
+              }
+              for key, value in fixed.items():
+                  if payload.get(key) != value:
+                      raise SystemExit(f"submission request mismatch: {key}")
+              if set(payload) != set(fixed) | {"submission_sha256"}:
+                  raise SystemExit("submission request contains unknown fields")
+              if not re.fullmatch(r"[0-9a-f]{64}", str(payload.get("submission_sha256") or "")):
+                  raise SystemExit("submission request SHA-256 is malformed")
+
+          print(
+              "STAGE1_POSTRUN_STATIC PASS status_side_effects=none "
+              "submission_calls=1 sha_bound=true automatic_retries=0 final_selection=false"
+          )
+          PY
+
+      - name: Cleanup fetched validation files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github requests
+          echo "STAGE1_POSTRUN_STATIC_TEMPORARY_MATERIAL_REMOVED"
