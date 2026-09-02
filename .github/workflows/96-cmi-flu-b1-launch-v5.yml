@@ -10,8 +10,8 @@ on:
 
 permissions: {}
 
-# Serialize bridge admission/write jobs. Remote Kaggle compute can outlive this
-# workflow, so the live Kaggle active-kernel check below remains authoritative.
+# Serialize bridge admission/write jobs. Remote Kaggle compute is admitted by
+# accelerator class immediately before the write.
 concurrency:
   group: kaggle-resource-global
   queue: max
@@ -27,6 +27,7 @@ env:
   LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
   TARGET_COMPETITION: cmi-flu-first-prediction-challenge
   TARGET_KERNEL: renta0426/cmi-flu-b1-anchor-single-file-20260902-005
+  REQUESTED_ACCELERATOR: cpu
 
 jobs:
   validate:
@@ -94,6 +95,8 @@ jobs:
               raise SystemExit("concurrency contract mismatch")
           if request["resource"] != {"accelerator": "cpu", "expected_runtime_minutes": 15, "hard_timeout_minutes": 30, "max_active_runs": 1}:
               raise SystemExit("resource mismatch")
+          if request["resource"]["accelerator"] != os.environ["REQUESTED_ACCELERATOR"]:
+              raise SystemExit("requested accelerator mismatch")
           if request["api_budget"] != {"max_calls": 20, "poll_interval_seconds": 300, "max_pages": 2}:
               raise SystemExit("API budget mismatch")
           if request["side_effects"] != ["create one private notebook version and start one CPU run"]:
@@ -231,7 +234,7 @@ jobs:
           "${workdir}/venv/bin/kaggle" --version >/dev/null
           echo "Locked Kaggle CLI and request-005 single script prepared: PASS"
 
-      - name: Fetch live Competition rules and determine admission
+      - name: Fetch live Competition rules and determine resource-class admission
         id: admission
         shell: bash
         env:
@@ -243,6 +246,8 @@ jobs:
           from __future__ import annotations
           import os, re
           from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
           api = KaggleApi(); api.authenticate()
           pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
           content = {}
@@ -263,28 +268,71 @@ jobs:
               raise SystemExit("live Competition evaluation differs from approved guardrails")
           if "sample_submission_part1.csv" not in data_text or "investigations_260821.tsv" not in data_text:
               raise SystemExit("live Competition data description differs from expected inputs")
+
           target = os.environ["TARGET_KERNEL"]
           existing = api.kernels_list(user="renta0426", search="cmi-flu-b1-anchor-single-file-20260902-005", page_size=5) or []
           if target in {str(getattr(item, "ref", "")) for item in existing}:
               raise SystemExit("target kernel already exists; duplicate refused")
+
+          active_refs = []
           recent = api.kernels_list(user="renta0426", sort_by="dateRun", page_size=10) or []
-          active = []
           for item in recent[:10]:
               ref = str(getattr(item, "ref", ""))
               if not ref:
                   continue
               status = str(getattr(api.kernels_status(ref), "status", "")).upper()
-              if "RUNNING" in status or "QUEUED" in status or "PENDING" in status:
-                  active.append(ref)
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              if active:
-                  handle.write("can_launch=false\n")
-              else:
-                  handle.write("can_launch=true\n")
-          if active:
-              print(f"CMI_B1_005_DEFERRED active_count={len(active)} side_effect=false request_unexecuted=true")
+              if any(token in status for token in ("RUNNING", "QUEUED", "PENDING")):
+                  active_refs.append(ref)
+
+          active_by_resource = {"cpu": [], "gpu": [], "tpu": [], "unknown": []}
+          if len(active_refs) > 5:
+              active_by_resource["unknown"].extend(active_refs)
           else:
-              print(f"LIVE_RULE_PREFLIGHT PASS pages={len(content)} active=0 accelerator=cpu internet=false")
+              with api.build_kaggle_client() as client:
+                  for ref in active_refs:
+                      resource = "unknown"
+                      try:
+                          owner, slug = ref.split("/", 1)
+                          request = ApiGetKernelRequest()
+                          request.user_name = owner
+                          request.kernel_slug = slug
+                          details = client.kernels.kernels_api_client.get_kernel(request)
+                          metadata = getattr(details, "metadata", None)
+                          if metadata is not None:
+                              if bool(getattr(metadata, "enable_tpu", False)):
+                                  resource = "tpu"
+                              elif bool(getattr(metadata, "enable_gpu", False)):
+                                  resource = "gpu"
+                              else:
+                                  resource = "cpu"
+                      except Exception:
+                          resource = "unknown"
+                      active_by_resource[resource].append(ref)
+
+          requested = os.environ["REQUESTED_ACCELERATOR"]
+          same_class = len(active_by_resource[requested])
+          unknown = len(active_by_resource["unknown"])
+          blocking = same_class + unknown
+          can_launch = blocking < 1
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
+
+          counts = {key: len(value) for key, value in active_by_resource.items()}
+          if can_launch:
+              print(
+                  "LIVE_RULE_PREFLIGHT PASS "
+                  f"pages={len(content)} requested={requested} "
+                  f"active_cpu={counts['cpu']} active_gpu={counts['gpu']} "
+                  f"active_tpu={counts['tpu']} active_unknown={counts['unknown']} "
+                  "accelerator=cpu internet=false"
+              )
+          else:
+              print(
+                  "CMI_B1_005_DEFERRED "
+                  f"requested={requested} same_class={same_class} unknown={unknown} "
+                  f"nonblocking_gpu={counts['gpu']} nonblocking_tpu={counts['tpu']} "
+                  "side_effect=false request_unexecuted=true"
+              )
           PY
 
       - name: Record deferred admission
@@ -292,8 +340,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "CMI_B1_005_DEFERRED no Kaggle write occurred; manually dispatch the same immutable request after the active kernel clears and approve the protected Environment again."
-          printf '%s\n' '## CMI-Flu B1 request 005 deferred' '' '- Another Kaggle kernel is active.' '- No `kernels push` call was made.' '- Request `20260902-cmi-flu-b1-005` remains unexecuted.' '- Manual redispatch requires a fresh Environment approval.' >> "${GITHUB_STEP_SUMMARY}"
+          echo "CMI_B1_005_DEFERRED no Kaggle write occurred; a same-resource or unclassified active kernel blocked admission."
+          printf '%s\n' '## CMI-Flu B1 request 005 deferred' '' '- A same-resource or unclassified active kernel blocked this CPU request.' '- Active GPU/TPU kernels alone do not block the request.' '- No `kernels push` call was made.' '- Request `20260902-cmi-flu-b1-005` remains unexecuted.' '- Manual redispatch requires a fresh Environment approval.' >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Materialize exactly one Python file and push once
         if: steps.admission.outputs.can_launch == 'true'
