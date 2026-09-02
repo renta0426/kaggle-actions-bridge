@@ -174,7 +174,8 @@ def validate_launch(launch: str) -> None:
         "MELLUM_LIVE_PREFLIGHT PASS",
         "MELLUM_LAUNCH_DEFERRED",
         "automatic_retries=0 submission=false",
-        "target_labels_embedded=false",
+        "labels_embedded=false",
+        'manifest.get("target_labels_embedded") is not False',
     )
     for marker in required:
         if marker not in launch:
