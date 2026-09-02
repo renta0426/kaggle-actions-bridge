@@ -17,10 +17,11 @@ on:
       - requests/cmi-flu-b2-launch-v1.json
       - payloads/cmi-flu-b2-001/**
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
-  group: cmi-flu-b2-static-${{ github.ref }}
+  group: "cmi-flu-b2-static-${{ github.ref }}"
   cancel-in-progress: false
 
 jobs:
