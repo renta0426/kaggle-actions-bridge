@@ -5,7 +5,7 @@
   "operation": "kernel_run",
   "target": "renta0426/cmi-flu-b1-anchor-20260902-001",
   "kernel_source_path": "scripts/cmi_flu_b1_kernel.py",
-  "kernel_source_blob_sha": "b6c89ceab08de37d1e2885ddbdcf0cb66b2e7401",
+  "kernel_source_blob_sha": "5171caee24adf4da2003f9e87714e9e7704a381a",
   "source_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
   "source_commit": "1e075cfa565698f708e872d22be629f97704a24f",
   "resource": {
