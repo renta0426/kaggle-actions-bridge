@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "request_id": "20260902-cmi-flu-b1-diagnose-002",
+  "parent_request_id": "20260902-cmi-flu-b1-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_failure_log_diagnostic_v2",
+  "target": "renta0426/cmi-flu-b1-anchor-20260902-001",
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": []
+}

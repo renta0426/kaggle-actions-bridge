@@ -1,0 +1,302 @@
+name: CMI-Flu B1 bounded failure diagnostic v2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/cmi-flu-b1-diagnose-v2.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-b1-diagnose-v2.json
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_KERNEL: renta0426/cmi-flu-b1-anchor-20260902-001
+
+jobs:
+  validate:
+    name: Validate diagnostic v2 request without secrets
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate owner boundary and fixed request
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          request_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${REQUEST_PATH}"
+          python3 - "${request_url}" <<'PY'
+          import json, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url = sys.argv[1]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected request origin")
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(16385)
+          if len(data) > 16384:
+              raise SystemExit("request too large")
+          request = json.loads(data)
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260902-cmi-flu-b1-diagnose-002",
+              "parent_request_id": "20260902-cmi-flu-b1-001",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "kernel_failure_log_diagnostic_v2",
+              "target": "renta0426/cmi-flu-b1-anchor-20260902-001",
+              "api_budget": {"max_calls": 8, "max_pages": 1},
+              "side_effects": [],
+          }
+          if request != expected:
+              raise SystemExit("diagnostic v2 request differs from fixed allowlist")
+          print("CMI-Flu B1 diagnostic v2 request validation: PASS")
+          PY
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl, urllib.request
+          context = ssl.create_default_context()
+          for url in (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+          ):
+              request = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print("Current Kaggle policy/API page reachability: PASS")
+          PY
+
+  diagnose:
+    name: Read and redact one failed execution log
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/74-cmi-flu-b1-diagnose-v2.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected CMI-Flu B1 diagnostic v2 boundary: PASS"
+
+      - name: Prepare SHA-256 locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+          python3 - "${lock_url}" "${workdir}/kaggle.lock" <<'PY'
+          import re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock too large")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          open(output, "w", encoding="utf-8").write(text)
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version >/dev/null
+
+      - name: Fetch one status and one log, then emit redacted diagnostics
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          import os
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api = KaggleApi(); api.authenticate()
+          pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          names = {
+              str((p.to_dict() if hasattr(p, "to_dict") else dict(p)).get("name") or "").strip().lower()
+              for p in pages
+          }
+          if "rules" not in names or "evaluation" not in names or not any("data" in n for n in names):
+              raise SystemExit("live Competition policy pages unavailable")
+          status = str(getattr(api.kernels_status(os.environ["TARGET_KERNEL"]), "status", "")).upper()
+          normalized = "error" if ("ERROR" in status or "FAIL" in status) else "other"
+          print(f"B1_DIAGNOSTIC_V2_STATUS state={normalized}")
+          PY
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels logs "${TARGET_KERNEL}" \
+            >"${WORKDIR}/kernel.log" 2>"${WORKDIR}/logs.stderr"
+          logs_rc=$?
+          set -e
+          rm -f "${WORKDIR}/logs.stderr"
+          echo "B1_DIAGNOSTIC_V2_FETCH logs_rc=${logs_rc}"
+
+          "${WORKDIR}/venv/bin/python" - "${WORKDIR}/kernel.log" <<'PY'
+          from __future__ import annotations
+          import hashlib, pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          raw = path.read_bytes()
+          if len(raw) > 2_000_000:
+              raise SystemExit("kernel log exceeds diagnostic byte budget")
+          text = raw.decode("utf-8", errors="replace")
+          print(f"B1_DIAGNOSTIC_V2_LOG bytes={len(raw)} sha256={hashlib.sha256(raw).hexdigest()}")
+
+          ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+          timestamp = re.compile(r"^(?:\[?\d{4}-\d{2}-\d{2}[T ][^\] ]+\]?\s*)+")
+          stream_prefix = re.compile(r"^(?:stdout|stderr|INFO|ERROR|WARNING|DEBUG)[: ]+", re.I)
+          url = re.compile(r"https?://\S+")
+          long_token = re.compile(r"\b[A-Za-z0-9_-]{12,}\b")
+          number = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)?(?![A-Za-z])")
+          pathish = re.compile(r"/(?:kaggle|tmp|home)/[^\s\"']+")
+
+          def normalize(line: str) -> str:
+              value = ansi.sub("", line).strip()
+              value = timestamp.sub("", value)
+              value = stream_prefix.sub("", value)
+              return value.strip()
+
+          def redact(line: str) -> str:
+              value = normalize(line)
+              value = url.sub("<URL>", value)
+              value = pathish.sub("<PATH>", value)
+              value = long_token.sub("<TOKEN>", value)
+              value = number.sub("<N>", value)
+              value = re.sub(r"[^A-Za-z0-9_.,:;=+\-\[\] ()'\"<>?/\\]", "?", value)
+              return value[:360]
+
+          normalized_lines = [normalize(line) for line in text.splitlines()]
+          keywords = (
+              "traceback", "error", "exception", "failed", "failure", "missing",
+              "mismatch", "no module named", "modulenotfound", "importerror",
+              "runtimeerror", "datacontracterror", "filenotfound", "http",
+              "ssl", "reference", "competition mount", "checksum",
+          )
+          selected: list[str] = []
+          for line in normalized_lines:
+              folded = line.casefold()
+              if any(key in folded for key in keywords):
+                  safe = redact(line)
+                  if safe and safe not in selected:
+                      selected.append(safe)
+          for safe in selected[-8:]:
+              print(f"B1_DIAGNOSTIC_V2_SAFE line={safe}")
+
+          frame_re = re.compile(r'File "([^"]+)", line (\d+), in ([^\n]+)')
+          frames = frame_re.findall(text)
+          for filename, line_no, function in frames[-8:]:
+              print(
+                  "B1_DIAGNOSTIC_V2_FRAME "
+                  f"file={pathlib.PurePosixPath(filename).name} line={line_no} "
+                  f"function={re.sub(r'[^A-Za-z0-9_<>.-]', '?', function.strip())[:80]}"
+              )
+          exception_re = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Exit))(?::|$)")
+          found = []
+          for line in normalized_lines:
+              match = exception_re.search(line)
+              if match:
+                  name = match.group(1).split(".")[-1]
+                  if name not in found:
+                      found.append(name)
+          for name in found[-6:]:
+              print(f"B1_DIAGNOSTIC_V2_EXCEPTION type={name}")
+          print(f"B1_DIAGNOSTIC_V2_COMPLETE_MARKER present={str('CMI_FLU_B1_COMPLETE' in text).lower()}")
+          PY
+
+      - name: Cleanup runner-local diagnostic content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Runner-local Kaggle diagnostic v2 content removed"
