@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-poisoned-chalice-stage1-resume-003",
+  "parent_failed_request_id": "20260903-poisoned-chalice-stage1-resume-002",
+  "source_launch_request_id": "20260902-poisoned-chalice-stage1-raw-fim-005",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/stage1-raw-fim-resume-v1",
+  "source_kernel": "renta0426/stage1-raw-fim-submission-v1",
+  "source_kernel_version": 3,
+  "source_kernel_expected_status": "error",
+  "source_failure": "Expected 113 base features, got 111",
+  "source_dataset": "renta0426/stage1-raw-fim-submission-v1-output",
+  "source_dataset_version": 1,
+  "previous_preflight_failure": "feature shard basenames were deduplicated across train and validation",
+  "builder_path": "scripts/poisoned_chalice_stage1_resume_builder.py",
+  "builder_blob_sha": "d4be3a7c523558ca3a99feefb6a9bcbb0a0a86ef",
+  "provenance_patcher_path": "scripts/poisoned_chalice_stage1_resume_v3_patch.py",
+  "provenance_patcher_blob_sha": "a424e66b0a0efce5edb42547bb6dd961013aba1c",
+  "shard_validator_path": "scripts/poisoned_chalice_stage1_dataset_shards.py",
+  "shard_validator_blob_sha": "5ff8ddc8913c2ad8ae1c94cb5aab6c8c9baa7220",
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 5,
+    "hard_timeout_minutes": 30,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission": false
+}

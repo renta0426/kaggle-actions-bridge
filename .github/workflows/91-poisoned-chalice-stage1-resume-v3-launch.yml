@@ -1,0 +1,454 @@
+name: Poisoned Chalice Stage1 cached continuation v3 CPU launch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-resume-v3.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-resume-v3.json
+  BUILDER_PATH: scripts/poisoned_chalice_stage1_resume_builder.py
+  PATCHER_PATH: scripts/poisoned_chalice_stage1_resume_v3_patch.py
+  SHARD_VALIDATOR_PATH: scripts/poisoned_chalice_stage1_dataset_shards.py
+  VALIDATOR_PATH: scripts/validate_poisoned_chalice_stage1_resume_v3.py
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/stage1-raw-fim-resume-v1
+  SOURCE_KERNEL: renta0426/stage1-raw-fim-submission-v1
+  EXPECTED_SOURCE_VERSION: "3"
+  SOURCE_DATASET: renta0426/stage1-raw-fim-submission-v1-output
+  REQUESTED_ACCELERATOR: cpu
+
+jobs:
+  validate:
+    name: Validate request 003 without credentials
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact event sources and run validator
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          root="$(mktemp -d)"
+          trap 'rm -rf "${root}"' EXIT
+          python3 - "${EVENT_SHA}" "${root}" <<'PY'
+          from __future__ import annotations
+          import pathlib, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          files = {
+              "requests/poisoned-chalice-stage1-resume-v3.json": 32768,
+              "scripts/poisoned_chalice_stage1_resume_builder.py": 131072,
+              "scripts/poisoned_chalice_stage1_resume_v3_patch.py": 32768,
+              "scripts/poisoned_chalice_stage1_dataset_shards.py": 32768,
+              "scripts/validate_poisoned_chalice_stage1_resume_v3.py": 131072,
+              ".github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml": 131072,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path, limit in files.items():
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              destination = root / path
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+          PY
+          python3 "${root}/${VALIDATOR_PATH}" \
+            --request "${root}/${REQUEST_PATH}" \
+            --builder "${root}/${BUILDER_PATH}" \
+            --patcher "${root}/${PATCHER_PATH}" \
+            --shard-validator "${root}/${SHARD_VALIDATOR_PATH}" \
+            --launch-workflow "${root}/.github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml"
+          echo "STAGE1_RESUME_V3_REQUEST_STATIC PASS full_path_inventory=true credentials=absent"
+
+  launch:
+    name: Push one full-path-validated private CPU continuation notebook
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "PROTECTED_STAGE1_RESUME_V3_BOUNDARY PASS"
+
+      - name: Prepare validated sources and SHA-locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          from __future__ import annotations
+          import pathlib, re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          files = {
+              "requests/poisoned-chalice-stage1-resume-v3.json": 32768,
+              "scripts/poisoned_chalice_stage1_resume_builder.py": 131072,
+              "scripts/poisoned_chalice_stage1_resume_v3_patch.py": 32768,
+              "scripts/poisoned_chalice_stage1_dataset_shards.py": 32768,
+              "scripts/validate_poisoned_chalice_stage1_resume_v3.py": 131072,
+              ".github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml": 131072,
+              "requirements/kaggle-2.2.4.lock": 65536,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path, limit in files.items():
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              destination = root / path
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+          lock = (root / "requirements/kaggle-2.2.4.lock").read_text(encoding="utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in lock.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle 2.2.4 pin missing")
+          PY
+          python3 "${workdir}/${VALIDATOR_PATH}" \
+            --request "${workdir}/${REQUEST_PATH}" \
+            --builder "${workdir}/${BUILDER_PATH}" \
+            --patcher "${workdir}/${PATCHER_PATH}" \
+            --shard-validator "${workdir}/${SHARD_VALIDATOR_PATH}" \
+            --launch-workflow "${workdir}/.github/workflows/91-poisoned-chalice-stage1-resume-v3-launch.yml"
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${workdir}/requirements/kaggle-2.2.4.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+          echo "STAGE1_RESUME_V3_LOCKED_CLIENT PASS"
+
+      - name: Confirm current Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl, urllib.request
+          context = ssl.create_default_context()
+          for url in (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+              "https://www.kaggle.com/docs/notebooks",
+          ):
+              request = urllib.request.Request(
+                  url, headers={"User-Agent": "kaggle-actions-bridge/1"}
+              )
+              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print("CURRENT_KAGGLE_POLICY_REACHABILITY PASS")
+          PY
+
+      - name: Recheck live rules, source version 3, target, and CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os, re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          api = KaggleApi(); api.authenticate()
+          pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("live Competition rules/evaluation unavailable")
+          plain = lambda text: re.sub(
+              r"\s+", " ", re.sub(r"<[^>]+>", " ", text.replace(r"\%", "%"))
+          ).casefold()
+          evaluation = plain(content["evaluation"])
+          if not all(term in evaluation for term in ("auc", "novelty", "1%", "false-positive")):
+              raise SystemExit("live evaluation contract mismatch")
+          source_state = str(
+              getattr(api.kernels_status(os.environ["SOURCE_KERNEL"]), "status", "")
+          ).upper()
+          if "ERROR" not in source_state and "FAILED" not in source_state:
+              raise SystemExit(f"source kernel is no longer failed: {source_state}")
+          with api.build_kaggle_client() as client:
+              request = ApiGetKernelRequest()
+              request.user_name = "renta0426"
+              request.kernel_slug = "stage1-raw-fim-submission-v1"
+              source = client.kernels.kernels_api_client.get_kernel(request)
+          source_version = int(source.metadata.current_version_number)
+          if source_version != int(os.environ["EXPECTED_SOURCE_VERSION"]):
+              raise SystemExit(f"source kernel version changed: {source_version}")
+          if not bool(source.metadata.is_private):
+              raise SystemExit("source kernel unexpectedly public")
+          existing = api.kernels_list(
+              user="renta0426", search="stage1-raw-fim-resume-v1", page_size=5
+          ) or []
+          if os.environ["TARGET_KERNEL"] in {
+              str(getattr(item, "ref", "")) for item in existing
+          }:
+              raise SystemExit("target continuation kernel already exists")
+
+          active_refs = []
+          for item in (api.kernels_list(user="renta0426", sort_by="dateRun", page_size=10) or [])[:10]:
+              ref = str(getattr(item, "ref", ""))
+              if not ref:
+                  continue
+              state = str(getattr(api.kernels_status(ref), "status", "")).upper()
+              if any(token in state for token in ("RUNNING", "QUEUED", "PENDING")):
+                  active_refs.append(ref)
+          active_by_resource = {"cpu": [], "gpu": [], "tpu": [], "unknown": []}
+          if len(active_refs) > 5:
+              active_by_resource["unknown"].extend(active_refs)
+          else:
+              with api.build_kaggle_client() as client:
+                  for ref in active_refs:
+                      resource = "unknown"
+                      try:
+                          owner, slug = ref.split("/", 1)
+                          request = ApiGetKernelRequest()
+                          request.user_name = owner
+                          request.kernel_slug = slug
+                          details = client.kernels.kernels_api_client.get_kernel(request)
+                          metadata = getattr(details, "metadata", None)
+                          if metadata is not None:
+                              if bool(getattr(metadata, "enable_tpu", False)):
+                                  resource = "tpu"
+                              elif bool(getattr(metadata, "enable_gpu", False)):
+                                  resource = "gpu"
+                              else:
+                                  resource = "cpu"
+                      except Exception:
+                          resource = "unknown"
+                      active_by_resource[resource].append(ref)
+          same_class = len(active_by_resource[os.environ["REQUESTED_ACCELERATOR"]])
+          unknown = len(active_by_resource["unknown"])
+          can_launch = same_class + unknown < 1
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
+          counts = {key: len(value) for key, value in active_by_resource.items()}
+          if can_launch:
+              print(
+                  "RESUME_V3_LIVE_PREFLIGHT PASS source_version=3 source_state=error "
+                  f"active_cpu={counts['cpu']} active_gpu={counts['gpu']} "
+                  f"active_tpu={counts['tpu']} active_unknown={counts['unknown']}"
+              )
+          else:
+              print(
+                  "RESUME_V3_LAUNCH_DEFERRED "
+                  f"same_class={same_class} unknown={unknown} "
+                  f"nonblocking_gpu={counts['gpu']} nonblocking_tpu={counts['tpu']} "
+                  "side_effect=false request_unexecuted=true"
+              )
+          PY
+
+      - name: Verify all 60 feature shards by full relative path
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" datasets files \
+            -d "${SOURCE_DATASET}" --page-size 100 -v \
+            >"${WORKDIR}/dataset-files.csv" 2>"${WORKDIR}/dataset-files.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/dataset-files.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            rm -f "${WORKDIR}/dataset-files.csv"
+            echo "SOURCE_DATASET_V3_LIST FAIL response_logged=false"
+            exit 1
+          fi
+          python3 "${WORKDIR}/${SHARD_VALIDATOR_PATH}" \
+            --csv "${WORKDIR}/dataset-files.csv" >/dev/null
+          rm -f "${WORKDIR}/dataset-files.csv"
+          echo "SOURCE_DATASET_V3_SCHEMA PASS full_paths=60 train=40 validation=20"
+
+      - name: Record deferred CPU admission
+        if: steps.admission.outputs.can_launch == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RESUME_V3_LAUNCH_DEFERRED no Kaggle write occurred; request remains unexecuted."
+
+      - name: Build, patch provenance, and revalidate CPU kernel
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          builder_blob="$(${WORKDIR}/venv/bin/python - "${WORKDIR}/${REQUEST_PATH}" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              print(json.load(handle)["builder_blob_sha"])
+          PY
+          )"
+          kernel_dir="${WORKDIR}/kernel"
+          python3 "${WORKDIR}/${BUILDER_PATH}" \
+            --output-dir "${kernel_dir}" \
+            --builder-blob-sha "${builder_blob}" >/dev/null
+          python3 "${WORKDIR}/${PATCHER_PATH}" \
+            --notebook "${kernel_dir}/stage1-raw-fim-resume-v1.ipynb" >/dev/null
+          python3 - "${kernel_dir}" <<'PY'
+          import ast, json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          metadata = json.loads((root / "kernel-metadata.json").read_text(encoding="utf-8"))
+          notebook = json.loads((root / metadata["code_file"]).read_text(encoding="utf-8"))
+          code = "".join(notebook["cells"][1]["source"])
+          tree = ast.parse(code)
+          constants = {}
+          for node in tree.body:
+              if isinstance(node, ast.Assign):
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except (TypeError, ValueError):
+                      continue
+                  for target in node.targets:
+                      if isinstance(target, ast.Name):
+                          constants[target.id] = value
+          if constants.get("REQUEST_ID") != "20260903-poisoned-chalice-stage1-resume-003":
+              raise SystemExit("patched request ID mismatch")
+          if constants.get("SOURCE_KERNEL_VERSION") != 3:
+              raise SystemExit("patched source version mismatch")
+          if metadata.get("enable_gpu") or metadata.get("enable_tpu") or metadata.get("enable_internet"):
+              raise SystemExit("continuation kernel must be CPU-only and offline")
+          print("STAGE1_RESUME_V3_KERNEL_BUILD PASS accelerator=cpu internet=false source_version=3")
+          PY
+
+      - name: Push audited private CPU notebook exactly once
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push \
+            -p "${WORKDIR}/kernel" --timeout 1800 \
+            >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "RESUME_V3_KERNEL_LAUNCH FAIL response_logged=false automatic_retries=0"
+            exit 1
+          fi
+          echo "RESUME_V3_KERNEL_LAUNCH PASS request_id=20260903-poisoned-chalice-stage1-resume-003 target=${TARGET_KERNEL} accelerator=cpu internet=false source_version=3 automatic_retries=0 submission=false"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "STAGE1_RESUME_V3_RUNNER_LOCAL_MATERIAL_REMOVED"
