@@ -3,7 +3,7 @@
 This wrapper is invoked only inside the protected Environment. It removes the
 read-only repository token from the process environment before importing or
 executing any research code, fetches exactly four allowlisted files through the
-GitHub Contents API, and delegates all byte/blob/notebook audits to the public
+GitHub Contents API, and delegates byte/blob/notebook audits to the public
 materializer.
 """
 
@@ -17,20 +17,37 @@ import os
 from pathlib import Path
 import re
 import ssl
-import sys
 import urllib.request
 from urllib.parse import quote, unquote, urlparse
 
 
 TOKEN_ENV = "RESEARCH_REPO_READ_TOKEN"
+EXPECTED_REQUEST_ID = "20260903-poisoned-chalice-mellum-transfer-v1-001"
+EXPECTED_TARGET = "renta0426/mellum-transfer-v1"
 EXPECTED_REPOSITORY = "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation"
 EXPECTED_COMMIT = "9f6be68c27dc1f3326d68bed4e2abf80db893748"
-EXPECTED_PATHS = {
-    "scripts/build_mellum_transfer_notebook.py",
-    "src/poisoned_chalice/stage2.py",
-    "configs/mellum_transfer_v1.json",
-    "experiments/pseudo-stage2-transfer-v1/transfer_sample_manifest.parquet",
+EXPECTED_MATERIALIZER_PATH = "scripts/materialize_poisoned_chalice_mellum_v1.py"
+EXPECTED_MATERIALIZER_BLOB = "fd9c645c9ff9a128b8f3a8dfdadd7c937e6d62a1"
+EXPECTED_LOADER_PATH = "scripts/materialize_poisoned_chalice_mellum_v1_private.py"
+EXPECTED_FILES = {
+    "scripts/build_mellum_transfer_notebook.py": (
+        "095725f10279431a0982e7ebb38faa5b03a7754e",
+        131_072,
+    ),
+    "src/poisoned_chalice/stage2.py": (
+        "9c2086f3c73ec5998ac3b50d7a4e166f6b1b4443",
+        131_072,
+    ),
+    "configs/mellum_transfer_v1.json": (
+        "2fa4b6cbe346283c9047b9228f6764bb52cecdd7",
+        32_768,
+    ),
+    "experiments/pseudo-stage2-transfer-v1/transfer_sample_manifest.parquet": (
+        "dedfd34d43e53c158398ae3cc99ed508cbe37f66",
+        2_097_152,
+    ),
 }
+EXPECTED_PATHS = set(EXPECTED_FILES)
 MAX_API_RESPONSE_BYTES = 4_000_000
 
 
@@ -56,6 +73,64 @@ def _load_materializer(path: Path):  # noqa: ANN202
     return module
 
 
+def _validate_request_manifest(request: dict) -> None:
+    exact = {
+        "schema_version": 1,
+        "request_id": EXPECTED_REQUEST_ID,
+        "competition": "poisoned-chalice-icse27",
+        "operation": "kernel_run",
+        "target": EXPECTED_TARGET,
+        "prerequisite_kernel": "renta0426/stage1-raw-fim-submission-v1",
+        "materializer_path": EXPECTED_MATERIALIZER_PATH,
+        "materializer_blob_sha": EXPECTED_MATERIALIZER_BLOB,
+        "private_source_loader_path": EXPECTED_LOADER_PATH,
+        "automatic_compute_retries": 0,
+        "enable_internet": True,
+        "competition_submission": False,
+        "runner_local_private_material_retention_days": 0,
+    }
+    for key, value in exact.items():
+        if request.get(key) != value:
+            raise RuntimeError(f"private-source request contract changed: {key}")
+    loader_blob = str(request.get("private_source_loader_blob_sha") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", loader_blob):
+        raise RuntimeError("private-source loader Git blob pin is malformed")
+    if request.get("resource") != {
+        "accelerator": "gpu",
+        "machine_shape": "NvidiaTeslaT4",
+        "expected_runtime_minutes": 60,
+        "hard_timeout_minutes": 180,
+        "max_active_runs": 1,
+        "min_remaining_quota_hours": 4.0,
+    }:
+        raise RuntimeError("private-source resource contract changed")
+    if request.get("api_budget") != {
+        "max_calls": 20,
+        "poll_interval_seconds": 300,
+        "max_pages": 2,
+    }:
+        raise RuntimeError("private-source API budget changed")
+    if request.get("side_effects") != [
+        "read four files from one private research commit",
+        "create one private notebook version and start one T4 GPU run",
+    ]:
+        raise RuntimeError("private-source side-effect allowlist changed")
+    source = request.get("research_source") or {}
+    if source.get("repository") != EXPECTED_REPOSITORY:
+        raise RuntimeError("request research repository changed")
+    if source.get("commit") != EXPECTED_COMMIT:
+        raise RuntimeError("request research commit changed")
+    observed = {
+        str(item.get("path")): (
+            str(item.get("git_blob_sha")),
+            int(item.get("max_bytes")),
+        )
+        for item in source.get("files", [])
+    }
+    if observed != EXPECTED_FILES:
+        raise RuntimeError("request research file allowlist or pin changed")
+
+
 def _raw_identity(url: str) -> tuple[str, str, str]:
     parsed = urlparse(url)
     if (
@@ -79,27 +154,19 @@ def _raw_identity(url: str) -> tuple[str, str, str]:
 
 
 def _authenticated_downloader(token: str, request_manifest: dict):
-    source = request_manifest.get("research_source") or {}
-    if source.get("repository") != EXPECTED_REPOSITORY:
-        raise RuntimeError("request research repository changed")
-    if source.get("commit") != EXPECTED_COMMIT:
-        raise RuntimeError("request research commit changed")
-    entries = source.get("files")
-    if not isinstance(entries, list) or len(entries) != len(EXPECTED_PATHS):
-        raise RuntimeError("request research file allowlist changed")
-    by_path = {str(item.get("path")): item for item in entries}
-    if set(by_path) != EXPECTED_PATHS:
-        raise RuntimeError("request research path allowlist changed")
+    _validate_request_manifest(request_manifest)
+    by_path = {
+        str(item["path"]): item
+        for item in request_manifest["research_source"]["files"]
+    }
 
     def download(url: str, maximum_bytes: int) -> bytes:
         repository, commit, path = _raw_identity(url)
         entry = by_path[path]
-        expected_blob = str(entry.get("git_blob_sha"))
-        declared_maximum = int(entry.get("max_bytes"))
+        expected_blob = str(entry["git_blob_sha"])
+        declared_maximum = int(entry["max_bytes"])
         if maximum_bytes != declared_maximum:
             raise RuntimeError("private source byte budget differs from request")
-        if not re.fullmatch(r"[0-9a-f]{40}", expected_blob):
-            raise RuntimeError("private source Git blob pin is malformed")
 
         owner, repository_name = repository.split("/", 1)
         api_url = (
@@ -156,7 +223,9 @@ def materialize(
         raise RuntimeError("private-repository token remained in process environment")
 
     request_manifest = json.loads(request_path.read_text(encoding="utf-8"))
+    _validate_request_manifest(request_manifest)
     module = _load_materializer(materializer_path)
+    module._validate_request = _validate_request_manifest
     module._download_raw = _authenticated_downloader(token, request_manifest)
     try:
         result = module.materialize(request_path, work_root, bundle_root)
