@@ -1,0 +1,297 @@
+name: Official Kaggle CLI read-only smoke test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/30-kaggle-cli-readonly.yml
+      - requirements/kaggle-2.2.4.lock
+
+permissions: {}
+
+concurrency:
+  group: kaggle-cli-readonly
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  KAGGLE_CLI_VERSION: "2.2.4"
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  verify-lock:
+    name: Verify hashed CLI installation without secrets
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Enforce secret-free execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+
+          forbidden=(KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY)
+          for name in "${forbidden[@]}"; do
+            [[ -z "${!name-}" ]] || { echo "ERROR: credential present in verify job: ${name}"; exit 1; }
+          done
+          echo "Secret-free verification boundary: PASS"
+
+      - name: Fetch and validate lock from the triggering commit
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          lock_path="${RUNNER_TEMP}/kaggle.lock"
+          LOCK_OUTPUT="${lock_path}" python3 - <<'PY'
+          import os
+          import re
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          sha = os.environ["EVENT_SHA_VALUE"]
+          output = os.environ["LOCK_OUTPUT"]
+          relative = os.environ["LOCK_RELATIVE_PATH"]
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              raise SystemExit("invalid triggering SHA")
+
+          url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{relative}"
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              if response.status != 200:
+                  raise SystemExit("lock fetch failed")
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock file exceeds size boundary")
+
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          package_lines = []
+          names = set()
+          for raw in text.splitlines():
+              line = raw.strip()
+              if not line or line.startswith("#"):
+                  continue
+              if not pattern.fullmatch(line):
+                  raise SystemExit("lock contains a non-whitelisted requirement form")
+              name = line.split("==", 1)[0]
+              if name in names:
+                  raise SystemExit("lock contains duplicate package names")
+              names.add(name)
+              package_lines.append(line)
+
+          if len(package_lines) != 33:
+              raise SystemExit("unexpected locked package count")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in package_lines):
+              raise SystemExit("lock does not pin kaggle==2.2.4")
+
+          with open(output, "w", encoding="utf-8", newline="\n") as handle:
+              handle.write(text)
+          print("Lock validation: PASS (33 hashed packages)")
+          PY
+
+      - name: Install only hashed wheels and verify CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            --no-deps \
+            --only-binary=:all: \
+            --require-hashes \
+            -r "${RUNNER_TEMP}/kaggle.lock" \
+            >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          version_output="$("${workdir}/venv/bin/kaggle" --version)"
+          [[ "${version_output}" == *"${KAGGLE_CLI_VERSION}"* ]]
+          echo "Hashed official Kaggle CLI installation: PASS"
+
+  cli-readonly:
+    name: Authenticate and call Kaggle through the locked official CLI
+    needs: verify-lock
+    environment: kaggle-readonry
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/30-kaggle-cli-readonly.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected CLI boundary: PASS"
+
+      - name: Fetch, validate, and install the locked CLI without exposing the secret
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_path="${workdir}/kaggle.lock"
+          LOCK_OUTPUT="${lock_path}" python3 - <<'PY'
+          import os
+          import re
+          import ssl
+          import urllib.request
+          from urllib.parse import urlparse
+
+          sha = os.environ["EVENT_SHA_VALUE"]
+          output = os.environ["LOCK_OUTPUT"]
+          relative = os.environ["LOCK_RELATIVE_PATH"]
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              raise SystemExit("invalid triggering SHA")
+          url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{relative}"
+          if urlparse(url).hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock file exceeds size boundary")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle CLI pin missing")
+          with open(output, "w", encoding="utf-8", newline="\n") as handle:
+              handle.write(text)
+          PY
+
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            --no-deps \
+            --only-binary=:all: \
+            --require-hashes \
+            -r "${lock_path}" \
+            >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          version_output="$("${workdir}/venv/bin/kaggle" --version)"
+          [[ "${version_output}" == *"${KAGGLE_CLI_VERSION}"* ]]
+          echo "Locked CLI prepared before secret exposure: PASS"
+
+      - name: Execute one authenticated read-only CLI command
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KAGGLE_API_TOKEN}" ]] || [[ "${KAGGLE_API_TOKEN}" != KGAT_* ]]; then
+            echo "ERROR: protected Kaggle token is unavailable or malformed"
+            exit 1
+          fi
+
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" competitions list \
+            --page-size 3 \
+            --format json \
+            >"${WORKDIR}/cli-output.json" \
+            2>"${WORKDIR}/cli-stderr.txt"
+          rc=$?
+          set -e
+
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "ERROR: official Kaggle CLI read-only command failed; command output suppressed"
+            exit 1
+          fi
+
+          rm -f "${WORKDIR}/cli-output.json" "${WORKDIR}/cli-stderr.txt"
+          echo "Official Kaggle CLI authenticated read-only command: PASS"
+
+      - name: Cleanup and complete
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" ]] && [[ -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Official Kaggle CLI read-only smoke test complete"
