@@ -100,7 +100,17 @@ jobs:
             pandas==2.3.2 pyarrow==21.0.0 nbformat==5.10.4 >/dev/null
           .static-venv/bin/python -m pip check >/dev/null
 
-      - name: Run full credential-free Mellum materialization
+      - name: Diagnose full credential-free Mellum materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/mellum-static-materialize /tmp/mellum-static-bundle
+          .static-venv/bin/python scripts/materialize_poisoned_chalice_mellum_v1.py \
+            --request requests/poisoned-chalice-mellum-transfer-v1-launch.json \
+            --work-root /tmp/mellum-static-materialize \
+            --bundle-root /tmp/mellum-static-bundle
+
+      - name: Run complete bundle and protected-launch validation
         shell: bash
         run: |
           set -euo pipefail
@@ -111,5 +121,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .static-venv
+          rm -rf .static-venv /tmp/mellum-static-materialize /tmp/mellum-static-bundle
           echo "MELLUM_STATIC_TEMPORARY_MATERIAL_REMOVED"
