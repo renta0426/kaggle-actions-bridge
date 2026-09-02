@@ -74,6 +74,31 @@ def validate_request(request_path: Path, builder_path: Path) -> dict:
     return request
 
 
+def literal_assignments(tree: ast.Module) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (TypeError, ValueError):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                result[target.id] = value
+    return result
+
+
+def imported_modules(tree: ast.Module) -> set[str]:
+    result: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            result.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            result.add(node.module.split(".", 1)[0])
+    return result
+
+
 def validate_notebook(root: Path) -> dict:
     files = sorted(path.name for path in root.iterdir() if path.is_file())
     if files != ["kernel-metadata.json", "stage1-raw-fim-resume-v1.ipynb"]:
@@ -110,20 +135,32 @@ def validate_notebook(root: Path) -> dict:
         raise RuntimeError("stable cell IDs are missing")
     code = "".join(notebook["cells"][1].get("source", []))
     tree = ast.parse(code, filename="stage1-raw-fim-resume-v1.ipynb")
+    constants = literal_assignments(tree)
+    expected_constants = {
+        "REQUEST_ID": REQUEST_ID,
+        "SOURCE_DATASET": SOURCE_DATASET,
+        "SOURCE_DATASET_VERSION": 1,
+        "SOURCE_KERNEL": SOURCE_KERNEL,
+        "SOURCE_KERNEL_VERSION": 2,
+        "SOURCE_FAILURE": "Expected 113 base features, got 111",
+        "BRIDGE_BUILDER_BLOB_SHA": BUILDER_BLOB,
+        "EXPECTED_TRAIN_ROWS": 10_000,
+        "EXPECTED_VALIDATION_ROWS": 5_000,
+        "EXPECTED_TRAIN_SHARDS": 40,
+        "EXPECTED_VALIDATION_SHARDS": 20,
+        "EXPECTED_BASE_FEATURES": 113,
+        "EXPECTED_STRUCTURE_FEATURES": 50,
+        "EXPECTED_FIM_FEATURES": 11,
+        "EXPECTED_OOF_AUC": 0.664524,
+        "OOF_AUC_TOLERANCE": 0.002,
+    }
+    for name, value in expected_constants.items():
+        if constants.get(name) != value:
+            raise RuntimeError(f"resume notebook constant changed: {name}")
 
     required = (
-        'SOURCE_DATASET = "renta0426/stage1-raw-fim-submission-v1-output"',
-        'SOURCE_KERNEL = "renta0426/stage1-raw-fim-submission-v1"',
-        'SOURCE_FAILURE = "Expected 113 base features, got 111"',
         '"validation_order"',
         '"token_count", "window_count"',
-        "EXPECTED_TRAIN_SHARDS = 40",
-        "EXPECTED_VALIDATION_SHARDS = 20",
-        "EXPECTED_BASE_FEATURES = 113",
-        "EXPECTED_STRUCTURE_FEATURES = 50",
-        "EXPECTED_FIM_FEATURES = 11",
-        "EXPECTED_OOF_AUC = 0.664524",
-        "OOF_AUC_TOLERANCE = 0.002",
         '"source_extraction_reused": True',
         '"gpu_forward_passes": 0',
         '"hidden_validation_labels_used": False',
@@ -135,12 +172,6 @@ def validate_notebook(root: Path) -> dict:
         if marker not in code:
             raise RuntimeError(f"resume notebook invariant missing: {marker}")
 
-    imported = {
-        alias.name.split(".", 1)[0]
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Import, ast.ImportFrom))
-        for alias in node.names
-    }
     forbidden_imports = {
         "torch",
         "transformers",
@@ -150,6 +181,7 @@ def validate_notebook(root: Path) -> dict:
         "subprocess",
         "socket",
     }
+    imported = imported_modules(tree)
     if imported.intersection(forbidden_imports):
         raise RuntimeError(
             f"resume notebook gained forbidden imports: {sorted(imported & forbidden_imports)}"
