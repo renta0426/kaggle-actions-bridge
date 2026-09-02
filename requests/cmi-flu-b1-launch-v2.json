@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "request_id": "20260902-cmi-flu-b1-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b1-anchor-20260902-002",
+  "kernel_source_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "kernel_source_commit": "6362cd8596cd996d13f66615eb1833ad26af1b39",
+  "kernel_source_path": "scripts/run_b1_kaggle_standalone.py",
+  "kernel_source_blob_sha": "7e28ed606f63883f9c2e230dfea1382389dce23b",
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 10,
+    "hard_timeout_minutes": 30,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-02T13:20:00Z"
+}
