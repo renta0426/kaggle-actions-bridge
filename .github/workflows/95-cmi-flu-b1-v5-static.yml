@@ -101,8 +101,9 @@ jobs:
               raise SystemExit("resource launch must not cancel an in-progress run")
           if "another Kaggle kernel is active; count=" in launch:
               raise SystemExit("account-wide active-kernel rejection must not return")
-          if launch.count("kernels push") != 1:
-              raise SystemExit("launch must contain exactly one kernels push")
+          executable_push = '"${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 1800'
+          if launch.count(executable_push) != 1:
+              raise SystemExit("launch must contain exactly one executable kernels push")
 
           def can_admit(requested: str, counts: dict[str, int]) -> bool:
               return counts[requested] + counts["unknown"] < 1
