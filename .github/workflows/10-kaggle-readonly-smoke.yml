@@ -1,0 +1,223 @@
+name: Kaggle read-only authentication smoke test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/10-kaggle-readonly-smoke.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-readonly-smoke
+  cancel-in-progress: false
+
+jobs:
+  authenticate:
+    name: Validate Kaggle token with a read-only API call
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Enforce trusted execution boundary
+        shell: bash
+        env:
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+          EXPECTED_REPOSITORY_ID: "1354356687"
+          EXPECTED_ACTOR: renta0426
+          EXPECTED_ACTOR_ID: "71638068"
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+          RUNNER_OS_VALUE: ${{ runner.os }}
+          RUNNER_ARCH_VALUE: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]] || {
+            echo "ERROR: unexpected repository"
+            exit 1
+          }
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]] || {
+            echo "ERROR: unexpected repository ID"
+            exit 1
+          }
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]] || {
+            echo "ERROR: unexpected actor"
+            exit 1
+          }
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]] || {
+            echo "ERROR: unexpected actor ID"
+            exit 1
+          }
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]] || {
+            echo "ERROR: unexpected event sender ID"
+            exit 1
+          }
+          [[ "${EVENT_NAME_VALUE}" == "push" ]] || {
+            echo "ERROR: unexpected event"
+            exit 1
+          }
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]] || {
+            echo "ERROR: unexpected ref"
+            exit 1
+          }
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]] || {
+            echo "ERROR: workflow was not loaded from the triggering commit"
+            exit 1
+          }
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/10-kaggle-readonly-smoke.yml@refs/heads/main" ]] || {
+            echo "ERROR: unexpected workflow ref"
+            exit 1
+          }
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]] || {
+            echo "ERROR: non-GitHub-hosted runner is forbidden"
+            exit 1
+          }
+          [[ "${RUNNER_OS_VALUE}" == "Linux" ]] || {
+            echo "ERROR: unexpected runner OS"
+            exit 1
+          }
+          [[ "${RUNNER_ARCH_VALUE}" == "X64" ]] || {
+            echo "ERROR: unexpected runner architecture"
+            exit 1
+          }
+
+          echo "Trusted execution boundary: PASS"
+
+      - name: Validate Kaggle authentication without exposing response data
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import ssl
+          import sys
+          import urllib.error
+          import urllib.request
+          from urllib.parse import urlparse
+
+          API_URL = "https://www.kaggle.com/api/v1/competitions/list?page=1"
+          EXPECTED_HOST = "www.kaggle.com"
+          MAX_RESPONSE_BYTES = 2_000_000
+
+
+          def fail(message: str) -> "NoReturn":
+              print(f"ERROR: {message}", file=sys.stderr)
+              raise SystemExit(1)
+
+
+          token = os.environ.get("KAGGLE_API_TOKEN", "")
+          if not token:
+              fail("kaggle-readonly does not expose KAGGLE_API_TOKEN")
+          if token != token.strip():
+              fail("KAGGLE_API_TOKEN contains surrounding whitespace")
+          if not token.startswith("KGAT_"):
+              fail("KAGGLE_API_TOKEN does not use the expected KGAT format")
+          if not 20 <= len(token) <= 4096:
+              fail("KAGGLE_API_TOKEN length is outside the accepted boundary")
+
+          parsed = urlparse(API_URL)
+          if parsed.scheme != "https" or parsed.hostname != EXPECTED_HOST:
+              fail("hard-coded Kaggle API target failed validation")
+
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          context = ssl.create_default_context()
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=context),
+              RejectRedirects(),
+          )
+          request = urllib.request.Request(
+              API_URL,
+              headers={
+                  "Accept": "application/json",
+                  "Authorization": f"Bearer {token}",
+                  "Connection": "close",
+                  "User-Agent": "kaggle-actions-bridge-readonly-smoke/1.0",
+              },
+              method="GET",
+          )
+
+          try:
+              with opener.open(request, timeout=30) as response:
+                  status = int(response.status)
+                  media_type = response.headers.get_content_type()
+                  body = response.read(MAX_RESPONSE_BYTES + 1)
+          except urllib.error.HTTPError as exc:
+              print(
+                  f"ERROR: Kaggle rejected the authenticated request with HTTP {exc.code}",
+                  file=sys.stderr,
+              )
+              raise SystemExit(1) from None
+          except (urllib.error.URLError, TimeoutError, OSError) as exc:
+              print(
+                  f"ERROR: Kaggle request failed before a valid response ({type(exc).__name__})",
+                  file=sys.stderr,
+              )
+              raise SystemExit(1) from None
+
+          if status != 200:
+              fail(f"unexpected Kaggle HTTP status {status}")
+          if media_type != "application/json":
+              fail(f"unexpected Kaggle media type {media_type}")
+          if len(body) > MAX_RESPONSE_BYTES:
+              fail("Kaggle response exceeded the size boundary")
+
+          try:
+              payload = json.loads(body)
+          except (UnicodeDecodeError, json.JSONDecodeError):
+              fail("Kaggle response was not valid JSON")
+
+          item_count: int | None = None
+          if isinstance(payload, list):
+              item_count = len(payload)
+          elif isinstance(payload, dict):
+              for key in ("competitions", "items", "results"):
+                  value = payload.get(key)
+                  if isinstance(value, list):
+                      item_count = len(value)
+                      break
+          else:
+              fail("unexpected Kaggle JSON top-level type")
+
+          print("Kaggle authenticated read-only request: PASS")
+          print(f"HTTP status: {status}")
+          print(f"Response media type: {media_type}")
+          print(f"Top-level JSON type: {type(payload).__name__}")
+          if item_count is not None:
+              print(f"Returned item count: {item_count}")
+          print("Response records and credential values were not logged")
+          PY
+
+      - name: Complete read-only smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Kaggle read-only authentication smoke test: PASS"
