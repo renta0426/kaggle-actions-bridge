@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "request_id": "20260902-poisoned-chalice-stage1-raw-fim-003",
+  "parent_failed_request_id": "20260902-poisoned-chalice-stage1-raw-fim-002",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/stage1-raw-fim-submission-v1",
+  "builder_path": "scripts/poisoned_chalice_stage1_kernel_builder.py",
+  "builder_blob_sha": "5d8c4dc7d8a0572fc2d12c38c06479c106d37c89",
+  "private_source_kernels": {
+    "base": "renta0426/starter-plus-10k-v2-continuation",
+    "fim_structure": "renta0426/selective-fim-10k-v1"
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "min_remaining_quota_hours": 5.0,
+    "max_active_runs": 1
+  },
+  "side_effects": [
+    "pull two existing private source notebooks",
+    "create one private notebook version and start one T4 GPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "failure_fix": "use Kaggle CLI 2.2.4 positional kernel ref for kernels pull; do not use -k"
+}

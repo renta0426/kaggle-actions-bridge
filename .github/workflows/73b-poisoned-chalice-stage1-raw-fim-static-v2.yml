@@ -1,0 +1,111 @@
+name: Poisoned Chalice Stage1 raw+FIM launch v2 static validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/73b-poisoned-chalice-stage1-raw-fim-static-v2.yml
+      - .github/workflows/74b-poisoned-chalice-stage1-raw-fim-launch-v2.yml
+      - requests/poisoned-chalice-stage1-raw-fim-launch-v2.json
+      - scripts/poisoned_chalice_stage1_kernel_builder.py
+
+permissions: {}
+
+jobs:
+  static:
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact request and corrected CLI contract
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          python3 - <<'PY'
+          from __future__ import annotations
+          import hashlib, json, os, ssl, urllib.request
+          from urllib.parse import urlparse
+
+          repo = os.environ["HEAD_REPO"]
+          sha = os.environ["HEAD_SHA"]
+          base = f"https://raw.githubusercontent.com/{repo}/{sha}/"
+
+          def fetch(path: str, limit: int = 196608) -> bytes:
+              url = base + path
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with urllib.request.urlopen(url, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {path}")
+              return data
+
+          request_path = "requests/poisoned-chalice-stage1-raw-fim-launch-v2.json"
+          launch_path = ".github/workflows/74b-poisoned-chalice-stage1-raw-fim-launch-v2.yml"
+          builder_path = "scripts/poisoned_chalice_stage1_kernel_builder.py"
+          request = json.loads(fetch(request_path, 32768))
+          if request != {
+              "schema_version": 1,
+              "request_id": "20260902-poisoned-chalice-stage1-raw-fim-003",
+              "parent_failed_request_id": "20260902-poisoned-chalice-stage1-raw-fim-002",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_run",
+              "target": "renta0426/stage1-raw-fim-submission-v1",
+              "builder_path": builder_path,
+              "builder_blob_sha": "5d8c4dc7d8a0572fc2d12c38c06479c106d37c89",
+              "private_source_kernels": {
+                  "base": "renta0426/starter-plus-10k-v2-continuation",
+                  "fim_structure": "renta0426/selective-fim-10k-v1",
+              },
+              "resource": {
+                  "accelerator": "gpu",
+                  "machine_shape": "NvidiaTeslaT4",
+                  "min_remaining_quota_hours": 5.0,
+                  "max_active_runs": 1,
+              },
+              "side_effects": [
+                  "pull two existing private source notebooks",
+                  "create one private notebook version and start one T4 GPU run",
+              ],
+              "automatic_compute_retries": 0,
+              "enable_internet": True,
+              "failure_fix": "use Kaggle CLI 2.2.4 positional kernel ref for kernels pull; do not use -k",
+          }:
+              raise SystemExit("request differs from fixed v2 allowlist")
+
+          builder = fetch(builder_path, 131072)
+          blob = hashlib.sha1(b"blob " + str(len(builder)).encode() + b"\0" + builder).hexdigest()
+          if blob != request["builder_blob_sha"]:
+              raise SystemExit("builder blob mismatch")
+          launch = fetch(launch_path).decode("utf-8")
+          required = (
+              "permissions: {}",
+              "runs-on: ubuntu-24.04",
+              "environment: kaggle-readonry",
+              'kernels pull "${SOURCE_BASE_KERNEL}" -p',
+              'kernels pull "${SOURCE_FIM_KERNEL}" -p',
+              "automatic_retries=0",
+              "NvidiaTeslaT4",
+          )
+          for token in required:
+              if token not in launch:
+                  raise SystemExit(f"launch contract missing: {token}")
+          forbidden = (
+              "kernels pull -k",
+              "pull_request_target:",
+              "repository_dispatch:",
+              "workflow_run:",
+              "issue_comment:",
+              "runs-on: self-hosted",
+              "set -x",
+              "actions/checkout@",
+          )
+          for token in forbidden:
+              if token in launch:
+                  raise SystemExit(f"forbidden launch construct: {token}")
+          print("POISONED_CHALICE_LAUNCH_V2_STATIC PASS")
+          PY
