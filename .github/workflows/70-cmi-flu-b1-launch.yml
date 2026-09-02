@@ -414,7 +414,7 @@ jobs:
           PY
 
           set +e
-          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" \
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 1800 \
             >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
           rc=$?
           set -e
@@ -423,7 +423,7 @@ jobs:
             echo "ERROR: Kaggle kernel push/run failed; response content suppressed"
             exit 1
           fi
-          echo "KERNEL_LAUNCH PASS request_id=20260902-cmi-flu-b1-001 target=${TARGET_KERNEL} accelerator=cpu automatic_retries=0"
+          echo "KERNEL_LAUNCH PASS request_id=20260902-cmi-flu-b1-001 target=${TARGET_KERNEL} accelerator=cpu hard_timeout_seconds=1800 automatic_retries=0"
 
       - name: Cleanup runner-local content
         if: always()
