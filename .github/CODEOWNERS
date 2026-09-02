@@ -1,0 +1,8 @@
+# All changes require review by the repository owner once branch protection is enabled.
+* @renta0426
+
+# Security-sensitive paths are listed explicitly for clarity.
+/.github/workflows/ @renta0426
+/SECURITY.md @renta0426
+/THREAT_MODEL.md @renta0426
+/docs/ @renta0426
