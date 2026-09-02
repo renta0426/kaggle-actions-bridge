@@ -1,0 +1,85 @@
+name: Poisoned Chalice Stage1 corrected launch v3 static validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/74c-poisoned-chalice-stage1-raw-fim-launch-v3.yml
+      - .github/workflows/74c-poisoned-chalice-stage1-raw-fim-launch-v3-static.yml
+      - requests/poisoned-chalice-stage1-raw-fim-launch-v3.json
+      - scripts/poisoned_chalice_stage1_namespace_patch.py
+
+permissions: {}
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate corrected retry contract without credentials
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_REPO}" == "renta0426/kaggle-actions-bridge" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - "${HEAD_SHA}" <<'PY'
+          import ast, json, ssl, sys, urllib.request
+          sha = sys.argv[1]
+          root = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/"
+          def text(path, limit=262144):
+              with urllib.request.urlopen(root + path, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"file too large: {path}")
+              return data.decode("utf-8")
+          request = json.loads(text("requests/poisoned-chalice-stage1-raw-fim-launch-v3.json", 32768))
+          if request.get("request_id") != "20260902-poisoned-chalice-stage1-raw-fim-004":
+              raise SystemExit("request 004 id missing")
+          if request.get("parent_failed_request_id") != "20260902-poisoned-chalice-stage1-raw-fim-003":
+              raise SystemExit("failed parent 003 missing")
+          if request.get("automatic_compute_retries") != 0:
+              raise SystemExit("automatic retry must remain zero")
+          if request.get("patcher_blob_sha") != "1187bc6b3b14d2a4cdbf50bd6ef49b95363aac46":
+              raise SystemExit("patcher blob pin mismatch")
+
+          patcher = text("scripts/poisoned_chalice_stage1_namespace_patch.py")
+          ast.parse(patcher)
+          for token in (
+              '"EXPECTED_TRAIN_ROWS": "STAGE1_EXPECTED_TRAIN_ROWS"',
+              '"SEED": "STAGE1_SEED"',
+              'runner/source uppercase namespace collision remains',
+              'cell["id"] = f"pc-stage1-{index:02d}"',
+          ):
+              if token not in patcher:
+                  raise SystemExit(f"patcher guard missing: {token}")
+
+          workflow = text(".github/workflows/74c-poisoned-chalice-stage1-raw-fim-launch-v3.yml")
+          required = (
+              "permissions: {}", "group: kaggle-resource-global", "environment: kaggle-readonry",
+              "20260902-poisoned-chalice-stage1-raw-fim-004", "current_version != 1",
+              'kernels pull "${SOURCE_BASE_KERNEL}"', 'kernels pull "${SOURCE_FIM_KERNEL}"',
+              "poisoned_chalice_stage1_namespace_patch.py", "STAGE1_EXPECTED_TRAIN_ROWS = 10000",
+              "EXPECTED_TRAIN_ROWS = {", "CORRECTED_KERNEL_LAUNCH PASS",
+              "automatic_retries=0",
+          )
+          for token in required:
+              if token not in workflow:
+                  raise SystemExit(f"workflow guard missing: {token}")
+          if workflow.count('kernels push -p "${WORKDIR}/kernel"') != 1:
+              raise SystemExit("corrected workflow must contain exactly one Kaggle push")
+          forbidden = (
+              "competition submit", "competitions submit", "kernels delete", "datasets create",
+              "models create", "rerun_workflow", "--follow",
+          )
+          lower = workflow.lower()
+          for token in forbidden:
+              if token in lower:
+                  raise SystemExit(f"forbidden corrected-launch capability present: {token}")
+          print("CORRECTED_LAUNCH_V3_STATIC PASS")
+          PY
