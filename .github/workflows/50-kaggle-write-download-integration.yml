@@ -1,0 +1,463 @@
+name: Kaggle write and download integration test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/50-kaggle-write-download-integration.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-write-download-integration
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  LOCK_RELATIVE_PATH: requirements/kaggle-2.2.4.lock
+  KAGGLE_CLI_VERSION: "2.2.4"
+  TARGET_KERNEL_OWNER: renta0426
+  TARGET_KERNEL_SLUG: rsna-knee-public0033-meniscus-10-percent-residual
+  TARGET_SCRIPT_VERSION_ID: "346645650"
+  TARGET_COMPETITION: biohub-cell-tracking-during-development
+  TARGET_COMPETITION_FILE: sample_submission.csv
+
+jobs:
+  integration:
+    name: Test private notebook, private dataset upload, competition data, and discussions
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/50-kaggle-write-download-integration.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "Protected integration boundary: PASS"
+
+      - name: Prepare SHA-256 locked official Kaggle CLI before secret exposure
+        shell: bash
+        env:
+          EVENT_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          lock_path="${workdir}/kaggle.lock"
+          lock_url="https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${EVENT_SHA_VALUE}/${LOCK_RELATIVE_PATH}"
+
+          python3 - "${lock_url}" "${lock_path}" <<'PY'
+          import re
+          import ssl
+          import sys
+          import urllib.request
+          from urllib.parse import urlparse
+
+          url, output = sys.argv[1:]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+              raise SystemExit("unexpected lock origin")
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          with opener.open(url, timeout=30) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("lock file exceeds size boundary")
+          text = data.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle CLI pin missing")
+          with open(output, "w", encoding="utf-8", newline="\n") as handle:
+              handle.write(text)
+          PY
+
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            --no-deps \
+            --only-binary=:all: \
+            --require-hashes \
+            -r "${lock_path}" \
+            >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          version_output="$("${workdir}/venv/bin/kaggle" --version)"
+          [[ "${version_output}" == *"${KAGGLE_CLI_VERSION}"* ]]
+          echo "Locked Kaggle CLI prepared: PASS"
+
+      - name: Execute all authorized Kaggle integration operations
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          RUN_ID_VALUE: ${{ github.run_id }}
+          RUN_ATTEMPT_VALUE: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KAGGLE_API_TOKEN}" ]] || [[ "${KAGGLE_API_TOKEN}" != KGAT_* ]]; then
+            echo "ERROR: protected Kaggle token is unavailable or malformed"
+            exit 1
+          fi
+
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+
+          import csv
+          import hashlib
+          import io
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import sys
+          import time
+          from urllib.parse import urlparse
+
+          import requests
+
+          workdir = pathlib.Path(os.environ["WORKDIR"])
+          kaggle = str(workdir / "venv" / "bin" / "kaggle")
+          token = os.environ["KAGGLE_API_TOKEN"]
+          owner = os.environ["TARGET_KERNEL_OWNER"]
+          kernel_slug = os.environ["TARGET_KERNEL_SLUG"]
+          target_script_version_id = int(os.environ["TARGET_SCRIPT_VERSION_ID"])
+          competition = os.environ["TARGET_COMPETITION"]
+          competition_file = os.environ["TARGET_COMPETITION_FILE"]
+          run_id = os.environ["RUN_ID_VALUE"]
+          run_attempt = os.environ["RUN_ATTEMPT_VALUE"]
+
+          results: list[tuple[str, bool, str]] = []
+
+          def add_result(name: str, ok: bool, detail: str) -> None:
+              # detail is deliberately constrained to non-sensitive metadata.
+              clean = re.sub(r"[^A-Za-z0-9_./:=+ -]", "?", detail)[:500]
+              results.append((name, ok, clean))
+
+          def run_cli(args: list[str], timeout: int = 180) -> subprocess.CompletedProcess[bytes]:
+              return subprocess.run(
+                  [kaggle, *args],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  timeout=timeout,
+                  check=False,
+                  env=os.environ.copy(),
+              )
+
+          # 1) Exact private notebook source by scriptVersionId.
+          try:
+              api_base = "https://www.kaggle.com/api/i"
+              session = requests.Session()
+              session.trust_env = False
+              session.headers.update(
+                  {
+                      "Authorization": f"Bearer {token}",
+                      "User-Agent": "kaggle-actions-bridge-integration/1.0",
+                  }
+              )
+              seed = session.get("https://www.kaggle.com", timeout=30, allow_redirects=True)
+              seed.raise_for_status()
+              if urlparse(seed.url).hostname not in {"www.kaggle.com", "kaggle.com"}:
+                  raise RuntimeError("unexpected Kaggle seed redirect host")
+              xsrf = session.cookies.get("XSRF-TOKEN")
+              if not xsrf:
+                  raise RuntimeError("missing Kaggle XSRF cookie")
+
+              def post_service(method: str, body: dict) -> requests.Response:
+                  response = session.post(
+                      f"{api_base}/{method}",
+                      json=body,
+                      headers={"Content-Type": "application/json", "X-XSRF-TOKEN": xsrf},
+                      timeout=60,
+                      allow_redirects=False,
+                  )
+                  if response.status_code != 200:
+                      raise RuntimeError(f"Kaggle internal API HTTP {response.status_code}")
+                  return response
+
+              view_method = "kernels.LegacyKernelsService/GetKernelViewModel"
+              list_method = "kernels.KernelsService/ListKernelVersions"
+              source_method = "kernels.KernelsService/GetKernelSessionSource"
+              initial = post_service(
+                  view_method,
+                  {"authorUserName": owner, "kernelSlug": kernel_slug, "tab": "output"},
+              ).json()
+              kernel_id = (initial.get("kernel") or {}).get("id")
+              total_versions = int(initial.get("totalVersionCount") or 0)
+              if not kernel_id:
+                  raise RuntimeError("kernel id unavailable")
+              version_data = post_service(
+                  list_method,
+                  {
+                      "kernelId": int(kernel_id),
+                      "sortOption": "VERSION_ID",
+                      "pageSize": max(total_versions, 200),
+                  },
+              ).json()
+              matched = None
+              for item in version_data.get("items") or []:
+                  version = item.get("version") or {}
+                  run = item.get("run") or {}
+                  if int(run.get("id") or 0) == target_script_version_id:
+                      matched = {
+                          "version_number": int(version.get("versionNumber") or 0),
+                          "script_version_id": int(run.get("id")),
+                      }
+                      break
+              if not matched or matched["version_number"] <= 0:
+                  raise RuntimeError("requested scriptVersionId not found")
+              source_response = post_service(
+                  source_method,
+                  {
+                      "kernelSessionId": target_script_version_id,
+                      "includeOutputIfAvailable": False,
+                  },
+              )
+              source_bytes = source_response.content
+              if len(source_bytes) < 32 or len(source_bytes) > 100_000_000:
+                  raise RuntimeError("notebook source size outside expected boundary")
+              notebook_dir = workdir / "private-notebook"
+              notebook_dir.mkdir(parents=True, exist_ok=True)
+              source_path = notebook_dir / "source.txt"
+              source_path.write_bytes(source_bytes)
+              add_result(
+                  "PRIVATE_NOTEBOOK_EXACT",
+                  True,
+                  f"scriptVersionId={target_script_version_id} version={matched['version_number']} bytes={len(source_bytes)}",
+              )
+          except Exception as exc:
+              add_result("PRIVATE_NOTEBOOK_EXACT", False, f"error_type={type(exc).__name__}")
+
+          # 2) Create a uniquely named private dummy dataset and keep it on Kaggle.
+          dataset_handle = f"renta0426/kaggle-actions-bridge-smoke-{run_id}-{run_attempt}"
+          dataset_dir = workdir / "private-dataset"
+          dataset_dir.mkdir(parents=True, exist_ok=True)
+          try:
+              (dataset_dir / "bridge-smoke.txt").write_text(
+                  "Kaggle Actions Bridge private dataset integration smoke test.\n",
+                  encoding="utf-8",
+              )
+              metadata = {
+                  "title": f"Kaggle Actions Bridge Smoke {run_id}-{run_attempt}",
+                  "id": dataset_handle,
+                  "licenses": [{"name": "CC0-1.0"}],
+              }
+              (dataset_dir / "dataset-metadata.json").write_text(
+                  json.dumps(metadata, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+              created = run_cli(["datasets", "create", "-p", str(dataset_dir), "-q"], timeout=300)
+              if created.returncode != 0:
+                  raise RuntimeError("dataset create command failed")
+
+              files_ok = False
+              for _ in range(18):
+                  files = run_cli(["datasets", "files", dataset_handle, "-v"], timeout=60)
+                  if files.returncode == 0 and b"bridge-smoke.txt" in files.stdout:
+                      files_ok = True
+                      break
+                  time.sleep(5)
+              if not files_ok:
+                  raise RuntimeError("created dataset file was not observable")
+
+              # No -u/--public flag is used; kaggle-cli 2.2.4 defaults dataset creation to private.
+              add_result("PRIVATE_DATASET_UPLOAD", True, f"handle={dataset_handle} file=bridge-smoke.txt")
+          except Exception as exc:
+              add_result(
+                  "PRIVATE_DATASET_UPLOAD",
+                  False,
+                  f"handle={dataset_handle} error_type={type(exc).__name__}",
+              )
+
+          # 3) Verify competition data listing, then download sample_submission.csv.
+          try:
+              listed = run_cli(["competitions", "files", competition, "-v", "-q"], timeout=120)
+              if listed.returncode != 0 or competition_file.encode() not in listed.stdout:
+                  raise RuntimeError("target competition file not listed")
+              comp_dir = workdir / "competition-data"
+              comp_dir.mkdir(parents=True, exist_ok=True)
+              downloaded = run_cli(
+                  [
+                      "competitions",
+                      "download",
+                      competition,
+                      "-f",
+                      competition_file,
+                      "-p",
+                      str(comp_dir),
+                      "-q",
+                  ],
+                  timeout=300,
+              )
+              if downloaded.returncode != 0:
+                  raise RuntimeError("competition file download failed")
+              candidates = [p for p in comp_dir.rglob("*") if p.is_file()]
+              if not candidates:
+                  raise RuntimeError("competition download produced no file")
+              target = next((p for p in candidates if competition_file in p.name), candidates[0])
+              size = target.stat().st_size
+              if size <= 0:
+                  raise RuntimeError("competition file was empty")
+              digest = hashlib.sha256(target.read_bytes()).hexdigest()
+              add_result(
+                  "COMPETITION_FILE_DOWNLOAD",
+                  True,
+                  f"file={target.name} bytes={size} sha256={digest}",
+              )
+          except Exception as exc:
+              add_result("COMPETITION_FILE_DOWNLOAD", False, f"error_type={type(exc).__name__}")
+
+          # 4) Download the recent-comment/active discussion listing and thread contents.
+          try:
+              discussion_dir = workdir / "discussions"
+              discussion_dir.mkdir(parents=True, exist_ok=True)
+              sort_used = "active"
+              topic_list = run_cli(
+                  [
+                      "competitions",
+                      "topics",
+                      "list",
+                      competition,
+                      "--sort-by",
+                      sort_used,
+                      "--page-size",
+                      "100",
+                      "-v",
+                      "-q",
+                  ],
+                  timeout=180,
+              )
+              if topic_list.returncode != 0:
+                  sort_used = "recent"
+                  topic_list = run_cli(
+                      [
+                          "competitions",
+                          "topics",
+                          "list",
+                          competition,
+                          "--sort-by",
+                          sort_used,
+                          "--page-size",
+                          "100",
+                          "-v",
+                          "-q",
+                      ],
+                      timeout=180,
+                  )
+              if topic_list.returncode != 0 or not topic_list.stdout.strip():
+                  raise RuntimeError("competition discussion listing failed")
+              list_path = discussion_dir / "topics.csv"
+              list_path.write_bytes(topic_list.stdout)
+
+              text = topic_list.stdout.decode("utf-8", errors="replace")
+              reader = csv.DictReader(io.StringIO(text))
+              topic_ids: list[str] = []
+              for row in reader:
+                  value = str(row.get("id") or row.get("topicId") or "").strip()
+                  if value.isdigit():
+                      topic_ids.append(value)
+              if not topic_ids:
+                  # Defensive fallback for human-readable table output.
+                  topic_ids = list(dict.fromkeys(re.findall(r"(?m)^\s*(\d{4,})\b", text)))
+              if not topic_ids:
+                  raise RuntimeError("no discussion topic ids parsed")
+
+              success_count = 0
+              failed_count = 0
+              total_bytes = len(topic_list.stdout)
+              for topic_id in topic_ids:
+                  shown = run_cli(
+                      [
+                          "competitions",
+                          "topics",
+                          "show",
+                          competition,
+                          topic_id,
+                          "--page-size",
+                          "100",
+                          "-v",
+                          "-q",
+                      ],
+                      timeout=120,
+                  )
+                  if shown.returncode == 0 and shown.stdout.strip():
+                      (discussion_dir / f"topic-{topic_id}.csv").write_bytes(shown.stdout)
+                      success_count += 1
+                      total_bytes += len(shown.stdout)
+                  else:
+                      failed_count += 1
+              if success_count == 0:
+                  raise RuntimeError("no discussion thread could be downloaded")
+              add_result(
+                  "DISCUSSION_DOWNLOAD",
+                  True,
+                  f"sort={sort_used} topics_listed={len(topic_ids)} threads_downloaded={success_count} threads_failed={failed_count} bytes={total_bytes}",
+              )
+          except Exception as exc:
+              add_result("DISCUSSION_DOWNLOAD", False, f"error_type={type(exc).__name__}")
+
+          # Never expose retrieved notebook/data/discussion contents in the public Actions log.
+          failures = 0
+          print("KAGGLE_INTEGRATION_RESULTS_BEGIN")
+          for name, ok, detail in results:
+              status = "PASS" if ok else "FAIL"
+              print(f"{name} {status} {detail}")
+              if not ok:
+                  failures += 1
+          print("KAGGLE_INTEGRATION_RESULTS_END")
+          if failures:
+              raise SystemExit(f"{failures} integration operation(s) failed")
+          PY
+
+      - name: Cleanup runner-local retrieved content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" ]] && [[ -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Runner-local notebook/data/discussion content removed"
