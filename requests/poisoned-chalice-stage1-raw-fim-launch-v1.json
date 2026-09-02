@@ -4,13 +4,17 @@
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
   "target": "renta0426/stage1-raw-fim-submission-v1",
-  "kernel_notebook_path": "notebooks/experiments/stage1-raw-fim-submission-v1/stage1-raw-fim-submission-v1.ipynb",
-  "kernel_notebook_blob_sha": "fea3fa8871682cb659a92feac081b1525965eca2",
-  "kernel_metadata_path": "notebooks/experiments/stage1-raw-fim-submission-v1/kernel-metadata.json",
-  "kernel_metadata_blob_sha": "98b26e2f9a1c88127a3797c5e2960efa98d52825",
-  "source_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-  "source_commit": "28c34307c71db733dab2744ec9ec46549e54d424",
-  "module_commit": "bcf6d44db86fdda4ac9dd07b2d0172de471ab67a",
+  "builder_path": "scripts/poisoned_chalice_stage1_kernel_builder.py",
+  "builder_blob_sha": "5d8c4dc7d8a0572fc2d12c38c06479c106d37c89",
+  "private_source_kernels": {
+    "base": "renta0426/starter-plus-10k-v2-continuation",
+    "fim_structure": "renta0426/selective-fim-10k-v1"
+  },
+  "research_provenance": {
+    "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+    "source_commit": "28c34307c71db733dab2744ec9ec46549e54d424",
+    "module_commit": "bcf6d44db86fdda4ac9dd07b2d0172de471ab67a"
+  },
   "resource": {
     "accelerator": "gpu",
     "machine_shape": "NvidiaTeslaT4",
@@ -25,9 +29,10 @@
     "max_pages": 2
   },
   "side_effects": [
+    "pull two existing private source notebooks",
     "create one private notebook version and start one T4 GPU run"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
-  "rules_checked_at_utc": "2026-09-02T12:44:00Z"
+  "rules_checked_at_utc": "2026-09-02T12:55:00Z"
 }
