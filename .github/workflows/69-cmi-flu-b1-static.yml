@@ -82,11 +82,17 @@ jobs:
               raise SystemExit("request/source blob mismatch")
           if request["resource"]["accelerator"] != "cpu":
               raise SystemExit("B1 must remain CPU-only")
+          if request["resource"]["hard_timeout_minutes"] != 30:
+              raise SystemExit("B1 hard timeout manifest must remain 30 minutes")
           if request["automatic_compute_retries"] != 0:
               raise SystemExit("automatic compute retries are prohibited")
 
+          launch_text = fetch(files["launch"]).decode("utf-8")
+          if 'kernels push -p "${kernel_dir}" --timeout 1800' not in launch_text:
+              raise SystemExit("launch workflow must enforce the 30-minute Kaggle session timeout")
+
           for name in ("launch", "status"):
-              text = fetch(files[name]).decode("utf-8")
+              text = launch_text if name == "launch" else fetch(files[name]).decode("utf-8")
               if "permissions: {}" not in text:
                   raise SystemExit(f"{name} workflow must use empty permissions")
               if "runs-on: ubuntu-24.04" not in text:
