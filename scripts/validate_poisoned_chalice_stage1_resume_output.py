@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 
-REQUEST_ID = "20260903-poisoned-chalice-stage1-resume-001"
+REQUEST_ID = "20260903-poisoned-chalice-stage1-resume-002"
 METHOD = "raw_plus_fim_resume_from_cached_shards"
 SOURCE_DATASET = "renta0426/stage1-raw-fim-submission-v1-output"
 SOURCE_KERNEL = "renta0426/stage1-raw-fim-submission-v1"
@@ -58,7 +58,7 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, float]:
         "source_dataset": SOURCE_DATASET,
         "source_dataset_version": 1,
         "source_kernel": SOURCE_KERNEL,
-        "source_kernel_version": 2,
+        "source_kernel_version": 3,
         "source_kernel_status": "error_after_complete_feature_extraction",
         "source_failure": "Expected 113 base features, got 111",
         "source_extraction_reused": True,
