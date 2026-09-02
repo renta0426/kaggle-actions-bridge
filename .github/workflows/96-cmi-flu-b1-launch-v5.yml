@@ -6,11 +6,12 @@ on:
       - main
     paths:
       - requests/cmi-flu-b1-launch-v5.json
+  workflow_dispatch:
 
 permissions: {}
 
-# Preserve account-wide serialization while allowing multiple protected runs
-# to remain pending instead of evicting the older approval/run.
+# Serialize bridge admission/write jobs. Remote Kaggle compute can outlive this
+# workflow, so the live Kaggle active-kernel check below remains authoritative.
 concurrency:
   group: kaggle-resource-global
   queue: max
@@ -32,7 +33,7 @@ jobs:
     name: Validate immutable request 005 and single-file package
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
-      github.event_name == 'push' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main' &&
       github.actor == 'renta0426' &&
       github.actor_id == '71638068'
@@ -47,6 +48,8 @@ jobs:
           EVENT_ACTOR_VALUE: ${{ github.actor }}
           EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
           EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
           EVENT_SHA_VALUE: ${{ github.sha }}
           WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
           RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
@@ -57,6 +60,8 @@ jobs:
           [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
           [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
           [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" || "${EVENT_NAME_VALUE}" == "workflow_dispatch" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
           [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
           [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
           for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT PERSONAL_ACCESS_TOKEN SSH_PRIVATE_KEY; do
@@ -144,7 +149,7 @@ jobs:
           PY
 
   launch:
-    name: Live preflight and launch exactly one CPU run 005
+    name: Admit or launch exactly one CPU run 005
     needs: validate
     environment: kaggle-readonry
     runs-on: ubuntu-24.04
@@ -158,6 +163,8 @@ jobs:
           EVENT_ACTOR_VALUE: ${{ github.actor }}
           EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
           EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
           EVENT_SHA_VALUE: ${{ github.sha }}
           WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
           WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
@@ -169,6 +176,8 @@ jobs:
           [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
           [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
           [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" || "${EVENT_NAME_VALUE}" == "workflow_dispatch" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
           [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
           [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/96-cmi-flu-b1-launch-v5.yml@refs/heads/main" ]]
           [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
@@ -222,7 +231,8 @@ jobs:
           "${workdir}/venv/bin/kaggle" --version >/dev/null
           echo "Locked Kaggle CLI and request-005 single script prepared: PASS"
 
-      - name: Fetch live Competition rules and enforce account guardrails
+      - name: Fetch live Competition rules and determine admission
+        id: admission
         shell: bash
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
@@ -264,14 +274,29 @@ jobs:
               if not ref:
                   continue
               status = str(getattr(api.kernels_status(ref), "status", "")).upper()
-              if "RUNNING" in status or "QUEUED" in status:
+              if "RUNNING" in status or "QUEUED" in status or "PENDING" in status:
                   active.append(ref)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              if active:
+                  handle.write("can_launch=false\n")
+              else:
+                  handle.write("can_launch=true\n")
           if active:
-              raise SystemExit(f"another Kaggle kernel is active; count={len(active)}")
-          print(f"LIVE_RULE_PREFLIGHT PASS pages={len(content)} active=0 accelerator=cpu internet=false")
+              print(f"CMI_B1_005_DEFERRED active_count={len(active)} side_effect=false request_unexecuted=true")
+          else:
+              print(f"LIVE_RULE_PREFLIGHT PASS pages={len(content)} active=0 accelerator=cpu internet=false")
           PY
 
+      - name: Record deferred admission
+        if: steps.admission.outputs.can_launch == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "CMI_B1_005_DEFERRED no Kaggle write occurred; manually dispatch the same immutable request after the active kernel clears and approve the protected Environment again."
+          printf '%s\n' '## CMI-Flu B1 request 005 deferred' '' '- Another Kaggle kernel is active.' '- No `kernels push` call was made.' '- Request `20260902-cmi-flu-b1-005` remains unexecuted.' '- Manual redispatch requires a fresh Environment approval.' >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Materialize exactly one Python file and push once
+        if: steps.admission.outputs.can_launch == 'true'
         shell: bash
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
