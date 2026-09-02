@@ -1,8 +1,8 @@
 """Patch the flattened Poisoned Chalice Stage 1 notebook after assembly.
 
-The research implementation normally imports separate Python modules.  The bridge
+The research implementation normally imports separate Python modules. The bridge
 builder flattens those module definition cells into one notebook namespace, so a
-runner constant can accidentally overwrite a source-module global.  This patch is
+runner constant can accidentally overwrite a source-module global. This patch is
 request-specific and deliberately narrow: namespace every runner constant, verify
 there is no remaining runner/source constant collision, and add stable nbformat
 cell IDs.
@@ -33,6 +33,10 @@ RENAMES = {
     "OOF_AUC_TOLERANCE": "STAGE1_OOF_AUC_TOLERANCE",
 }
 
+OLD_TRAIN_ASSIGNMENT = re.compile(r"(?m)^EXPECTED_TRAIN_ROWS\s*=\s*10000\s*$")
+NEW_TRAIN_ASSIGNMENT = re.compile(r"(?m)^STAGE1_EXPECTED_TRAIN_ROWS\s*=\s*10000\s*$")
+NEW_OOF_ASSIGNMENT = re.compile(r"(?m)^STAGE1_EXPECTED_OOF_AUC\s*=\s*0\.664524\s*$")
+
 
 def source_text(cell: dict) -> str:
     value = cell.get("source", "")
@@ -61,7 +65,7 @@ def patch(notebook_path: Path) -> None:
         index
         for index, cell in enumerate(cells)
         if cell.get("cell_type") == "code"
-        and "EXPECTED_TRAIN_ROWS = 10000" in source_text(cell)
+        and OLD_TRAIN_ASSIGNMENT.search(source_text(cell))
         and "EXPECTED_OOF_AUC = 0.664524" in source_text(cell)
         and "manifest = main()" in source_text(cell)
     ]
@@ -70,18 +74,19 @@ def patch(notebook_path: Path) -> None:
     runner_index = runner_indices[0]
     runner = source_text(cells[runner_index])
 
-    # The failure on request 003 was caused by the first mapping here:
-    # starter_plus.EXPECTED_TRAIN_ROWS is a per-language dict, while the flattened
-    # runner rebound EXPECTED_TRAIN_ROWS to integer 10000 in the same namespace.
+    # Request 003 failed because starter_plus.EXPECTED_TRAIN_ROWS is a per-language
+    # dict while the flattened runner rebound that global to integer 10000.
     for old, new in sorted(RENAMES.items(), key=lambda item: -len(item[0])):
         runner = re.sub(rf"\b{re.escape(old)}\b", new, runner)
     cells[runner_index]["source"] = runner.splitlines(keepends=True)
 
-    if "EXPECTED_TRAIN_ROWS = 10000" in runner:
+    # Use assignment-aware regexes here. A substring check would incorrectly match
+    # EXPECTED_TRAIN_ROWS inside the valid STAGE1_EXPECTED_TRAIN_ROWS identifier.
+    if OLD_TRAIN_ASSIGNMENT.search(runner):
         raise SystemExit("known request-003 namespace collision was not removed")
-    if "STAGE1_EXPECTED_TRAIN_ROWS = 10000" not in runner:
+    if not NEW_TRAIN_ASSIGNMENT.search(runner):
         raise SystemExit("namespaced Stage1 train-row constant missing")
-    if "STAGE1_EXPECTED_OOF_AUC = 0.664524" not in runner:
+    if not NEW_OOF_ASSIGNMENT.search(runner):
         raise SystemExit("namespaced frozen OOF contract missing")
 
     runner_constants = top_level_upper_assignments(runner)
@@ -97,8 +102,6 @@ def patch(notebook_path: Path) -> None:
     if collisions:
         raise SystemExit(f"runner/source uppercase namespace collision remains: {collisions}")
 
-    # Compile every ordinary Python cell now so syntax problems fail before a
-    # Kaggle GPU version is created.  The install-magic cell is intentionally skipped.
     for index, cell in enumerate(cells):
         if cell.get("cell_type") != "code":
             continue
@@ -121,6 +124,7 @@ def patch(notebook_path: Path) -> None:
                 "source_constants_checked": len(source_constants),
                 "cell_ids_added": len(cells),
                 "namespace_collisions": collisions,
+                "old_assignment_remaining": bool(OLD_TRAIN_ASSIGNMENT.search(runner)),
             },
             sort_keys=True,
         )
