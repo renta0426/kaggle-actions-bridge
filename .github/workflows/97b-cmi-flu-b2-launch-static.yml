@@ -23,76 +23,72 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Inspect exact launch source without credentials
+      - name: Validate protected launch semantics without secrets
         shell: bash
-        env:
-          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
-            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
-          done
           python3 - <<'PY'
-          import os
-          import ssl
-          import urllib.request
+          from __future__ import annotations
+          import pathlib
 
-          sha = os.environ['EVENT_SHA']
-          base = f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/'
-
-          def text(path: str, limit: int) -> str:
-              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
-              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
-                  data = response.read(limit + 1)
-              if len(data) > limit:
-                  raise SystemExit(f'file exceeds byte budget: {path}')
-              return data.decode('utf-8')
-
-          workflow = text('.github/workflows/98-cmi-flu-b2-launch.yml', 65536)
-          request = text('requests/cmi-flu-b2-launch-v1.json', 32768)
+          path = pathlib.Path('.github/workflows/98-cmi-flu-b2-launch.yml')
+          workflow = path.read_text(encoding='utf-8')
           required = (
               'permissions: {}',
               'group: kaggle-resource-global',
               'queue: max',
               'environment: kaggle-readonry',
+              'workflow_dispatch:',
+              'TARGET_KERNEL: renta0426/cmi-flu-b2-taskwise-compact-20260903-001',
+              'EXPECTED_SOURCE_SHA256: a039b56868e5f9e2f10ae8016466a02fe4a6e5342854487ca6c6a198a21abd5e',
               'REQUESTED_ACCELERATOR: cpu',
-              "'enable_gpu': False",
-              "'enable_tpu': False",
-              "'enable_internet': False",
-              "'is_private': True",
-              'automatic_compute_retries',
-              'active_by_resource',
-              'target kernel already exists; duplicate refused',
-              'CMI_FLU_B2_DEFERRED',
-              'CMI_FLU_B2_LAUNCH PASS',
+              'enable_gpu": False',
+              'enable_tpu": False',
+              'enable_internet": False',
+              'competition_sources": [os.environ["TARGET_COMPETITION"]]',
+              'automatic_compute_retries=0',
               '--timeout 14400',
-              '20260903-cmi-flu-b2-001',
-              'a039b5689dbcd3ae47fc7c07cd91a6505c28180f8495cf9a149066b72fb8f383',
+              'CMI_FLU_B2_LAUNCH PASS',
+              'CMI_FLU_B2_DEFERRED',
+              'target kernel already exists; duplicate refused',
+              'maximum of five (5) submissions per day',
+              'mean spearman correlation',
+              'sample_submission_part1.csv',
           )
           for token in required:
               if token not in workflow:
-                  raise SystemExit(f'launch guard missing: {token}')
-          executable_push = [
-              line for line in workflow.splitlines()
-              if '"${WORKDIR}/venv/bin/kaggle" kernels push' in line
-          ]
-          if len(executable_push) != 1:
-              raise SystemExit(f'executable Kaggle push count differs: {len(executable_push)}')
+                  raise SystemExit(f'B2 launch guard missing: {token}')
+
           forbidden = (
               'competitions submit',
               'kernels delete',
               'datasets create',
+              'datasets version',
               'models create',
+              'enable_gpu": True',
+              'enable_tpu": True',
+              'enable_internet": True',
               '--follow',
-              'enable_gpu": true',
-              'enable_tpu": true',
-              'enable_internet": true',
           )
           lowered = workflow.lower()
           for token in forbidden:
-              if token in lowered:
-                  raise SystemExit(f'forbidden launch capability present: {token}')
-          if '"automatic_compute_retries": 0' not in request:
-              raise SystemExit('request does not disable automatic compute retries')
-          print('CMI_FLU_B2_LAUNCH_STATIC PASS push_commands=1 accelerator=cpu internet=false')
+              if token.lower() in lowered:
+                  raise SystemExit(f'forbidden B2 launch capability present: {token}')
+
+          executable = [
+              line.strip()
+              for line in workflow.splitlines()
+              if '"${WORKDIR}/venv/bin/kaggle" kernels push ' in line
+          ]
+          if len(executable) != 1:
+              raise SystemExit(f'expected exactly one executable kernels push, found {len(executable)}')
+          if workflow.count('KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}') != 2:
+              raise SystemExit('Kaggle token must be scoped to exactly the admission and push steps')
+          if workflow.count('if: steps.admission.outputs.can_launch == \'true\'') != 1:
+              raise SystemExit('Kaggle push must have one admission condition')
+          if workflow.count('if: steps.admission.outputs.can_launch != \'true\'') != 1:
+              raise SystemExit('deferred admission branch must occur exactly once')
+          if 'pull_request:' in workflow:
+              raise SystemExit('secret-bearing launch workflow must not run on pull_request')
+          print('CMI_FLU_B2_LAUNCH_STATIC PASS')
           PY
