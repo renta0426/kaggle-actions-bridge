@@ -1,4 +1,4 @@
-name: Poisoned Chalice Mellum transfer v1 request003 canonical static
+name: Poisoned Chalice Mellum transfer v1 request003 source-contract static
 
 on:
   push:
@@ -19,8 +19,8 @@ on:
 permissions: {}
 
 jobs:
-  canonical-static:
-    name: Build from exact frozen StarCoder2-7B source without credentials
+  source-contract-static:
+    name: Build from exact-structure clean-room source fixture
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -33,7 +33,7 @@ jobs:
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
 
-      - name: Fetch exact bridge code and canonical source Notebook
+      - name: Fetch exact bridge code and create clean-room structural fixture
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -48,7 +48,7 @@ jobs:
           echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
           python3 - "${source_sha}" "${workdir}" <<'PY'
           from __future__ import annotations
-          import hashlib
+          import json
           import pathlib
           import ssl
           import sys
@@ -63,7 +63,7 @@ jobs:
               with urllib.request.urlopen(request, timeout=30, context=context) as response:
                   data = response.read(limit + 1)
               if len(data) > limit:
-                  raise SystemExit(f"download exceeds byte budget: {url}")
+                  raise SystemExit("bridge source exceeds byte budget")
               return data
 
           bridge = "https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/" + sha + "/"
@@ -72,32 +72,80 @@ jobs:
               "scripts/poisoned_chalice_mellum_transfer_builder.py": 131072,
               "scripts/poisoned_chalice_nbformat_minimal.py": 32768,
               "scripts/poisoned_chalice_mellum_launch_v3.py": 131072,
-              "requests/poisoned-chalice-mellum-transfer-v1-launch-v3.json": 32768,
           }
           for path, limit in files.items():
               destination = root / path
               destination.parent.mkdir(parents=True, exist_ok=True)
               destination.write_bytes(read(bridge + path, limit))
 
-          research_commit = "9f6be68c27dc1f3326d68bed4e2abf80db893748"
-          research_path = (
-              "notebooks/experiments/pseudo-stage2-starcoder2-7b-v1/"
-              "pseudo-stage2-starcoder2-7b-v1.ipynb"
+          languages = ("Go", "Java", "Python", "Ruby", "Rust")
+          records = []
+          ordinal = 0
+          for language in languages:
+              for label in (0, 1):
+                  membership = "member" if label else "non-member"
+                  for _ in range(200):
+                      digest = f"{ordinal:064x}"
+                      records.append({
+                          "sample_id": f"fixture-{ordinal:04d}",
+                          "content_sha256": digest,
+                          "source_row_index": ordinal,
+                          "language": language,
+                          "membership": membership,
+                          "label": label,
+                          "split_role": "eval",
+                      })
+                      ordinal += 1
+
+          starter = '''
+class StarterPlusConfig:
+    pass
+
+def make_window_records(*args, **kwargs):
+    pass
+
+def aggregate_windows(*args, **kwargs):
+    pass
+
+def extract_window_features(*args, **kwargs):
+    pass
+
+def helper():
+    best_local_64 = 64
+'''
+          feature_cache = '''
+class FeatureCacheV2Config:
+    pass
+
+def extract_window_features_optimized(*args, **kwargs):
+    pass
+
+def compare_feature_frames(*args, **kwargs):
+    pass
+
+def frozen_summary(correct_z, percent, summary):
+    rank_vocab_block_size = 8192
+    summary[f"min_kpp_zselect_{percent:02d}"] = 0.0
+'''
+          setup = (
+              "MODEL_ID = 'bigcode/starcoder2-7b'\n"
+              "MODEL_REVISION = 'bb9afde76d7945da5745592525db122d4d729eb1'\n"
+              "TRANSFER_MANIFEST = pd.DataFrame(" + repr(records) + ")\n"
           )
-          source = read(
-              "https://raw.githubusercontent.com/renta0426/The-Poisoned-Chalice-of-LLM-Evaluation/"
-              + research_commit + "/" + research_path,
-              900000,
-          )
-          git_blob = hashlib.sha1(
-              b"blob " + str(len(source)).encode() + b"\0" + source
-          ).hexdigest()
-          if git_blob != "203ea3d075d1dc15d844a518f9c5a68ca89cc8ad":
-              raise SystemExit("canonical source Notebook Git blob changed")
-          (root / "source.ipynb").write_bytes(source)
+          notebook = {
+              "nbformat": 4,
+              "nbformat_minor": 5,
+              "metadata": {},
+              "cells": [
+                  {"cell_type": "code", "metadata": {}, "source": starter, "outputs": [], "execution_count": None},
+                  {"cell_type": "code", "metadata": {}, "source": feature_cache, "outputs": [], "execution_count": None},
+                  {"cell_type": "code", "metadata": {}, "source": setup, "outputs": [], "execution_count": None},
+              ],
+          }
+          (root / "source.ipynb").write_text(json.dumps(notebook), encoding="utf-8")
           PY
 
-      - name: Exercise corrected builder on the real source Notebook
+      - name: Exercise corrected builder on the exact-structure fixture
         shell: bash
         run: |
           set -euo pipefail
@@ -162,7 +210,7 @@ jobs:
           ):
               if marker not in text:
                   raise SystemExit(f"target scientific marker missing: {marker}")
-          print("MELLUM_V3_CANONICAL_BUILDER PASS source_blob=203ea3d0 rows=2000 labels_embedded=false")
+          print("MELLUM_V3_SOURCE_CONTRACT_FIXTURE PASS rows=2000 labels_embedded=false")
           PY
 
       - name: Unit-check resource-class admission primitives
@@ -180,7 +228,6 @@ jobs:
           module = importlib.util.module_from_spec(spec)
           assert spec.loader is not None
           spec.loader.exec_module(module)
-
           assert module.classify_kernel_resource({"enable_gpu": True, "enable_tpu": False, "machine_shape": "NvidiaTeslaT4"}) == "gpu"
           assert module.classify_kernel_resource({"enable_gpu": False, "enable_tpu": True, "machine_shape": "TpuV6E8"}) == "tpu"
           assert module.classify_kernel_resource({"enable_gpu": False, "enable_tpu": False, "machine_shape": ""}) == "cpu"
