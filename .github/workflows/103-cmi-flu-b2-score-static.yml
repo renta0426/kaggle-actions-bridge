@@ -1,0 +1,84 @@
+name: CMI-Flu B2 score workflow static validation
+
+on:
+  push:
+    branches:
+      - feat/cmi-flu-b2-postrun
+    paths:
+      - .github/workflows/103-cmi-flu-b2-score-static.yml
+      - .github/workflows/104-cmi-flu-b2-score.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/103-cmi-flu-b2-score-static.yml
+      - .github/workflows/104-cmi-flu-b2-score.yml
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate dormant bounded score workflow from exact commit
+        shell: bash
+        env:
+          CONTENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import os, ssl, urllib.request
+
+          url = (
+              f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/"
+              f"{os.environ['CONTENT_SHA']}/.github/workflows/104-cmi-flu-b2-score.yml"
+          )
+          request = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+              data = response.read(40001)
+          if len(data) > 40000:
+              raise SystemExit('B2 score workflow exceeds byte budget')
+          workflow = data.decode('utf-8')
+          required = (
+              'permissions: {}',
+              'group: kaggle-read-global',
+              'environment: kaggle-readonry',
+              'workflow_dispatch:',
+              'requests/cmi-flu-b2-score-v1.json',
+              'TARGET_COMPETITION: cmi-flu-first-prediction-challenge',
+              'competitions submissions',
+              'CMI_FLU_B2_SCORE_READY',
+              'CMI_FLU_B2_SCORE_NONTERMINAL',
+              'publicScore',
+              'submission_sha256',
+              'mean spearman correlation',
+          )
+          for token in required:
+              if token not in workflow:
+                  raise SystemExit(f'B2 score guard missing: {token}')
+
+          forbidden = (
+              'competitions ' + 'submit ',
+              'kernels ' + 'push',
+              'kernels ' + 'delete',
+              'datasets ' + 'create',
+              'datasets ' + 'version',
+              'models ' + 'create',
+              'upload-' + 'artifact',
+              '--' + 'follow',
+              'pull_' + 'request:',
+          )
+          lowered = workflow.lower()
+          for token in forbidden:
+              if token in lowered:
+                  raise SystemExit(f'forbidden B2 score capability present: {token}')
+          if workflow.count('KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}') != 1:
+              raise SystemExit('B2 score token must be scoped to one read step')
+          print('CMI_FLU_B2_SCORE_STATIC PASS')
+          PY
