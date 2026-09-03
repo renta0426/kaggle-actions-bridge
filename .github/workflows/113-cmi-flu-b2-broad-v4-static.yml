@@ -6,6 +6,7 @@ on:
       - ops/cmi-flu-b2-broad-004
     paths:
       - .github/workflows/113-cmi-flu-b2-broad-v4-static.yml
+      - .github/workflows/114-cmi-flu-b2-broad-v4-launch.yml
       - requests/cmi-flu-b2-launch-v4.json
       - scripts/cmi_flu_b2_patch_v4.py
       - payloads/cmi-flu-b2-broad-004/**
@@ -14,6 +15,7 @@ on:
       - main
     paths:
       - .github/workflows/113-cmi-flu-b2-broad-v4-static.yml
+      - .github/workflows/114-cmi-flu-b2-broad-v4-launch.yml
       - requests/cmi-flu-b2-launch-v4.json
       - scripts/cmi_flu_b2_patch_v4.py
       - payloads/cmi-flu-b2-broad-004/**
@@ -24,6 +26,7 @@ env:
   EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
   REQUEST_PATH: requests/cmi-flu-b2-launch-v4.json
   PATCHER_PATH: scripts/cmi_flu_b2_patch_v4.py
+  LAUNCH_PATH: .github/workflows/114-cmi-flu-b2-broad-v4-launch.yml
   PAYLOAD_DIR: payloads/cmi-flu-b2-broad-004
   EXPECTED_SOURCE_SHA256: 7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db
   EXPECTED_SOURCE_SIZE: "93363"
@@ -76,6 +79,7 @@ jobs:
           (root / "source.py").write_bytes(source)
           (root / "request.json").write_bytes(read(os.environ["REQUEST_PATH"], 32768))
           (root / "patch.py").write_bytes(read(os.environ["PATCHER_PATH"], 32768))
+          (root / "launch.yml").write_bytes(read(os.environ["LAUNCH_PATH"], 32768))
           print(f"CMI_FLU_B2_004_TRANSFER PASS bytes={len(source)} sha256={digest} parts={len(parts)}")
           PY
           python3 "${workdir}/patch.py" \
@@ -85,9 +89,10 @@ jobs:
           python3 -W error::SyntaxWarning -m py_compile "${workdir}/patch.py" "${workdir}/script.py"
           python3 "${workdir}/script.py" --self-test
 
-          python3 - "${workdir}/script.py" <<'PY'
+          python3 - "${workdir}/script.py" "${workdir}/launch.yml" <<'PY'
           import ast, pathlib, sys
           text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          launch = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
           tree = ast.parse(text)
           request_assignments = [
               node for node in tree.body
@@ -102,5 +107,29 @@ jobs:
               raise SystemExit("B2 request 004 recursive mount locator missing")
           if text.count("kernels push") or text.count("competitions submit"):
               raise SystemExit("B2 runtime source unexpectedly contains Kaggle write commands")
-          print("CMI_FLU_B2_004_STATIC PASS request=004 flow=broad locator=recursive")
+
+          required_launch = (
+              "permissions: {}",
+              "group: kaggle-resource-global",
+              "queue: max",
+              "environment: kaggle-readonry",
+              "TARGET_KERNEL: renta0426/cmi-flu-b2-taskwise-compact-broad-20260903-004",
+              "enable_gpu\": False",
+              "enable_tpu\": False",
+              "enable_internet\": False",
+              "automatic_compute_retries=0",
+              "KERNEL_LAUNCH PASS request_id=20260903-cmi-flu-b2-004",
+          )
+          for token in required_launch:
+              if token not in launch:
+                  raise SystemExit(f"B2 request 004 launch guard missing: {token}")
+          if launch.count('"${WORKDIR}/venv/bin/kaggle" kernels push') != 1:
+              raise SystemExit("B2 request 004 launch must contain exactly one executable kernels push")
+          if "competitions submit" in launch.lower() or "kernels delete" in launch.lower():
+              raise SystemExit("B2 request 004 launch contains an unauthorized Kaggle write")
+          if "actions/upload-artifact" in launch.lower() or "actions/cache" in launch.lower():
+              raise SystemExit("B2 request 004 launch exposes private artifact/cache capability")
+          if launch.count("secrets.KAGGLE_API_TOKEN") != 2:
+              raise SystemExit("B2 request 004 secret scope count mismatch")
+          print("CMI_FLU_B2_004_STATIC PASS request=004 flow=broad locator=recursive submit_commands=0 kernels_push=1")
           PY
