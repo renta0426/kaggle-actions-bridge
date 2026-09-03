@@ -123,8 +123,6 @@ jobs:
               "wait-score",
               "steps.submit_decision.outputs.should_submit == 'true'",
               "automatic_submission_retries=0",
-              "public_score_tuning=false",
-              "select_final_submission=false",
               "Runner-local CMI-Flu B2 finalization content removed",
           )
           for token in required_runtime:
@@ -161,6 +159,15 @@ jobs:
           for token in forbidden_script:
               if token in lowered_script:
                   raise SystemExit(f"forbidden B2 finalizer source capability present: {token}")
+          required_script = (
+              "public_score_tuning=false",
+              "select_final_submission=false",
+              "automatic_compute_retries=0",
+              "automatic_submission_retries=0",
+          )
+          for token in required_script:
+              if token not in script:
+                  raise SystemExit(f"B2 finalizer reporting guard missing: {token}")
           if script.count("time.sleep(") != 2:
               raise SystemExit("B2 finalizer must have exactly two bounded polling sleeps")
           if script.count("api.competition_submissions(") != 2:
