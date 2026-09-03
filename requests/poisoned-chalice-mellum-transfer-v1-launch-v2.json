@@ -9,7 +9,7 @@
   "source_kernel": "renta0426/pseudo-stage2-starcoder2-7b-v1",
   "source_expected_version": 1,
   "launcher_path": "scripts/poisoned_chalice_mellum_launch_v2.py",
-  "launcher_blob_sha": "71d392aed6aebfa92b7a7e326d90fef3336952c0",
+  "launcher_blob_sha": "af8e58cae30ffdebcf348013047f423a6396df62",
   "builder_path": "scripts/poisoned_chalice_mellum_transfer_builder.py",
   "builder_blob_sha": "0b8b48b2547454affbde6e730d4e43bde39421cf",
   "nbformat_shim_path": "scripts/poisoned_chalice_nbformat_minimal.py",
