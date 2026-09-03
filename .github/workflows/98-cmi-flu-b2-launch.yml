@@ -1,0 +1,465 @@
+name: CMI-Flu B2 taskwise compact CPU launch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/98-cmi-flu-b2-launch.yml
+      - requests/cmi-flu-b2-launch-v1.json
+      - payloads/cmi-flu-b2-001/**
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+  queue: max
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-b2-launch-v1.json
+  PARTS_DIR: payloads/cmi-flu-b2-001
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_OWNER: renta0426
+  TARGET_SLUG: cmi-flu-b2-taskwise-compact-20260903-001
+  TARGET_KERNEL: renta0426/cmi-flu-b2-taskwise-compact-20260903-001
+  REQUESTED_ACCELERATOR: cpu
+
+jobs:
+  validate:
+    name: Validate immutable B2 request without secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce source and secret-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${GITHUB_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${GITHUB_REF}" == "refs/heads/main" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Reconstruct, compile, and self-test exact B2 script
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import ssl
+          import subprocess
+          import sys
+          import urllib.request
+
+          output = pathlib.Path(sys.argv[1])
+          repository = os.environ['EXPECTED_REPOSITORY']
+          sha = os.environ['EVENT_SHA']
+          base = f'https://raw.githubusercontent.com/{repository}/{sha}/'
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f'input exceeds byte budget: {path}')
+              return data
+
+          request = json.loads(read(os.environ['REQUEST_PATH'], 32768))
+          if request != {
+              'schema_version': 1,
+              'request_id': '20260903-cmi-flu-b2-001',
+              'competition': 'cmi-flu-first-prediction-challenge',
+              'operation': 'kernel_run',
+              'target': 'renta0426/cmi-flu-b2-taskwise-compact-20260903-001',
+              'payload': {
+                  'parts_dir': 'payloads/cmi-flu-b2-001',
+                  'part_count': 20,
+                  'size_bytes': 92839,
+                  'source_sha256': 'a039b5689dbcd3ae47fc7c07cd91a6505c28180f8495cf9a149066b72fb8f383',
+                  'source_commit': '1596ba5b7ab2369c0b70c9da178aec1d71c80658',
+                  'merged_cmi_commit': '1503f5989feb00313f2851602e2c4eda8685000a',
+                  'package_zip_sha256': '390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0',
+                  'replacement': {
+                      'old': 'REQUEST_ID = "__REQUEST_ID__"',
+                      'new': 'REQUEST_ID = "20260903-cmi-flu-b2-001"',
+                      'count': 1,
+                  },
+              },
+              'resource': {
+                  'accelerator': 'cpu',
+                  'expected_runtime_minutes': 120,
+                  'hard_timeout_minutes': 240,
+                  'max_active_runs': 1,
+              },
+              'api_budget': {
+                  'max_calls': 20,
+                  'poll_interval_seconds': 900,
+                  'max_pages': 2,
+              },
+              'side_effects': ['create one private Notebook version and start one CPU run'],
+              'automatic_compute_retries': 0,
+              'enable_internet': False,
+              'rules_checked_at_utc': '2026-09-02T23:55:00Z',
+          }:
+              raise SystemExit('request differs from exact allowlist')
+
+          payload = request['payload']
+          names = [f'part-{index:02d}' for index in range(payload['part_count'])]
+          source = b''.join(read(f"{payload['parts_dir']}/{name}", 4800) for name in names)
+          digest = hashlib.sha256(source).hexdigest()
+          if len(source) != payload['size_bytes'] or digest != payload['source_sha256']:
+              raise SystemExit('B2 source size or SHA-256 mismatch')
+          text = source.decode('utf-8')
+          replacement = payload['replacement']
+          if text.count(replacement['old']) != replacement['count']:
+              raise SystemExit('B2 request placeholder occurrence mismatch')
+          patched = text.replace(replacement['old'], replacement['new'])
+          if '__REQUEST_ID__' in patched:
+              raise SystemExit('B2 request placeholder remains')
+          compile(patched, 'script.py', 'exec')
+          script = output / 'script.py'
+          script.write_text(patched, encoding='utf-8')
+          completed = subprocess.run(
+              [sys.executable, str(script), '--self-test'],
+              check=True,
+              capture_output=True,
+              text=True,
+              timeout=30,
+          )
+          if 'CMI_FLU_B2_BUNDLE_SELF_TEST PASS' not in completed.stdout:
+              raise SystemExit('B2 self-test marker missing')
+          print(f'B2_REQUEST_STATIC PASS bytes={len(source)} source_sha256={digest}')
+          PY
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl
+          import urllib.request
+          for url in (
+              'https://www.kaggle.com/terms',
+              'https://www.kaggle.com/aup',
+              'https://www.kaggle.com/community-guidelines',
+              'https://www.kaggle.com/docs/api',
+          ):
+              request = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f'official Kaggle page unavailable: {url}')
+          print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
+          PY
+
+  launch:
+    name: Admit or launch exactly one B2 CPU run
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY_VALUE: ${{ github.repository }}
+          EVENT_REPOSITORY_ID_VALUE: ${{ github.event.repository.id }}
+          EVENT_ACTOR_VALUE: ${{ github.actor }}
+          EVENT_ACTOR_ID_VALUE: ${{ github.actor_id }}
+          EVENT_SENDER_ID_VALUE: ${{ github.event.sender.id }}
+          EVENT_NAME_VALUE: ${{ github.event_name }}
+          EVENT_REF_VALUE: ${{ github.ref }}
+          EVENT_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT_VALUE: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY_VALUE}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID_VALUE}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR_VALUE}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID_VALUE}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME_VALUE}" == "push" || "${EVENT_NAME_VALUE}" == "workflow_dispatch" ]]
+          [[ "${EVENT_REF_VALUE}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA_VALUE}" == "${EVENT_SHA_VALUE}" ]]
+          [[ "${WORKFLOW_REF_VALUE}" == "renta0426/kaggle-actions-bridge/.github/workflows/98-cmi-flu-b2-launch.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT_VALUE}" == "github-hosted" ]]
+          echo "PROTECTED_CMI_FLU_B2_REQUEST_001 PASS"
+
+      - name: Prepare locked Kaggle CLI and exact patched script
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import ssl
+          import subprocess
+          import sys
+          import urllib.request
+
+          root = pathlib.Path(sys.argv[1])
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f'input exceeds byte budget: {path}')
+              return data
+
+          request = json.loads(read(os.environ['REQUEST_PATH'], 32768))
+          if request.get('request_id') != '20260903-cmi-flu-b2-001':
+              raise SystemExit('B2 request ID mismatch')
+          if request.get('target') != os.environ['TARGET_KERNEL']:
+              raise SystemExit('B2 target mismatch')
+          if request.get('resource') != {
+              'accelerator': 'cpu',
+              'expected_runtime_minutes': 120,
+              'hard_timeout_minutes': 240,
+              'max_active_runs': 1,
+          }:
+              raise SystemExit('B2 resource contract mismatch')
+          if request.get('automatic_compute_retries') != 0 or request.get('enable_internet') is not False:
+              raise SystemExit('B2 retry/internet contract mismatch')
+          payload = request['payload']
+          expected_names = [f'part-{index:02d}' for index in range(payload['part_count'])]
+          source = b''.join(read(f"{payload['parts_dir']}/{name}", 4800) for name in expected_names)
+          digest = hashlib.sha256(source).hexdigest()
+          if len(source) != 92839 or digest != 'a039b5689dbcd3ae47fc7c07cd91a6505c28180f8495cf9a149066b72fb8f383':
+              raise SystemExit('B2 payload integrity mismatch')
+          text = source.decode('utf-8')
+          replacement = payload['replacement']
+          if text.count(replacement['old']) != replacement['count']:
+              raise SystemExit('B2 placeholder occurrence mismatch')
+          text = text.replace(replacement['old'], replacement['new'])
+          if '__REQUEST_ID__' in text:
+              raise SystemExit('B2 placeholder remains')
+          compile(text, 'script.py', 'exec')
+          script = root / 'script.py'
+          script.write_text(text, encoding='utf-8')
+          completed = subprocess.run(
+              [sys.executable, str(script), '--self-test'],
+              check=True,
+              capture_output=True,
+              text=True,
+              timeout=30,
+          )
+          if 'CMI_FLU_B2_BUNDLE_SELF_TEST PASS' not in completed.stdout:
+              raise SystemExit('B2 self-test marker missing')
+
+          lock = read(os.environ['LOCK_PATH'], 65536).decode('utf-8')
+          pattern = re.compile(r'^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$')
+          lines = [line.strip() for line in lock.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit('Kaggle lock validation failed')
+          if not any(line.startswith('kaggle==2.2.4 ') for line in lines):
+              raise SystemExit('Kaggle 2.2.4 pin missing')
+          (root / 'kaggle.lock').write_text(lock, encoding='utf-8')
+          print(f'B2_PATCHED_SCRIPT PASS bytes={len(text.encode())} sha256={hashlib.sha256(text.encode()).hexdigest()}')
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F "2.2.4" >/dev/null
+
+      - name: Fetch live Competition rules and determine CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os
+          import re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          api = KaggleApi(); api.authenticate()
+          pages = api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, 'to_dict') else dict(page)
+              name = str(data.get('name') or '').strip().lower()
+              if name:
+                  content[name] = str(data.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in name for name in content):
+              raise SystemExit('live Competition policy pages unavailable')
+          plain = lambda value: re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', value)).casefold()
+          rules = plain(content['rules'])
+          evaluation = plain(content['evaluation'])
+          data_text = ' '.join(plain(content[name]) for name in content if 'data' in name)
+          if not all(term in rules for term in (
+              'maximum of five (5) submissions per day',
+              'maximum team size is five (5)',
+              'data security',
+              'external data and tools',
+          )):
+              raise SystemExit('live Competition rules differ from approved guardrails')
+          if not all(term in evaluation for term in ('mean spearman correlation', '40 donors', '-99')):
+              raise SystemExit('live Competition evaluation differs from approved guardrails')
+          if 'sample_submission_part1.csv' not in data_text or 'investigations_260821.tsv' not in data_text:
+              raise SystemExit('live Competition data description differs from expected inputs')
+
+          target = os.environ['TARGET_KERNEL']
+          existing = api.kernels_list(user=os.environ['TARGET_OWNER'], search=os.environ['TARGET_SLUG'], page_size=5) or []
+          if target in {str(getattr(item, 'ref', '')) for item in existing}:
+              raise SystemExit('target kernel already exists; duplicate refused')
+
+          active_refs = []
+          recent = api.kernels_list(user=os.environ['TARGET_OWNER'], sort_by='dateRun', page_size=10) or []
+          for item in recent[:10]:
+              ref = str(getattr(item, 'ref', ''))
+              if not ref:
+                  continue
+              status = str(getattr(api.kernels_status(ref), 'status', '')).upper()
+              if any(token in status for token in ('RUNNING', 'QUEUED', 'PENDING')):
+                  active_refs.append(ref)
+
+          active_by_resource = {'cpu': [], 'gpu': [], 'tpu': [], 'unknown': []}
+          if len(active_refs) > 5:
+              active_by_resource['unknown'].extend(active_refs)
+          else:
+              with api.build_kaggle_client() as client:
+                  for ref in active_refs:
+                      resource = 'unknown'
+                      try:
+                          owner, slug = ref.split('/', 1)
+                          request = ApiGetKernelRequest()
+                          request.user_name = owner
+                          request.kernel_slug = slug
+                          details = client.kernels.kernels_api_client.get_kernel(request)
+                          metadata = getattr(details, 'metadata', None)
+                          if metadata is not None:
+                              if bool(getattr(metadata, 'enable_tpu', False)):
+                                  resource = 'tpu'
+                              elif bool(getattr(metadata, 'enable_gpu', False)):
+                                  resource = 'gpu'
+                              else:
+                                  resource = 'cpu'
+                      except Exception:
+                          resource = 'unknown'
+                      active_by_resource[resource].append(ref)
+
+          requested = os.environ['REQUESTED_ACCELERATOR']
+          same_class = len(active_by_resource[requested])
+          unknown = len(active_by_resource['unknown'])
+          can_launch = same_class + unknown < 1
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
+          counts = {key: len(value) for key, value in active_by_resource.items()}
+          if can_launch:
+              print(
+                  'CMI_FLU_B2_LIVE_PREFLIGHT PASS '
+                  f"pages={len(content)} requested={requested} "
+                  f"active_cpu={counts['cpu']} active_gpu={counts['gpu']} "
+                  f"active_tpu={counts['tpu']} active_unknown={counts['unknown']} "
+                  'accelerator=cpu internet=false'
+              )
+          else:
+              print(
+                  'CMI_FLU_B2_DEFERRED '
+                  f'requested={requested} same_class={same_class} unknown={unknown} '
+                  f"nonblocking_gpu={counts['gpu']} nonblocking_tpu={counts['tpu']} "
+                  'side_effect=false request_unexecuted=true'
+              )
+          PY
+
+      - name: Record deferred admission
+        if: steps.admission.outputs.can_launch != 'true'
+        shell: bash
+        run: |
+          echo "CMI_FLU_B2_REQUEST_001 DEFERRED; no Kaggle write was attempted"
+
+      - name: Materialize exactly one Python file and push once
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          kernel_dir="${WORKDIR}/kernel"
+          mkdir -p "${kernel_dir}"
+          cp "${WORKDIR}/script.py" "${kernel_dir}/script.py"
+          "${WORKDIR}/venv/bin/python" - "${kernel_dir}" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          metadata = {
+              'id': os.environ['TARGET_KERNEL'],
+              'title': 'CMI Flu B2 Taskwise Compact 20260903 001',
+              'code_file': 'script.py',
+              'language': 'python',
+              'kernel_type': 'script',
+              'is_private': True,
+              'enable_gpu': False,
+              'enable_tpu': False,
+              'enable_internet': False,
+              'machine_shape': '',
+              'dataset_sources': [],
+              'competition_sources': [os.environ['TARGET_COMPETITION']],
+              'kernel_sources': [],
+              'model_sources': [],
+          }
+          (root / 'kernel-metadata.json').write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+          [[ "$(find "${kernel_dir}" -maxdepth 1 -type f -name '*.py' | wc -l)" -eq 1 ]]
+          [[ -f "${kernel_dir}/script.py" && ! -L "${kernel_dir}/script.py" ]]
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 14400 \
+            >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "ERROR: Kaggle B2 kernel push/run failed; response suppressed"
+            exit 1
+          fi
+          echo "CMI_FLU_B2_LAUNCH PASS request_id=20260903-cmi-flu-b2-001 target=${TARGET_KERNEL} accelerator=cpu internet=false python_files=1 automatic_retries=0"
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}"
+          fi
+          echo "Runner-local CMI-Flu B2 request content removed"
