@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-cmi-flu-b21-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b21-robust-cv-20260903-001",
+  "purpose": "run pre-registered B2.1 robust CV selection on Competition Data; generate local metrics and submission file but do not submit",
+  "science_source_commit": "33030746bc7bad02ad2c1e670ac319cc943c524d",
+  "runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "base_request_id": "20260903-cmi-flu-b2-004",
+  "base_payload": {
+    "parts_dir": "payloads/cmi-flu-b2-broad-004",
+    "part_count": 20,
+    "size_bytes": 93363,
+    "source_sha256": "7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db",
+    "package_zip_sha256": "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 240,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-03T12:55:00Z"
+}
