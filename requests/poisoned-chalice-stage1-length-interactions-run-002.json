@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-poisoned-chalice-stage1-length-interactions-run-002",
+  "parent_request_id": "20260903-poisoned-chalice-stage1-length-interactions-run-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/stage1-length-interactions-v2",
+  "source_dataset": "renta0426/stage1-raw-fim-submission-v1-output",
+  "source_dataset_version": 1,
+  "base_builder_path": "scripts/poisoned_chalice_stage1_length_interaction_builder.py",
+  "base_builder_blob_sha": "a10c7a76be1a4d700d7b1d9846e42348c5711651",
+  "builder_script_path": "scripts/poisoned_chalice_stage1_length_interaction_builder_v2.py",
+  "builder_blob_sha": "8f2cd12ecbad8160e86bbd42cf9b70649e1aa56b",
+  "repair": {
+    "failed_target": "renta0426/stage1-length-interactions-v1",
+    "failed_version": 1,
+    "failed_status": "ERROR",
+    "failure_class": "kaggle_dataset_mount_path_compatibility",
+    "scientific_candidate_changed": false,
+    "source_dataset_changed": false,
+    "expected_oof_auc": 0.68013844,
+    "expected_tpr_at_0.01_fpr": 0.0682
+  },
+  "resource": {
+    "execution": "kaggle_notebook",
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 12,
+    "hard_timeout_minutes": 45,
+    "max_active_runs": 2,
+    "enable_internet": false
+  },
+  "api_budget": {
+    "max_calls": 24,
+    "max_recent_kernels_inspected": 25,
+    "max_pages": 2,
+    "poll_interval_seconds": 0
+  },
+  "input_budget": {
+    "expected_train_shards": 40,
+    "expected_validation_shards": 20,
+    "expected_rows_per_shard": 250,
+    "max_dataset_files": 150,
+    "max_dataset_bytes": 1073741824
+  },
+  "side_effects": [
+    "create exactly one private CPU Kaggle Notebook at renta0426/stage1-length-interactions-v2"
+  ],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "submission_inside_notebook": false
+}
