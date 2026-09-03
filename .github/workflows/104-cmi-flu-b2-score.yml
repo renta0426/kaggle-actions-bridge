@@ -1,0 +1,219 @@
+name: CMI-Flu B2 bounded Public score read
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/cmi-flu-b2-score-v1.json
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kaggle-read-global
+  cancel-in-progress: false
+  queue: max
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-b2-score-v1.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+
+jobs:
+  score:
+    name: Read one exact B2 submission status and Public score
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce protected read-only score boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == 'push' || "${EVENT_NAME}" == 'workflow_dispatch' ]]
+          [[ "${EVENT_REF}" == 'refs/heads/main' ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == 'renta0426/kaggle-actions-bridge/.github/workflows/104-cmi-flu-b2-score.yml@refs/heads/main' ]]
+          [[ "${RUNNER_ENVIRONMENT}" == 'github-hosted' ]]
+          echo 'PROTECTED_CMI_FLU_B2_SCORE_BOUNDARY PASS'
+
+      - name: Validate exact score request and prepare locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import json, os, pathlib, re, ssl, sys, urllib.request
+
+          root = pathlib.Path(sys.argv[1])
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f'input exceeds byte budget: {path}')
+              return data
+
+          request = json.loads(read(os.environ['REQUEST_PATH'], 16384))
+          expected_keys = {
+              'schema_version', 'request_id', 'parent_request_id', 'competition', 'operation',
+              'submission_message', 'submission_sha256', 'api_budget', 'side_effects',
+              'rules_checked_at_utc',
+          }
+          if set(request) != expected_keys:
+              raise SystemExit('B2 score request schema mismatch')
+          expected = {
+              'schema_version': 1,
+              'request_id': '20260903-cmi-flu-b2-score-001',
+              'parent_request_id': '20260903-cmi-flu-b2-submit-001',
+              'competition': os.environ['TARGET_COMPETITION'],
+              'operation': 'competition_submission_score',
+              'api_budget': {'max_calls': 5, 'max_pages': 1},
+              'side_effects': [],
+          }
+          for key, value in expected.items():
+              if request.get(key) != value:
+                  raise SystemExit(f'B2 score request mismatch: {key}')
+          digest = str(request.get('submission_sha256', ''))
+          if not re.fullmatch(r'[0-9a-f]{64}', digest):
+              raise SystemExit('B2 score request SHA-256 is malformed')
+          message = str(request.get('submission_message', ''))
+          if message != f'CMI-Flu B2 taskwise compact sha={digest[:12]}':
+              raise SystemExit('B2 score request message does not bind the file SHA')
+          checked = str(request.get('rules_checked_at_utc', ''))
+          if not re.fullmatch(r'2026-09-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z', checked):
+              raise SystemExit('B2 score rules_checked_at_utc is malformed')
+          (root / 'request.json').write_text(json.dumps(request, sort_keys=True), encoding='utf-8')
+
+          lock = read(os.environ['LOCK_PATH'], 65536).decode('utf-8')
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in lock.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit('Kaggle CLI lock validation failed')
+          if not any(line.startswith('kaggle==2.2.4 ') for line in lines):
+              raise SystemExit('Kaggle CLI 2.2.4 pin missing')
+          (root / 'kaggle.lock').write_text(lock, encoding='utf-8')
+          print(f'CMI_FLU_B2_SCORE_REQUEST PASS submission_sha256={digest}')
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes \
+            -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Read live Competition policy and exact submission score
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os, re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+
+          api = KaggleApi(); api.authenticate()
+          pages = api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, 'to_dict') else dict(page)
+              name = str(data.get('name') or '').strip().lower()
+              if name:
+                  content[name] = str(data.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content:
+              raise SystemExit('live Competition policy pages unavailable')
+          plain = lambda value: re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', value)).casefold()
+          rules = plain(content['rules'])
+          evaluation = plain(content['evaluation'])
+          if 'maximum of five (5) submissions per day' not in rules:
+              raise SystemExit('live Competition submission rule differs')
+          if 'mean spearman correlation' not in evaluation:
+              raise SystemExit('live Competition evaluation differs')
+          print('CMI_FLU_B2_SCORE_LIVE_RULES PASS')
+          PY
+
+          "${WORKDIR}/venv/bin/kaggle" competitions submissions \
+            -c "${TARGET_COMPETITION}" --csv >"${WORKDIR}/submissions.csv"
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import csv
+          import json
+          import math
+          import os
+          import pathlib
+
+          root = pathlib.Path(os.environ['WORKDIR'])
+          request = json.loads((root / 'request.json').read_text(encoding='utf-8'))
+          message = request['submission_message']
+          rows = list(csv.DictReader((root / 'submissions.csv').open(newline='', encoding='utf-8-sig')))
+          matches = [row for row in rows if str(row.get('description') or row.get('message') or '') == message]
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one B2 submission for the message, found {len(matches)}')
+          row = matches[0]
+          status = str(row.get('status') or 'unknown')
+          submitted = str(row.get('date') or row.get('submittedAt') or 'unknown')
+          reference = str(row.get('ref') or row.get('id') or row.get('fileName') or 'unknown')
+          raw_score = str(row.get('publicScore') or row.get('public_score') or '').strip()
+          if not raw_score:
+              print(
+                  'CMI_FLU_B2_SCORE_NONTERMINAL '
+                  f'reference={reference} status={status} submitted_at={submitted} '
+                  f'submission_sha256={request["submission_sha256"]}'
+              )
+              raise SystemExit(0)
+          try:
+              score = float(raw_score)
+          except ValueError as error:
+              raise SystemExit(f'B2 Public score is not numeric: {raw_score!r}') from error
+          if not math.isfinite(score):
+              raise SystemExit('B2 Public score is not finite')
+          print(
+              'CMI_FLU_B2_SCORE_READY '
+              f'reference={reference} status={status} submitted_at={submitted} '
+              f'publicScore={score:.12g} submission_sha256={request["submission_sha256"]}'
+          )
+          PY
+
+      - name: Cleanup runner-local score metadata
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'Runner-local B2 submission metadata removed'
