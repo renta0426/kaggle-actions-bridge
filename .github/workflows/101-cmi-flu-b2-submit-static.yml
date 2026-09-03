@@ -1,0 +1,97 @@
+name: CMI-Flu B2 submission workflow static validation
+
+on:
+  push:
+    branches:
+      - feat/cmi-flu-b2-postrun
+    paths:
+      - .github/workflows/101-cmi-flu-b2-submit-static.yml
+      - .github/workflows/102-cmi-flu-b2-submit.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/101-cmi-flu-b2-submit-static.yml
+      - .github/workflows/102-cmi-flu-b2-submit.yml
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate dormant single-submission workflow from exact commit
+        shell: bash
+        env:
+          CONTENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import os, ssl, urllib.request
+
+          url = (
+              f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/"
+              f"{os.environ['CONTENT_SHA']}/.github/workflows/102-cmi-flu-b2-submit.yml"
+          )
+          request = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+              data = response.read(70001)
+          if len(data) > 70000:
+              raise SystemExit('B2 submission workflow exceeds byte budget')
+          workflow = data.decode('utf-8')
+          required = (
+              'permissions: {}',
+              'group: kaggle-resource-global',
+              'environment: kaggle-readonry',
+              'requests/cmi-flu-b2-submit-v1.json',
+              'TARGET_KERNEL: renta0426/cmi-flu-b2-taskwise-compact-20260903-001',
+              'ApiGetKernelRequest',
+              'ApiListKernelSessionOutputRequest',
+              'list_kernel_session_output',
+              'allow_redirects=False',
+              'bridge-result.json',
+              'submission.csv',
+              'submission_sha256',
+              'supervised_public_proxy_macro_spearman',
+              'maximum of five (5) submissions per day',
+              'mean spearman correlation',
+              'CMI_FLU_B2_SUBMISSION_CREATED',
+              'automatic_submission_retries',
+          )
+          for token in required:
+              if token not in workflow:
+                  raise SystemExit(f'B2 submission guard missing: {token}')
+
+          forbidden = (
+              'workflow_' + 'dispatch:',
+              'kernels ' + 'push',
+              'kernels ' + 'delete',
+              'datasets ' + 'create',
+              'datasets ' + 'version',
+              'models ' + 'create',
+              'upload-' + 'artifact',
+              '--' + 'follow',
+              'pull_' + 'request:',
+          )
+          lowered = workflow.lower()
+          for token in forbidden:
+              if token in lowered:
+                  raise SystemExit(f'forbidden B2 submission capability present: {token}')
+
+          executable = [
+              line.strip()
+              for line in workflow.splitlines()
+              if '"${WORKDIR}/venv/bin/kaggle" competitions submit ' in line
+          ]
+          if len(executable) != 1:
+              raise SystemExit(f'expected one executable Competition submit, found {len(executable)}')
+          if workflow.count('KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}') != 1:
+              raise SystemExit('B2 submission token must be scoped to one execution step')
+          print('CMI_FLU_B2_SUBMIT_STATIC PASS')
+          PY
