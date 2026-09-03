@@ -1,0 +1,179 @@
+name: CMI-Flu B2 finalization static validation
+
+on:
+  push:
+    branches:
+      - ops/cmi-flu-b2-finalize-001
+    paths:
+      - .github/workflows/105-cmi-flu-b2-finalize-static.yml
+      - .github/workflows/106-cmi-flu-b2-finalize.yml
+      - requests/cmi-flu-b2-finalize-v1.json
+      - scripts/cmi_flu_b2_finalize.py
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/105-cmi-flu-b2-finalize-static.yml
+      - .github/workflows/106-cmi-flu-b2-finalize.yml
+      - requests/cmi-flu-b2-finalize-v1.json
+      - scripts/cmi_flu_b2_finalize.py
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Validate exact finalization source without credentials
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+          EXPECTED_SCRIPT_SHA256: 35c3ece9abf218f2c0c8d44788081312169ae6f2786ceb1115615e86f8764f02
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast
+          import hashlib
+          import json
+          import os
+          import ssl
+          import urllib.request
+
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(
+                  base + path,
+                  headers={"User-Agent": "kaggle-actions-bridge/1"},
+              )
+              with urllib.request.urlopen(
+                  request,
+                  timeout=30,
+                  context=ssl.create_default_context(),
+              ) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"input exceeds byte budget: {path}")
+              return data
+
+          runtime = read(".github/workflows/106-cmi-flu-b2-finalize.yml", 32768).decode("utf-8")
+          script_bytes = read("scripts/cmi_flu_b2_finalize.py", 65536)
+          request = json.loads(read("requests/cmi-flu-b2-finalize-v1.json", 16384))
+
+          digest = hashlib.sha256(script_bytes).hexdigest()
+          if digest != os.environ["EXPECTED_SCRIPT_SHA256"]:
+              raise SystemExit(f"B2 finalizer source SHA mismatch: {digest}")
+          script = script_bytes.decode("utf-8")
+          compile(script, "cmi_flu_b2_finalize.py", "exec")
+          tree = ast.parse(script)
+          imported = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imported.update(alias.name.split(".", 1)[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imported.add(node.module.split(".", 1)[0])
+          forbidden_imports = {"subprocess", "socket", "http", "ftplib"}
+          if imported & forbidden_imports:
+              raise SystemExit(f"forbidden finalizer imports: {sorted(imported & forbidden_imports)}")
+          required_imports = {"requests", "kaggle", "kagglesdk", "time", "hashlib", "csv"}
+          if not required_imports.issubset(imported):
+              raise SystemExit(f"missing finalizer imports: {sorted(required_imports - imported)}")
+
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260903-cmi-flu-b2-finalize-001",
+              "parent_request_id": "20260903-cmi-flu-b2-001",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "wait_verify_submit_score",
+              "target_kernel": "renta0426/cmi-flu-b2-taskwise-compact-20260903-001",
+              "kernel_version": 1,
+              "source_commit": "1596ba5b7ab2369c0b70c9da178aec1d71c80658",
+              "package_zip_sha256": "390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0",
+              "kernel_wait": {"interval_seconds": 60, "max_attempts": 180},
+              "score_wait": {"interval_seconds": 20, "max_attempts": 120},
+              "api_budget": {"max_calls": 320, "max_pages": 1},
+              "side_effects": [
+                  "create at most one Competition submission after exact output verification"
+              ],
+              "automatic_compute_retries": 0,
+              "automatic_submission_retries": 0,
+              "public_score_tuning": False,
+              "select_final_submission": False,
+              "rules_checked_at_utc": "2026-09-03T02:50:00Z",
+          }
+          if request != expected:
+              raise SystemExit("B2 finalization request differs from exact allowlist")
+
+          required_runtime = (
+              "permissions: {}",
+              "group: kaggle-resource-global",
+              "queue: max",
+              "environment: kaggle-readonry",
+              "timeout-minutes: 240",
+              "EXPECTED_SCRIPT_SHA256: " + digest,
+              "wait-verify",
+              "preflight-submit",
+              "wait-score",
+              "steps.submit_decision.outputs.should_submit == 'true'",
+              "automatic_submission_retries=0",
+              "Runner-local CMI-Flu B2 finalization content removed",
+          )
+          for token in required_runtime:
+              if token not in runtime:
+                  raise SystemExit(f"B2 finalization runtime guard missing: {token}")
+          if runtime.count('"${WORKDIR}/venv/bin/kaggle" competitions submit') != 1:
+              raise SystemExit("B2 finalization must contain exactly one executable submission command")
+          if runtime.count("secrets.KAGGLE_API_TOKEN") != 4:
+              raise SystemExit("B2 finalization secret scope count mismatch")
+          forbidden_runtime = (
+              "kernels push",
+              "kernels delete",
+              "datasets create",
+              "datasets version",
+              "models create",
+              "upload-artifact",
+              "actions/cache",
+              "--follow",
+          )
+          lowered = runtime.lower()
+          for token in forbidden_runtime:
+              if token in lowered:
+                  raise SystemExit(f"forbidden B2 finalization capability present: {token}")
+          forbidden_script = (
+              "competition_submit(",
+              "kernels_push",
+              "dataset_create",
+              "model_create",
+              "os.system(",
+              "eval(",
+              "exec(",
+          )
+          lowered_script = script.lower()
+          for token in forbidden_script:
+              if token in lowered_script:
+                  raise SystemExit(f"forbidden B2 finalizer source capability present: {token}")
+          required_script = (
+              "public_score_tuning=false",
+              "select_final_submission=false",
+              "automatic_compute_retries=0",
+              "automatic_submission_retries=0",
+          )
+          for token in required_script:
+              if token not in script:
+                  raise SystemExit(f"B2 finalizer reporting guard missing: {token}")
+          if script.count("time.sleep(") != 2:
+              raise SystemExit("B2 finalizer must have exactly two bounded polling sleeps")
+          if script.count("api.competition_submissions(") != 2:
+              raise SystemExit("B2 finalizer submission-list call sites differ")
+          print(
+              "CMI_FLU_B2_FINALIZE_STATIC PASS "
+              f"script_bytes={len(script_bytes)} sha256={digest} submit_commands=1"
+          )
+          PY
