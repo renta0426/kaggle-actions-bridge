@@ -1,17 +1,18 @@
 """Request-specific Mellum-4B Kaggle launcher with fail-closed guardrails.
 
 Request 001 performed no Kaggle write because its quota parser could not interpret
-Kaggle SDK accelerator-quota statistics.  This v2 path uses the Kaggle CLI 2.2.4
+Kaggle SDK accelerator-quota statistics. This v2 path uses the Kaggle CLI 2.2.4
 ``quota_view()`` contract that already succeeded in the Stage1 bridge: remaining
 GPU time is ``gpu_quota.total_time_allowed - gpu_quota.time_used``.
 
-The only authorized write is one private ``kernels push``.  There is no automatic
+The only authorized write is one private ``kernels push``. There is no automatic
 compute retry and no Competition submission capability.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import math
@@ -127,6 +128,37 @@ def load_request(path: Path) -> dict:
     return request
 
 
+def _literal_subprocess_commands(source: str) -> list[tuple[str, ...]]:
+    tree = ast.parse(source)
+    commands: list[tuple[str, ...]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if not (
+            isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "subprocess"
+            and node.func.attr == "run"
+            and node.args
+            and isinstance(node.args[0], (ast.List, ast.Tuple))
+        ):
+            continue
+        values: list[str] = []
+        for element in node.args[0].elts:
+            if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                values.append(element.value)
+            else:
+                values.append("<dynamic>")
+        commands.append(tuple(values))
+    return commands
+
+
+def _contains_pair(command: tuple[str, ...], left: str, right: str) -> bool:
+    return any(
+        command[index : index + 2] == (left, right)
+        for index in range(max(0, len(command) - 1))
+    )
+
+
 def validate_local_sources(
     request: dict,
     request_path: Path,
@@ -185,17 +217,19 @@ def validate_local_sources(
         raise RuntimeError("Mellum v2 Kaggle token must be scoped to exactly one step")
 
     own = Path(__file__).read_text(encoding="utf-8")
-    if own.count('"kernels", "push"') != 1:
+    commands = _literal_subprocess_commands(own)
+    push_count = sum(_contains_pair(command, "kernels", "push") for command in commands)
+    if push_count != 1:
         raise RuntimeError("Mellum v2 launcher must contain exactly one kernels push")
-    for forbidden in (
-        '"competitions", "submit"',
-        '"datasets", "create"',
-        '"datasets", "version"',
-        '"kernels", "delete"',
-        '"kernels", "cancel"',
+    for left, right in (
+        ("competitions", "submit"),
+        ("datasets", "create"),
+        ("datasets", "version"),
+        ("kernels", "delete"),
+        ("kernels", "cancel"),
     ):
-        if forbidden in own:
-            raise RuntimeError(f"Mellum v2 launcher has forbidden write: {forbidden}")
+        if any(_contains_pair(command, left, right) for command in commands):
+            raise RuntimeError(f"Mellum v2 launcher has forbidden write: {left} {right}")
 
 
 def plain(text: str) -> str:
@@ -290,7 +324,6 @@ def live_preflight(request: dict):  # noqa: ANN201
     if not bool(metadata.is_private):
         raise RuntimeError("source kernel unexpectedly public")
 
-    # Stable Kaggle 2.2.4 quota path already exercised by the Stage1 bridge.
     quota = api.quota_view()
     gpu = getattr(quota, "gpu_quota", None)
     used = getattr(gpu, "time_used", None) if gpu is not None else None
@@ -382,10 +415,7 @@ def validate_generated_bundle(kernel_dir: Path) -> str:
     ):
         if marker not in joined:
             raise RuntimeError(f"generated scientific marker missing: {marker}")
-    for forbidden in (
-        "KAGGLE_API_TOKEN",
-        "competitions submit",
-    ):
+    for forbidden in ("KAGGLE_API_TOKEN", "competitions submit"):
         if forbidden in joined:
             raise RuntimeError(f"forbidden generated capability: {forbidden}")
     digest = hashlib.sha256(raw).hexdigest()
@@ -401,6 +431,7 @@ def execute(request: dict, workdir: Path, kaggle_bin: Path, builder: Path, shim:
     source_dir = workdir / "source-kernel"
     kernel_dir = workdir / "mellum-kernel"
     tool_dir = workdir / "tool"
+    workdir.mkdir(parents=True, exist_ok=False)
     source_dir.mkdir(parents=True, exist_ok=False)
     kernel_dir.mkdir(parents=True, exist_ok=False)
     tool_dir.mkdir(parents=True, exist_ok=False)
