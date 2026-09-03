@@ -19,7 +19,8 @@ on:
       - scripts/cmi_flu_baseline_diagnostics_builder.py
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: kaggle-resource-global
@@ -58,24 +59,39 @@ jobs:
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
 
+      - name: Check out exact event commit without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
       - name: Reconstruct B2 package and build exact diagnostics script
         shell: bash
         env:
           EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${EVENT_SHA}" ]]
           workdir="$(mktemp -d)"
           trap 'rm -rf "${workdir}"' EXIT
           python3 - "${workdir}" <<'PY'
           from __future__ import annotations
-          import hashlib, json, os, pathlib, ssl, sys, urllib.request
+          import hashlib, json, os, pathlib, sys
 
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
           root = pathlib.Path(sys.argv[1])
-          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+
           def read(path: str, limit: int) -> bytes:
-              req = urllib.request.Request(base + path, headers={"User-Agent": "kaggle-actions-bridge/1"})
-              with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
-                  data = response.read(limit + 1)
+              candidate = workspace / path
+              if candidate.is_symlink():
+                  raise SystemExit(f"symlink input refused: {path}")
+              resolved = candidate.resolve()
+              if resolved != workspace and workspace not in resolved.parents:
+                  raise SystemExit(f"path escapes workspace: {path}")
+              if not resolved.is_file():
+                  raise SystemExit(f"required input missing: {path}")
+              data = resolved.read_bytes()
               if len(data) > limit:
                   raise SystemExit(f"input exceeds byte budget: {path}")
               return data
@@ -105,6 +121,11 @@ jobs:
               raise SystemExit("diagnostics retry/internet contract mismatch")
           if request["resource"] != {"accelerator": "cpu", "expected_runtime_minutes": 60, "hard_timeout_minutes": 180, "max_active_runs": 1}:
               raise SystemExit("diagnostics CPU resource contract mismatch")
+          if request["api_budget"] != {"max_calls": 20, "poll_interval_seconds": 900, "max_pages": 2}:
+              raise SystemExit("diagnostics API budget mismatch")
+          if request["side_effects"] != ["create one private Notebook version and start one CPU run"]:
+              raise SystemExit("diagnostics side-effect contract mismatch")
+
           source_contract = request["source"]
           if set(source_contract) != {
               "builder_path", "builder_blob_sha", "diagnostics_cmi_commit", "diagnostics_blob_sha",
@@ -129,6 +150,11 @@ jobs:
           digest = hashlib.sha256(source).hexdigest()
           if len(source) != int(os.environ["EXPECTED_BASE_SOURCE_SIZE"]) or digest != os.environ["EXPECTED_BASE_SOURCE_SHA256"]:
               raise SystemExit("base B2 source reconstruction mismatch")
+          sums = read(f"{os.environ['BASE_PAYLOAD_DIR']}/SHA256SUMS", 512).decode("utf-8")
+          size = read(f"{os.environ['BASE_PAYLOAD_DIR']}/SIZE", 64).decode("utf-8")
+          if sums != f"{digest}  run_b2_kaggle_bundle.py\n" or size != f"{len(source)}\n":
+              raise SystemExit("base B2 payload manifest mismatch")
+
           (root / "base-source.py").write_bytes(source)
           (root / "base-request.json").write_bytes(read(os.environ["BASE_REQUEST_PATH"], 32768))
           (root / "base-patch.py").write_bytes(read(os.environ["BASE_PATCHER_PATH"], 32768))
@@ -200,29 +226,51 @@ jobs:
           [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
           echo 'PROTECTED_CMI_FLU_BASELINE_DIAGNOSTICS_001_BOUNDARY PASS'
 
+      - name: Check out exact approved main commit without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
       - name: Prepare locked Kaggle CLI and exact diagnostics script
         shell: bash
         env:
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${EVENT_SHA}" ]]
           workdir="$(mktemp -d)"
           echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
           python3 - "${workdir}" <<'PY'
           from __future__ import annotations
-          import hashlib, os, pathlib, re, ssl, sys, urllib.request
+          import hashlib, os, pathlib, re, sys
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
           root = pathlib.Path(sys.argv[1])
-          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+
           def read(path: str, limit: int) -> bytes:
-              req = urllib.request.Request(base + path, headers={"User-Agent": "kaggle-actions-bridge/1"})
-              with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
-                  data = response.read(limit + 1)
+              candidate = workspace / path
+              if candidate.is_symlink():
+                  raise SystemExit(f"symlink input refused: {path}")
+              resolved = candidate.resolve()
+              if resolved != workspace and workspace not in resolved.parents:
+                  raise SystemExit(f"path escapes workspace: {path}")
+              if not resolved.is_file():
+                  raise SystemExit(f"required input missing: {path}")
+              data = resolved.read_bytes()
               if len(data) > limit:
                   raise SystemExit(f"input exceeds byte budget: {path}")
               return data
+
           source = b"".join(read(f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}", 5000) for i in range(20))
-          if len(source) != int(os.environ["EXPECTED_BASE_SOURCE_SIZE"]) or hashlib.sha256(source).hexdigest() != os.environ["EXPECTED_BASE_SOURCE_SHA256"]:
+          digest = hashlib.sha256(source).hexdigest()
+          if len(source) != int(os.environ["EXPECTED_BASE_SOURCE_SIZE"]) or digest != os.environ["EXPECTED_BASE_SOURCE_SHA256"]:
               raise SystemExit("base B2 source reconstruction mismatch")
+          sums = read(f"{os.environ['BASE_PAYLOAD_DIR']}/SHA256SUMS", 512).decode("utf-8")
+          size = read(f"{os.environ['BASE_PAYLOAD_DIR']}/SIZE", 64).decode("utf-8")
+          if sums != f"{digest}  run_b2_kaggle_bundle.py\n" or size != f"{len(source)}\n":
+              raise SystemExit("base B2 payload manifest mismatch")
           (root / "base-source.py").write_bytes(source)
           (root / "base-request.json").write_bytes(read(os.environ["BASE_REQUEST_PATH"], 32768))
           (root / "base-patch.py").write_bytes(read(os.environ["BASE_PATCHER_PATH"], 32768))
@@ -256,6 +304,7 @@ jobs:
           import os, re
           from kaggle.api.kaggle_api_extended import KaggleApi
           from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
           api = KaggleApi(); api.authenticate()
           pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
           content = {}
@@ -267,20 +316,29 @@ jobs:
           if "rules" not in content or "evaluation" not in content or not any("data" in name for name in content):
               raise SystemExit("live Competition policy pages unavailable")
           plain = lambda value: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value)).casefold()
-          rules = plain(content["rules"]); evaluation = plain(content["evaluation"])
+          rules = plain(content["rules"])
+          evaluation = plain(content["evaluation"])
           data_text = " ".join(plain(content[name]) for name in content if "data" in name)
-          if not all(term in rules for term in ("maximum of five (5) submissions per day", "maximum team size is five (5)", "data security", "external data and tools")):
+          if not all(term in rules for term in (
+              "maximum of five (5) submissions per day",
+              "maximum team size is five (5)",
+              "data security",
+              "external data and tools",
+          )):
               raise SystemExit("live Competition rules differ from approved guardrails")
           if not all(term in evaluation for term in ("mean spearman correlation", "40 donors", "-99")):
               raise SystemExit("live Competition evaluation differs from approved guardrails")
           if "sample_submission_part1.csv" not in data_text or "investigations_260821.tsv" not in data_text:
               raise SystemExit("live Competition data description differs from expected inputs")
+
           target = os.environ["TARGET_KERNEL"]
           existing = api.kernels_list(user="renta0426", search=os.environ["TARGET_SLUG"], page_size=5) or []
           if target in {str(getattr(item, "ref", "")) for item in existing}:
               raise SystemExit("target kernel already exists; duplicate refused")
+
           active_refs = []
-          for item in (api.kernels_list(user="renta0426", sort_by="dateRun", page_size=15) or [])[:15]:
+          recent = api.kernels_list(user="renta0426", sort_by="dateRun", page_size=15) or []
+          for item in recent[:15]:
               ref = str(getattr(item, "ref", ""))
               if not ref:
                   continue
@@ -290,6 +348,7 @@ jobs:
                   continue
               if any(token in status for token in ("RUNNING", "QUEUED", "PENDING")):
                   active_refs.append(ref)
+
           active = {"cpu": [], "gpu": [], "tpu": [], "unknown": []}
           if len(active_refs) > 5:
               active["unknown"].extend(active_refs)
@@ -299,22 +358,38 @@ jobs:
                       resource = "unknown"
                       try:
                           owner, slug = ref.split("/", 1)
-                          request = ApiGetKernelRequest(); request.user_name = owner; request.kernel_slug = slug
+                          request = ApiGetKernelRequest()
+                          request.user_name = owner
+                          request.kernel_slug = slug
                           metadata = client.kernels.kernels_api_client.get_kernel(request).metadata
-                          if bool(getattr(metadata, "enable_tpu", False)): resource = "tpu"
-                          elif bool(getattr(metadata, "enable_gpu", False)): resource = "gpu"
-                          else: resource = "cpu"
+                          if bool(getattr(metadata, "enable_tpu", False)):
+                              resource = "tpu"
+                          elif bool(getattr(metadata, "enable_gpu", False)):
+                              resource = "gpu"
+                          else:
+                              resource = "cpu"
                       except Exception:
                           resource = "unknown"
                       active[resource].append(ref)
+
           can_launch = len(active["cpu"]) + len(active["unknown"]) < 1
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
           counts = {key: len(value) for key, value in active.items()}
           if can_launch:
-              print(f"LIVE_RULE_PREFLIGHT PASS pages={len(content)} requested=cpu active_cpu={counts['cpu']} active_gpu={counts['gpu']} active_tpu={counts['tpu']} active_unknown={counts['unknown']} internet=false submission=false")
+              print(
+                  "LIVE_RULE_PREFLIGHT PASS "
+                  f"pages={len(content)} requested=cpu active_cpu={counts['cpu']} "
+                  f"active_gpu={counts['gpu']} active_tpu={counts['tpu']} "
+                  f"active_unknown={counts['unknown']} internet=false submission=false"
+              )
           else:
-              print(f"CMI_FLU_BASELINE_DIAGNOSTICS_001_DEFERRED active_cpu={counts['cpu']} active_unknown={counts['unknown']} nonblocking_gpu={counts['gpu']} nonblocking_tpu={counts['tpu']} side_effect=false request_unexecuted=true")
+              print(
+                  "CMI_FLU_BASELINE_DIAGNOSTICS_001_DEFERRED "
+                  f"active_cpu={counts['cpu']} active_unknown={counts['unknown']} "
+                  f"nonblocking_gpu={counts['gpu']} nonblocking_tpu={counts['tpu']} "
+                  "side_effect=false request_unexecuted=true"
+              )
           PY
 
       - name: Record deferred admission
@@ -351,12 +426,15 @@ jobs:
               "kernel_sources": [],
               "model_sources": [],
           }
-          (root / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          (root / "kernel-metadata.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
           PY
           [[ "$(find "${kernel_dir}" -maxdepth 1 -type f -name '*.py' | wc -l)" -eq 1 ]]
           [[ -f "${kernel_dir}/script.py" && ! -L "${kernel_dir}/script.py" ]]
           set +e
-          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 10800 >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 10800 \
+            >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
           rc=$?
           set -e
           rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
