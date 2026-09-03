@@ -1,0 +1,137 @@
+inue
+        if resolved in seen or not resolved.is_dir():
+            continue
+        seen.add(resolved)
+        if all((resolved / name).is_file() for name in CORE_FILES):
+            valid.append(resolved)
+    if not valid:
+        raise BundleContractError("CMI-Flu Competition Data mount was not found")
+    exact = (Path("/kaggle/input") / COMPETITION).resolve()
+    if exact in valid:
+        return exact
+    if explicit is not None:
+        resolved_explicit = explicit.expanduser().resolve()
+        if resolved_explicit in valid:
+            return resolved_explicit
+    if len(valid) != 1:
+        raise BundleContractError("multiple candidate Competition Data directories were found")
+    return valid[0]
+
+
+def canonical_strain(value: object) -> str:
+    raw = "" if value is None else str(value).strip()
+    raw = re.sub(r"(?i)_cell$", "_MDCK", raw)
+    raw = re.sub(r"(?i)\s+cell$", "_MDCK", raw)
+    return raw
+
+
+def vaccine_flag(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        import pandas as pd
+        if pd.isna(value):
+            return False
+    except Exception:
+        pass
+    return str(value).strip().casefold() in {"1", "1.0", "true", "yes", "y"}
+
+
+def derive_reference_files(input_dir: Path, reference_dir: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    import pandas as pd
+
+    reference_dir.mkdir(parents=True, exist_ok=True)
+    source = pd.read_csv(
+        input_dir / "2025LJI_serology.tsv",
+        sep="\t",
+        usecols=["assay", "virus_strain", "virus_in_vaccine"],
+        low_memory=False,
+    )
+    hai = source.loc[
+        source["assay"].fillna("").astype(str).str.strip().str.casefold().eq("hai")
+    ].copy()
+    hai["virus_strain"] = hai["virus_strain"].map(canonical_strain)
+    challenge = tuple(sorted(value for value in hai["virus_strain"].dropna().unique() if value))
+    vaccine = tuple(
+        sorted(
+            value
+            for value in hai.loc[
+                hai["virus_in_vaccine"].map(vaccine_flag), "virus_strain"
+            ].dropna().unique()
+            if value
+        )
+    )
+    if len(challenge) != 12 or len(vaccine) != 3:
+        raise BundleContractError(
+            f"derived HAI panels differ from contract: vaccine={len(vaccine)}, challenge={len(challenge)}"
+        )
+    if not set(vaccine).issubset(challenge):
+        raise BundleContractError("derived vaccine panel is not a subset of the challenge panel")
+
+    (reference_dir / "all_challenge_virus_strains.txt").write_text(
+        "\n".join(challenge) + "\n", encoding="utf-8"
+    )
+    (reference_dir / "vaccine_strains_2025.txt").write_text(
+        "\n".join(vaccine) + "\n", encoding="utf-8"
+    )
+    for name, content in REFERENCE_PLACEHOLDERS.items():
+        (reference_dir / name).write_text(content, encoding="utf-8")
+    return vaccine, challenge
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def metric_value(payload: Mapping[str, Any], path: Sequence[str]) -> float | None:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, Mapping) or key not in current:
+            return None
+        current = current[key]
+    if current is None:
+        return None
+    try:
+        value = float(current)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def task_cv_spearman(tasks: Mapping[str, Any], task: str) -> float | None:
+    if task.startswith("Task1."):
+        return metric_value(tasks, (task, "pooled", "spearman", "value"))
+    return metric_value(tasks, (task, "panel_proxy", "spearman", "value"))
+
+
+def task_cv_rmse(tasks: Mapping[str, Any], task: str) -> float | None:
+    if task.startswith("Task1."):
+        return metric_value(tasks, (task, "pooled", "rmse", "value"))
+    return metric_value(tasks, (task, "panel_proxy", "rmse", "value"))
+
+
+def safe_failure(output_dir: Path, *, stage: str, error: BaseException) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    error_code = hashlib.sha256(
+        f"{type(error).__name__}:{str(error)}".encode("utf-8", errors="replace")
+    ).hexdigest()[:20]
+    payload = {
+        "schema_version": 1,
+        "request_id": REQUEST_ID,
+        "competition": COMPETITION,
+        "source_commit": SOURCE_COMMIT,
+        "stage": stage,
+        "exception_type": type(error).__name__,
+        "error_code": error_code,
+    }
+    (output_dir / "bridge-failure.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        "CMI_FLU_B2_FAILED "
+        f"stage={stage} exception_typ

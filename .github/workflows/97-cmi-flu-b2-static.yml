@@ -1,0 +1,128 @@
+name: CMI-Flu B2 request 001 static validation
+
+on:
+  push:
+    branches:
+      - ops/cmi-flu-b2-001
+    paths:
+      - .github/workflows/97-cmi-flu-b2-static.yml
+      - .github/workflows/97b-cmi-flu-b2-launch-static.yml
+      - .github/workflows/98-cmi-flu-b2-launch.yml
+      - requests/cmi-flu-b2-launch-v1.json
+      - payloads/cmi-flu-b2-001/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/97-cmi-flu-b2-static.yml
+      - .github/workflows/97b-cmi-flu-b2-launch-static.yml
+      - .github/workflows/98-cmi-flu-b2-launch.yml
+      - requests/cmi-flu-b2-launch-v1.json
+      - payloads/cmi-flu-b2-001/**
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Fetch, reconstruct, and validate the exact B2 source without secrets
+        shell: bash
+        env:
+          CONTENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import hashlib, json, os, ssl, subprocess, sys, tempfile, urllib.request
+
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['CONTENT_SHA']}/"
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f'input exceeds byte budget: {path}')
+              return data
+
+          request = json.loads(read('requests/cmi-flu-b2-launch-v1.json', 32768))
+          expected = {
+              'schema_version': 1,
+              'request_id': '20260903-cmi-flu-b2-001',
+              'competition': 'cmi-flu-first-prediction-challenge',
+              'operation': 'kernel_run',
+              'target': 'renta0426/cmi-flu-b2-taskwise-compact-20260903-001',
+          }
+          for key, value in expected.items():
+              if request.get(key) != value:
+                  raise SystemExit(f'request identity mismatch: {key}')
+          payload = request.get('payload', {})
+          expected_sha = 'a039b56868e5f9e2f10ae8016466a02fe4a6e5342854487ca6c6a198a21abd5e'
+          if payload.get('source_sha256') != expected_sha:
+              raise SystemExit('request source SHA mismatch')
+          if payload.get('part_count') != 20 or payload.get('size_bytes') != 92839:
+              raise SystemExit('request payload count/size mismatch')
+          if payload.get('source_commit') != '1596ba5b7ab2369c0b70c9da178aec1d71c80658':
+              raise SystemExit('request source commit mismatch')
+          if payload.get('merged_cmi_commit') != '1503f5989feb00313f2851602e2c4eda8685000a':
+              raise SystemExit('request merged CMI commit mismatch')
+          if payload.get('package_zip_sha256') != '390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0':
+              raise SystemExit('request package ZIP SHA mismatch')
+          if request.get('resource') != {
+              'accelerator': 'cpu',
+              'expected_runtime_minutes': 120,
+              'hard_timeout_minutes': 240,
+              'max_active_runs': 1,
+          }:
+              raise SystemExit('request resource contract mismatch')
+          if request.get('automatic_compute_retries') != 0 or request.get('enable_internet') is not False:
+              raise SystemExit('request retry/internet contract mismatch')
+          if request.get('side_effects') != ['create one private Notebook version and start one CPU run']:
+              raise SystemExit('request side-effect contract mismatch')
+
+          source = b''.join(
+              read(f'payloads/cmi-flu-b2-001/part-{index:02d}', 5000)
+              for index in range(20)
+          )
+          digest = hashlib.sha256(source).hexdigest()
+          if len(source) != 92839 or digest != expected_sha:
+              raise SystemExit(f'source reconstruction mismatch: bytes={len(source)} sha256={digest}')
+          sums = read('payloads/cmi-flu-b2-001/SHA256SUMS', 512).decode('utf-8')
+          if sums != f'{expected_sha}  run_b2_kaggle_bundle.py\n':
+              raise SystemExit('SHA256SUMS mismatch')
+
+          text = source.decode('utf-8')
+          replacement = payload.get('replacement', {})
+          if replacement != {
+              'old': 'REQUEST_ID = "__REQUEST_ID__"',
+              'new': 'REQUEST_ID = "20260903-cmi-flu-b2-001"',
+              'count': 1,
+          }:
+              raise SystemExit('replacement contract mismatch')
+          if text.count(replacement['old']) != 1:
+              raise SystemExit('request placeholder occurrence mismatch')
+          text = text.replace(replacement['old'], replacement['new'])
+          if '__REQUEST_ID__' in text:
+              raise SystemExit('request placeholder remains')
+          compile(text, 'script.py', 'exec')
+          with tempfile.TemporaryDirectory() as directory:
+              script = os.path.join(directory, 'script.py')
+              with open(script, 'w', encoding='utf-8') as handle:
+                  handle.write(text)
+              completed = subprocess.run(
+                  [sys.executable, script, '--self-test'],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+                  timeout=30,
+              )
+          if 'CMI_FLU_B2_BUNDLE_SELF_TEST PASS' not in completed.stdout:
+              raise SystemExit('B2 self-test marker missing')
+          print(f'CMI_FLU_B2_STATIC PASS bytes={len(source)} sha256={digest}')
+          PY
