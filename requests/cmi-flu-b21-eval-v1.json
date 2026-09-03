@@ -1,0 +1,37 @@
+{
+  "schema_version": 4,
+  "request_id": "20260903-cmi-flu-b21-001",
+  "parent_request_id": "20260903-cmi-flu-b2-004",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b21-robust-20260903-001",
+  "purpose": "Evaluate the locked B2.1 robust CV/selection contract once on Competition Data; retain private aggregate diagnostics and predictions but do not call any Kaggle submission API.",
+  "payload": {
+    "base_request_id": "20260903-cmi-flu-b2-004",
+    "base_package_zip_sha256": "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3",
+    "b21_source_commit": "33030746bc7bad02ad2c1e670ac319cc943c524d",
+    "b21_package_zip_sha256": "87c317789b3b8fcbd5fce2ff8f74663d23c19d0fcdce0e05ba1e809ea7728cb2",
+    "b21_placeholder_runner_blob": "f14179a9b82aa01ab1bb4731a0112a0aafce7c20",
+    "scientific_patch": "scripts/cmi_flu_b21_scientific_patch.py",
+    "diagnostics_module": "payloads/cmi-flu-b21-runtime/diagnostics.py",
+    "selection_policy": "robust_v1",
+    "submission_attempted": false
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 240,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-03T12:00:00Z"
+}
