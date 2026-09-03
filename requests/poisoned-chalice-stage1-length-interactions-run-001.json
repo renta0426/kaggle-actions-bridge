@@ -8,9 +8,12 @@
   "source_dataset_version": 1,
   "builder_script_path": "scripts/poisoned_chalice_stage1_length_interaction_builder.py",
   "builder_blob_sha": "a10c7a76be1a4d700d7b1d9846e42348c5711651",
+  "launcher_script_path": "scripts/poisoned_chalice_stage1_length_interaction_launch.py",
+  "launcher_blob_sha": "0c4920b3afbe451961695e7c6bac90e70011f48a",
   "research_evidence": {
     "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
     "audit_commit": "faeac269c7a5f332e4991f540260a290563e35b6",
+    "result_merge_commit": "915f63a97b2e90b429fffa41b1d181d64c133e55",
     "aggregate_bridge_run_id": 33759558064,
     "selected_variant": "plus_length_interactions",
     "expected_oof_auc": 0.68013844,
@@ -28,6 +31,7 @@
   },
   "api_budget": {
     "max_calls": 24,
+    "max_recent_kernels_inspected": 25,
     "max_pages": 2,
     "poll_interval_seconds": 0
   },
