@@ -1,0 +1,295 @@
+name: CMI-Flu B2 004 persistent aggregate readout
+
+on:
+  push:
+    branches:
+      - fix/cmi-flu-b2-output-readout-v2
+      - main
+    paths:
+      - .github/workflows/117-cmi-flu-b2-004-persistent-readout.yml
+      - requests/cmi-flu-b2-readout-004-v2.json
+      - requirements/kaggle-2.2.4.lock
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/117-cmi-flu-b2-004-persistent-readout.yml
+      - requests/cmi-flu-b2-readout-004-v2.json
+      - requirements/kaggle-2.2.4.lock
+
+permissions: {}
+
+concurrency:
+  group: kaggle-readonly-cmi-flu-b2-004-v2
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-b2-readout-004-v2.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_OWNER: renta0426
+  TARGET_SLUG: cmi-flu-b2-taskwise-compact-broad-20260903-004
+  TARGET_KERNEL: renta0426/cmi-flu-b2-taskwise-compact-broad-20260903-004
+  EXPECTED_LAUNCH_REQUEST_ID: 20260903-cmi-flu-b2-004
+  EXPECTED_SOURCE_COMMIT: d6297c36366ab5c3ef49b9077c2357277f82a708
+  EXPECTED_PACKAGE_SHA256: 48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3
+
+jobs:
+  validate:
+    name: Validate persistent B2 004 readout contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Validate immutable request
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, ssl, urllib.request
+          url = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/{os.environ['REQUEST_PATH']}"
+          req = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+          with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+              raw = response.read(16385)
+          if len(raw) > 16384:
+              raise SystemExit("request exceeds byte budget")
+          request = json.loads(raw)
+          if request.get("request_id") != "20260903-cmi-flu-b2-readout-004-v2":
+              raise SystemExit("request id mismatch")
+          if request.get("parent_request_id") != "20260903-cmi-flu-b2-readout-004":
+              raise SystemExit("parent request mismatch")
+          if request.get("operation") != "kernel_persistent_output_and_submission_history_read":
+              raise SystemExit("operation mismatch")
+          if request.get("target_kernel") != os.environ["TARGET_KERNEL"] or request.get("kernel_version") != 1:
+              raise SystemExit("target/version mismatch")
+          if request.get("allowed_outputs") != ["bridge-result.json", "b2-metrics-safe.json"]:
+              raise SystemExit("output allowlist mismatch")
+          if request.get("side_effects") != [] or request.get("publish_private_outputs") is not False:
+              raise SystemExit("readout side-effect boundary mismatch")
+          if request.get("api_budget") != {"max_calls": 14, "max_pages": 1, "poll_attempts": 1}:
+              raise SystemExit("API budget mismatch")
+          history = request.get("submission_history", {})
+          if history.get("read_only") is not True or history.get("max_records_logged") != 20:
+              raise SystemExit("submission-history boundary mismatch")
+          print("CMI_FLU_B2_004_READOUT_V2_STATIC PASS side_effects=0")
+          PY
+
+  readout:
+    name: Download persistent B2 004 aggregate outputs once
+    needs: validate
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/117-cmi-flu-b2-004-persistent-readout.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "PROTECTED_CMI_FLU_B2_004_READOUT_V2_BOUNDARY PASS"
+
+      - name: Prepare SHA-locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}" <<'PY'
+          import os, pathlib, re, ssl, sys, urllib.request
+          root = pathlib.Path(sys.argv[1])
+          url = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/{os.environ['LOCK_PATH']}"
+          req = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+          with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+              raw = response.read(65537)
+          if len(raw) > 65536:
+              raise SystemExit("lock exceeds byte budget")
+          lock = raw.decode("utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in lock.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines) or not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle CLI lock validation failed")
+          (root / "kaggle.lock").write_text(lock, encoding="utf-8")
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Read persistent outputs and submission history
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import json, math, os, pathlib, re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          api = KaggleApi(); api.authenticate()
+
+          pages = api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          plain = lambda value: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value)).casefold()
+          if "rules" not in content or "evaluation" not in content:
+              raise SystemExit("live Competition pages unavailable")
+          if "maximum of five (5) submissions per day" not in plain(content["rules"]) or "mean spearman correlation" not in plain(content["evaluation"]):
+              raise SystemExit("live Competition guardrails changed")
+
+          discovered = api.kernels_list(user=os.environ["TARGET_OWNER"], search=os.environ["TARGET_SLUG"], page_size=5) or []
+          refs = [str(getattr(item, "ref", "")) for item in discovered]
+          if refs.count(os.environ["TARGET_KERNEL"]) != 1:
+              raise SystemExit("exact B2 004 kernel was not discoverable once")
+          status = str(getattr(api.kernels_status(os.environ["TARGET_KERNEL"]), "status", "")).upper()
+          if any(token in status for token in ("RUNNING", "QUEUED", "PENDING")):
+              raise SystemExit(f"B2 004 kernel is not terminal: {status}")
+          with api.build_kaggle_client() as client:
+              request = ApiGetKernelRequest(); request.user_name = os.environ["TARGET_OWNER"]; request.kernel_slug = os.environ["TARGET_SLUG"]
+              metadata = client.kernels.kernels_api_client.get_kernel(request).metadata
+          if str(metadata.ref) != os.environ["TARGET_KERNEL"] or not bool(metadata.is_private):
+              raise SystemExit("B2 004 private kernel identity mismatch")
+          if int(metadata.current_version_number or 0) != 1:
+              raise SystemExit("B2 004 current version is not the approved version 1")
+          if bool(getattr(metadata, "enable_gpu", False)) or bool(getattr(metadata, "enable_tpu", False)) or bool(getattr(metadata, "enable_internet", False)):
+              raise SystemExit("B2 004 resource settings mismatch")
+
+          output_dir = pathlib.Path(os.environ["WORKDIR"]) / "persistent-output"
+          output_dir.mkdir(parents=True, exist_ok=True)
+          pattern = r"(?:^|/)(?:bridge-result\.json|b2-metrics-safe\.json)$"
+          outfiles, token = api.kernels_output(
+              os.environ["TARGET_KERNEL"],
+              str(output_dir),
+              file_pattern=pattern,
+              force=True,
+              quiet=True,
+              page_size=1000,
+          )
+          if token:
+              raise SystemExit("unexpected output pagination token after kernels_output recursion")
+          wanted = {}
+          for path in output_dir.rglob("*"):
+              if path.is_file() and path.name in {"bridge-result.json", "b2-metrics-safe.json"}:
+                  wanted.setdefault(path.name, []).append(path)
+          for name in ("bridge-result.json", "b2-metrics-safe.json"):
+              if len(wanted.get(name, [])) != 1:
+                  raise SystemExit(f"persistent output missing or ambiguous: {name}")
+          if any(path.stat().st_size > limit for name, limit in {"bridge-result.json": 262144, "b2-metrics-safe.json": 524288}.items() for path in wanted.get(name, [])):
+              raise SystemExit("persistent output exceeds byte budget")
+
+          result = json.loads(wanted["bridge-result.json"][0].read_text(encoding="utf-8"))
+          metrics = json.loads(wanted["b2-metrics-safe.json"][0].read_text(encoding="utf-8"))
+          tasks = ("Task1.1", "Task1.2", "Task1.3", "Task1.4", "Task2.1", "Task2.2", "Task2.3")
+          if result.get("request_id") != os.environ["EXPECTED_LAUNCH_REQUEST_ID"]:
+              raise SystemExit("result request identity mismatch")
+          if result.get("source_commit") != os.environ["EXPECTED_SOURCE_COMMIT"] or result.get("package_zip_sha256") != os.environ["EXPECTED_PACKAGE_SHA256"]:
+              raise SystemExit("result provenance mismatch")
+          if result.get("derived_panel_sizes") != {"vaccine": 3, "challenge": 12} or int(result.get("submission_rows", 0)) != 40:
+              raise SystemExit("result submission/panel contract mismatch")
+          if set(result.get("selected_models", {})) != set(tasks) or set(result.get("task_cv", {})) != set(tasks):
+              raise SystemExit("seven-task aggregate contract mismatch")
+          if metrics.get("selected_models") != result.get("selected_models") or set(metrics.get("tasks", {})) != set(tasks):
+              raise SystemExit("metrics/result mismatch")
+          checksum = result.get("checksum") or {}
+          if len(checksum.get("verified", [])) != 28 or checksum.get("skipped") != ["md5sum"]:
+              raise SystemExit("MD5 summary mismatch")
+
+          def finite_or_none(value):
+              try:
+                  number = float(value)
+              except (TypeError, ValueError):
+                  return None
+              return number if math.isfinite(number) else None
+
+          def submission_row(item):
+              data = item.to_dict() if hasattr(item, "to_dict") else vars(item)
+              def pick(*keys):
+                  for key in keys:
+                      if key in data and data[key] is not None:
+                          return data[key]
+                  return None
+              return {
+                  "ref": str(pick("ref") or ""),
+                  "date": str(pick("date", "submitted_at") or ""),
+                  "description": str(pick("description") or ""),
+                  "status": str(pick("status") or ""),
+                  "public_score": finite_or_none(pick("public_score", "publicScore")),
+                  "private_score": finite_or_none(pick("private_score", "privateScore")),
+              }
+
+          submissions = api.competition_submissions(os.environ["TARGET_COMPETITION"]) or []
+          submission_history = [submission_row(item) for item in submissions[:20]]
+
+          compact = {
+              "request_id": result["request_id"],
+              "kernel_status": status,
+              "source_commit": result["source_commit"],
+              "package_zip_sha256": result["package_zip_sha256"],
+              "submission_sha256": result.get("submission_sha256"),
+              "metrics_sha256": result.get("metrics_sha256"),
+              "supervised_public_proxy_macro_spearman": finite_or_none(result.get("supervised_public_proxy_macro_spearman")),
+              "supervised_public_proxy_finite_tasks": int(result.get("supervised_public_proxy_finite_tasks", 0)),
+              "selected_models": result["selected_models"],
+              "task_cv": result["task_cv"],
+              "hai_stress_tests": result.get("hai_stress_tests", {}),
+              "checksum_verified_count": len(checksum.get("verified", [])),
+              "checksum_skipped": checksum.get("skipped"),
+              "submission_history": submission_history,
+          }
+          print("CMI_FLU_B2_004_AGGREGATE_V2 " + json.dumps(compact, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+          print(f"CMI_FLU_B2_004_READOUT_V2 PASS outputs={len(outfiles)} submissions={len(submission_history)} side_effects=0")
+          PY
+
+      - name: Cleanup runner-local output
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "Runner-local B2 004 output removed"
