@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-cmi-flu-b2-readout-004-v2",
+  "parent_request_id": "20260903-cmi-flu-b2-readout-004",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_persistent_output_and_submission_history_read",
+  "target_kernel": "renta0426/cmi-flu-b2-taskwise-compact-broad-20260903-004",
+  "kernel_version": 1,
+  "expected_launch_request_id": "20260903-cmi-flu-b2-004",
+  "expected_source_commit": "d6297c36366ab5c3ef49b9077c2357277f82a708",
+  "expected_package_zip_sha256": "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3",
+  "allowed_outputs": [
+    "bridge-result.json",
+    "b2-metrics-safe.json"
+  ],
+  "submission_history": {
+    "read_only": true,
+    "max_records_logged": 20,
+    "allowed_fields": ["ref", "date", "description", "status", "public_score", "private_score"]
+  },
+  "api_budget": {
+    "max_calls": 14,
+    "max_pages": 1,
+    "poll_attempts": 1
+  },
+  "side_effects": [],
+  "publish_private_outputs": false,
+  "rules_checked_at_utc": "2026-09-03T09:40:00Z"
+}
