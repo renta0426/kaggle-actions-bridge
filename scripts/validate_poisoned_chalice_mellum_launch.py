@@ -78,7 +78,9 @@ EXPECTED_REQUEST = {
 
 
 def git_blob_sha(data: bytes) -> str:
-    return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+    return hashlib.sha1(
+        b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+    ).hexdigest()
 
 
 def load_python(path: Path, name: str):
@@ -90,10 +92,16 @@ def load_python(path: Path, name: str):
     return module
 
 
+def cell_source(cell: dict) -> str:
+    value = cell.get("source", "")
+    return "".join(value) if isinstance(value, list) else str(value)
+
+
 def make_synthetic_source(path: Path) -> None:
     starter = '''
 from dataclasses import dataclass
 DEFAULT_MODEL = "bigcode/starcoder2-3b"
+BEST_LOCAL_COLUMN = "best_local_64"
 @dataclass
 class StarterPlusConfig:
     max_length: int = 768
@@ -147,12 +155,34 @@ STANDARD_MINKPP_COLUMN = "min_kpp_zselect_10"
                         "split_role": "eval",
                     }
                 )
-    manifest_source = "import pandas as pd\nTRANSFER_MANIFEST = pd.DataFrame(" + repr(records) + ")\n"
+    manifest_source = (
+        'import pandas as pd\n'
+        'SOURCE_MODEL = "bigcode/starcoder2-7b"\n'
+        "TRANSFER_MANIFEST = pd.DataFrame(" + repr(records) + ")\n"
+    )
     notebook = {
         "cells": [
-            {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": starter},
-            {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": feature},
-            {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": manifest_source},
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "execution_count": None,
+                "outputs": [],
+                "source": starter,
+            },
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "execution_count": None,
+                "outputs": [],
+                "source": feature,
+            },
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "execution_count": None,
+                "outputs": [],
+                "source": manifest_source,
+            },
         ],
         "metadata": {},
         "nbformat": 4,
@@ -166,23 +196,29 @@ def extract_prediction_records(notebook: dict) -> list[dict]:
     for cell in notebook.get("cells", []):
         if cell.get("cell_type") != "code":
             continue
-        source = cell.get("source", "")
-        source = "".join(source) if isinstance(source, list) else str(source)
+        source = cell_source(cell)
         if "PREDICTION_MANIFEST = pd.DataFrame(" not in source:
             continue
         tree = ast.parse(source)
         for node in tree.body:
             if not isinstance(node, ast.Assign):
                 continue
-            if not any(isinstance(target, ast.Name) and target.id == "PREDICTION_MANIFEST" for target in node.targets):
+            if not any(
+                isinstance(target, ast.Name)
+                and target.id == "PREDICTION_MANIFEST"
+                for target in node.targets
+            ):
                 continue
             call = node.value
             if not isinstance(call, ast.Call) or not call.args:
-                raise RuntimeError("prediction manifest is not one literal DataFrame call")
-            value = ast.literal_eval(call.args[0])
-            matches.append(value)
+                raise RuntimeError(
+                    "prediction manifest is not one literal DataFrame call"
+                )
+            matches.append(ast.literal_eval(call.args[0]))
     if len(matches) != 1:
-        raise RuntimeError(f"expected one embedded prediction manifest, got {len(matches)}")
+        raise RuntimeError(
+            f"expected one embedded prediction manifest, got {len(matches)}"
+        )
     return matches[0]
 
 
@@ -202,7 +238,9 @@ def validate_workflow(path: Path) -> None:
     )
     missing = [token for token in required if token not in text]
     if missing:
-        raise RuntimeError(f"launch workflow missing security markers: {missing}")
+        raise RuntimeError(
+            f"launch workflow missing security markers: {missing}"
+        )
     forbidden = (
         "pull_request_target:",
         "issue_comment:",
@@ -217,11 +255,17 @@ def validate_workflow(path: Path) -> None:
     )
     present = [token for token in forbidden if token in text]
     if present:
-        raise RuntimeError(f"launch workflow contains forbidden operations: {present}")
+        raise RuntimeError(
+            f"launch workflow contains forbidden operations: {present}"
+        )
     if text.count("kernels push") != 1:
-        raise RuntimeError("launch workflow must contain exactly one kernel push")
+        raise RuntimeError(
+            "launch workflow must contain exactly one kernel push"
+        )
     if text.count("secrets.KAGGLE_API_TOKEN") != 2:
-        raise RuntimeError("Kaggle token must be scoped to exactly two bounded steps")
+        raise RuntimeError(
+            "Kaggle token must be scoped to exactly two bounded steps"
+        )
 
 
 def main() -> None:
@@ -234,7 +278,9 @@ def main() -> None:
 
     request = json.loads(args.request.read_text(encoding="utf-8"))
     if request != EXPECTED_REQUEST:
-        raise RuntimeError("Mellum launch request differs from the frozen exact contract")
+        raise RuntimeError(
+            "Mellum launch request differs from the frozen exact contract"
+        )
     for path, expected in (
         (args.builder, request["builder_blob_sha"]),
         (args.shim, request["nbformat_shim_blob_sha"]),
@@ -246,14 +292,14 @@ def main() -> None:
 
     builder_text = args.builder.read_text(encoding="utf-8")
     builder_markers = (
-        'EXPECTED_ROWS = 2_000',
+        "EXPECTED_ROWS = 2_000",
         'MODEL_ID = "JetBrains/Mellum-4b-base"',
         'MODEL_REVISION = "83cce2605fbdf6a3868627e9b0a5924e0072b94d"',
-        'SOURCE_KERNEL',
-        'min_kpp_zselect_10__max',
-        'best_local_64__max',
-        'target_labels_embedded_in_gpu_notebook=False',
-        'public_leaderboard_tuning_used=False',
+        '"bigcode/starcoder2-7b"',
+        "min_kpp_zselect_10__max",
+        "best_local_64__max",
+        '"target_labels_embedded_in_gpu_notebook": False',
+        '"public_leaderboard_tuning_used": False',
         '"is_private": True',
         '"enable_gpu": True',
         '"enable_tpu": False',
@@ -261,7 +307,9 @@ def main() -> None:
     )
     missing = [token for token in builder_markers if token not in builder_text]
     if missing:
-        raise RuntimeError(f"builder differs from frozen scientific contract: {missing}")
+        raise RuntimeError(
+            f"builder differs from frozen scientific contract: {missing}"
+        )
     validate_workflow(args.launch_workflow)
 
     with tempfile.TemporaryDirectory() as temporary:
@@ -273,25 +321,46 @@ def main() -> None:
         previous = sys.modules.get("nbformat")
         sys.modules["nbformat"] = shim
         try:
-            builder = load_python(args.builder, "poisoned_chalice_mellum_builder")
-            notebook_path, metadata_path = builder.build(source, output)
+            builder = load_python(
+                args.builder, "poisoned_chalice_mellum_builder"
+            )
+            builder.build(source, output)
         finally:
             if previous is None:
                 sys.modules.pop("nbformat", None)
             else:
                 sys.modules["nbformat"] = previous
+
+        notebook_path = output / "mellum-transfer-v1.ipynb"
+        metadata_path = output / "kernel-metadata.json"
+        if not notebook_path.is_file() or not metadata_path.is_file():
+            raise RuntimeError("builder did not create the expected two files")
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         if len(notebook.get("cells", [])) != 9:
             raise RuntimeError("generated Mellum notebook cell count changed")
+        if [cell.get("id") for cell in notebook["cells"]] != [
+            f"pc-mellum-v1-{index:02d}" for index in range(9)
+        ]:
+            raise RuntimeError("generated Mellum notebook cell IDs changed")
+
         records = extract_prediction_records(notebook)
         if len(records) != 2000:
             raise RuntimeError("generated prediction cohort size changed")
-        expected_columns = {"sample_id", "content_sha256", "language", "sample_index"}
+        expected_columns = {
+            "sample_id", "content_sha256", "language", "sample_index"
+        }
         if any(set(row) != expected_columns for row in records):
-            raise RuntimeError("label or unexpected field crossed the generated GPU boundary")
+            raise RuntimeError(
+                "label or unexpected field crossed the generated GPU boundary"
+            )
         if [row["sample_index"] for row in records] != list(range(2000)):
             raise RuntimeError("generated prediction cohort order changed")
+        if len({row["sample_id"] for row in records}) != 2000:
+            raise RuntimeError("generated prediction sample IDs are not unique")
+        if len({row["content_sha256"] for row in records}) != 2000:
+            raise RuntimeError("generated prediction content hashes are not unique")
+
         expected_metadata = {
             "id": "renta0426/mellum-transfer-v1",
             "is_private": True,
@@ -303,8 +372,40 @@ def main() -> None:
         for key, value in expected_metadata.items():
             if metadata.get(key) != value:
                 raise RuntimeError(f"generated metadata mismatch: {key}")
-        if metadata.get("competition_sources") != [] or metadata.get("kernel_sources") != []:
-            raise RuntimeError("generated GPU notebook has undeclared Kaggle data sources")
+        if metadata.get("competition_sources") != []:
+            raise RuntimeError("generated notebook gained a Competition source")
+        if metadata.get("kernel_sources") != []:
+            raise RuntimeError("generated notebook gained a kernel source")
+        if metadata.get("dataset_sources") != []:
+            raise RuntimeError("generated notebook gained a Dataset source")
+        if metadata.get("model_sources") != []:
+            raise RuntimeError("generated notebook gained a Kaggle Model source")
+
+        joined = "\n".join(
+            cell_source(cell)
+            for cell in notebook["cells"]
+            if cell.get("cell_type") == "code"
+        )
+        generated_markers = (
+            "JetBrains/Mellum-4b-base",
+            "83cce2605fbdf6a3868627e9b0a5924e0072b94d",
+            "min_kpp_zselect_10__max",
+            "best_local_64__max",
+            '"target_labels_embedded_in_gpu_notebook": False',
+            '"target_labels_used_for_training_or_normalization": False',
+            '"previous_model_scores_used": False',
+            '"hidden_stage1_validation_labels_used": False',
+            '"public_leaderboard_tuning_used": False',
+            '"submission_created": False',
+        )
+        missing_generated = [
+            token for token in generated_markers if token not in joined
+        ]
+        if missing_generated:
+            raise RuntimeError(
+                "generated notebook differs from the frozen scientific contract: "
+                f"{missing_generated}"
+            )
 
     print(
         "MELLUM_LAUNCH_STATIC PASS rows=2000 labels_embedded=false "
