@@ -20,6 +20,10 @@ def replace_once(text: str, old: str, new: str, *, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def git_blob_sha(data: bytes) -> str:
+    return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
@@ -34,11 +38,13 @@ def main() -> int:
     if request.get("science_source_commit") != B21_SOURCE_COMMIT:
         raise SystemExit("B2.1 science commit mismatch")
 
-    adapter = args.adapter.read_text(encoding="utf-8")
+    adapter_bytes = args.adapter.read_bytes()
+    adapter = adapter_bytes.decode("utf-8")
     compile(adapter, str(args.adapter), "exec")
-    adapter_sha = hashlib.sha256(adapter.encode("utf-8")).hexdigest()
-    if request.get("runtime_adapter_sha256") != adapter_sha:
-        raise SystemExit("B2.1 runtime adapter SHA mismatch")
+    adapter_blob = git_blob_sha(adapter_bytes)
+    if request.get("runtime_adapter_blob_sha") != adapter_blob:
+        raise SystemExit("B2.1 runtime adapter blob mismatch")
+    adapter_sha = hashlib.sha256(adapter_bytes).hexdigest()
 
     text = args.source.read_text(encoding="utf-8")
     text = replace_once(
@@ -57,6 +63,7 @@ def main() -> int:
     marker = "\ndef execute(input_dir: Path, output_dir: Path) -> Mapping[str, Any]:\n"
     injected = (
         f'\nB21_ADAPTER_SHA256 = "{adapter_sha}"\n'
+        f'B21_ADAPTER_BLOB_SHA = "{adapter_blob}"\n'
         f'B21_ADAPTER_SOURCE = {adapter!r}\n'
         + marker
     )
@@ -68,12 +75,15 @@ def main() -> int:
     text = replace_once(
         text,
         '"kernel_stage": "b2_taskwise_compact",',
-        f'"kernel_stage": "{TARGET_STAGE}",\n            "runtime_adapter_sha256": B21_ADAPTER_SHA256,',
+        f'"kernel_stage": "{TARGET_STAGE}",\n            "runtime_adapter_sha256": B21_ADAPTER_SHA256,\n            "runtime_adapter_blob_sha": B21_ADAPTER_BLOB_SHA,',
         label="kernel stage",
     )
     compile(text, str(args.output), "exec")
     args.output.write_text(text, encoding="utf-8")
-    print(f"CMI_FLU_B21_PATCH PASS adapter_sha256={adapter_sha} source_commit={B21_SOURCE_COMMIT}")
+    print(
+        "CMI_FLU_B21_PATCH PASS "
+        f"adapter_sha256={adapter_sha} adapter_blob={adapter_blob} source_commit={B21_SOURCE_COMMIT}"
+    )
     return 0
 
 
