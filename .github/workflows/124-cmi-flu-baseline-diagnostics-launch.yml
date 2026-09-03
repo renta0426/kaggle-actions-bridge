@@ -19,8 +19,7 @@ on:
       - scripts/cmi_flu_baseline_diagnostics_builder.py
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: kaggle-resource-global
@@ -59,79 +58,106 @@ jobs:
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
 
-      - name: Check out exact event commit without persisted credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Reconstruct B2 package and build exact diagnostics script
+      - name: Materialize exact event commit and validate diagnostics script
         shell: bash
         env:
           EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "${EVENT_SHA}" ]]
           workdir="$(mktemp -d)"
           trap 'rm -rf "${workdir}"' EXIT
           python3 - "${workdir}" <<'PY'
           from __future__ import annotations
-          import hashlib, json, os, pathlib, sys
+          import hashlib, io, json, os, pathlib, ssl, tarfile, urllib.request, sys
 
-          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
           root = pathlib.Path(sys.argv[1])
+          repo = root / "repo"
+          repo.mkdir()
+          event_sha = os.environ["EVENT_SHA"]
+          if len(event_sha) != 40 or any(ch not in "0123456789abcdef" for ch in event_sha):
+              raise SystemExit("invalid event SHA")
+
+          required = [
+              os.environ["REQUEST_PATH"], os.environ["BUILDER_PATH"],
+              os.environ["BASE_REQUEST_PATH"], os.environ["BASE_PATCHER_PATH"], os.environ["LOCK_PATH"],
+              f"{os.environ['BASE_PAYLOAD_DIR']}/SHA256SUMS", f"{os.environ['BASE_PAYLOAD_DIR']}/SIZE",
+              *[f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}" for i in range(20)],
+          ]
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{event_sha}"
+          request = urllib.request.Request(
+              url,
+              headers={"User-Agent": "kaggle-actions-bridge/1", "Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(request, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000:
+              raise SystemExit("repository archive exceeds byte budget")
+          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+              members = {member.name: member for member in tf.getmembers() if member.isfile()}
+              prefixes = {name.split("/", 1)[0] for name in members if "/" in name}
+              if len(prefixes) != 1:
+                  raise SystemExit("repository archive prefix is ambiguous")
+              prefix = next(iter(prefixes))
+              for path in required:
+                  member = members.get(f"{prefix}/{path}")
+                  if member is None or member.size > 100_000:
+                      raise SystemExit(f"required archive member missing or too large: {path}")
+                  stream = tf.extractfile(member)
+                  if stream is None:
+                      raise SystemExit(f"cannot read archive member: {path}")
+                  data = stream.read(member.size + 1)
+                  if len(data) != member.size:
+                      raise SystemExit(f"archive member size mismatch: {path}")
+                  target = repo / path
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(data)
 
           def read(path: str, limit: int) -> bytes:
-              candidate = workspace / path
-              if candidate.is_symlink():
-                  raise SystemExit(f"symlink input refused: {path}")
-              resolved = candidate.resolve()
-              if resolved != workspace and workspace not in resolved.parents:
-                  raise SystemExit(f"path escapes workspace: {path}")
-              if not resolved.is_file():
-                  raise SystemExit(f"required input missing: {path}")
-              data = resolved.read_bytes()
+              candidate = repo / path
+              if candidate.is_symlink() or not candidate.is_file():
+                  raise SystemExit(f"required input missing or symlinked: {path}")
+              data = candidate.read_bytes()
               if len(data) > limit:
                   raise SystemExit(f"input exceeds byte budget: {path}")
               return data
 
           request_bytes = read(os.environ["REQUEST_PATH"], 32768)
-          request = json.loads(request_bytes)
+          manifest = json.loads(request_bytes)
           expected_keys = {
               "schema_version", "request_id", "competition", "operation", "target", "purpose",
               "source", "outputs", "resource", "api_budget", "side_effects", "submission_created",
               "submission_attempted", "automatic_compute_retries", "enable_internet", "rules_checked_at_utc",
           }
-          if set(request) != expected_keys:
+          if set(manifest) != expected_keys:
               raise SystemExit("diagnostics request top-level key set mismatch")
-          if request["schema_version"] != 1 or request["request_id"] != "20260903-cmi-flu-baseline-diagnostics-001":
+          if manifest["schema_version"] != 1 or manifest["request_id"] != "20260903-cmi-flu-baseline-diagnostics-001":
               raise SystemExit("diagnostics request identity mismatch")
-          if request["competition"] != os.environ["TARGET_COMPETITION"] or request["operation"] != "kernel_run":
+          if manifest["competition"] != os.environ["TARGET_COMPETITION"] or manifest["operation"] != "kernel_run":
               raise SystemExit("diagnostics request competition/operation mismatch")
-          if request["target"] != os.environ["TARGET_KERNEL"]:
+          if manifest["target"] != os.environ["TARGET_KERNEL"]:
               raise SystemExit("diagnostics target mismatch")
-          if request["purpose"] != "aggregate B1 anchor diagnostics and B2 negative controls; no submission":
+          if manifest["purpose"] != "aggregate B1 anchor diagnostics and B2 negative controls; no submission":
               raise SystemExit("diagnostics purpose mismatch")
-          if request["outputs"] != ["bridge-result.json", "metrics.json", "summary.md"]:
+          if manifest["outputs"] != ["bridge-result.json", "metrics.json", "summary.md"]:
               raise SystemExit("diagnostics output allowlist mismatch")
-          if request["submission_created"] is not False or request["submission_attempted"] is not False:
+          if manifest["submission_created"] is not False or manifest["submission_attempted"] is not False:
               raise SystemExit("diagnostics request must forbid submission")
-          if request["automatic_compute_retries"] != 0 or request["enable_internet"] is not False:
+          if manifest["automatic_compute_retries"] != 0 or manifest["enable_internet"] is not False:
               raise SystemExit("diagnostics retry/internet contract mismatch")
-          if request["resource"] != {"accelerator": "cpu", "expected_runtime_minutes": 60, "hard_timeout_minutes": 180, "max_active_runs": 1}:
+          if manifest["resource"] != {"accelerator": "cpu", "expected_runtime_minutes": 60, "hard_timeout_minutes": 180, "max_active_runs": 1}:
               raise SystemExit("diagnostics CPU resource contract mismatch")
-          if request["api_budget"] != {"max_calls": 20, "poll_interval_seconds": 900, "max_pages": 2}:
+          if manifest["api_budget"] != {"max_calls": 20, "poll_interval_seconds": 900, "max_pages": 2}:
               raise SystemExit("diagnostics API budget mismatch")
-          if request["side_effects"] != ["create one private Notebook version and start one CPU run"]:
+          if manifest["side_effects"] != ["create one private Notebook version and start one CPU run"]:
               raise SystemExit("diagnostics side-effect contract mismatch")
 
-          source_contract = request["source"]
-          if set(source_contract) != {
+          source_contract = manifest["source"]
+          expected_source_keys = {
               "builder_path", "builder_blob_sha", "diagnostics_cmi_commit", "diagnostics_blob_sha",
               "negative_controls_blob_sha", "base_b2_request", "base_payload_dir",
               "base_payload_sha256", "base_package_sha256",
-          }:
+          }
+          if set(source_contract) != expected_source_keys:
               raise SystemExit("diagnostics source key set mismatch")
           builder = read(os.environ["BUILDER_PATH"], 65536)
           git_blob = hashlib.sha1(b"blob " + str(len(builder)).encode() + b"\0" + builder).hexdigest()
@@ -139,12 +165,16 @@ jobs:
               raise SystemExit("diagnostics builder binding mismatch")
           if source_contract["diagnostics_cmi_commit"] != "6cc984f6bd2e8e744795c14d13034def2c5dc9e7":
               raise SystemExit("diagnostics CMI commit mismatch")
-          if source_contract["diagnostics_blob_sha"] != "6dd5e9f69095b5db63fded3913f22c0041a30f2a" or source_contract["negative_controls_blob_sha"] != "250d255e9f5e768238143b14b89325f4ccb0f111":
+          if source_contract["diagnostics_blob_sha"] != "6dd5e9f69095b5db63fded3913f22c0041a30f2a":
               raise SystemExit("diagnostics implementation blob mismatch")
+          if source_contract["negative_controls_blob_sha"] != "250d255e9f5e768238143b14b89325f4ccb0f111":
+              raise SystemExit("negative-control implementation blob mismatch")
           if source_contract["base_b2_request"] != "20260903-cmi-flu-b2-004" or source_contract["base_payload_dir"] != os.environ["BASE_PAYLOAD_DIR"]:
               raise SystemExit("base B2 binding mismatch")
-          if source_contract["base_payload_sha256"] != os.environ["EXPECTED_BASE_SOURCE_SHA256"] or source_contract["base_package_sha256"] != "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3":
-              raise SystemExit("base B2 hash binding mismatch")
+          if source_contract["base_payload_sha256"] != os.environ["EXPECTED_BASE_SOURCE_SHA256"]:
+              raise SystemExit("base B2 payload hash binding mismatch")
+          if source_contract["base_package_sha256"] != "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3":
+              raise SystemExit("base B2 package hash binding mismatch")
 
           source = b"".join(read(f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}", 5000) for i in range(20))
           digest = hashlib.sha256(source).hexdigest()
@@ -226,39 +256,63 @@ jobs:
           [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
           echo 'PROTECTED_CMI_FLU_BASELINE_DIAGNOSTICS_001_BOUNDARY PASS'
 
-      - name: Check out exact approved main commit without persisted credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Prepare locked Kaggle CLI and exact diagnostics script
+      - name: Materialize exact approved commit and prepare locked Kaggle CLI
         shell: bash
         env:
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "${EVENT_SHA}" ]]
           workdir="$(mktemp -d)"
           echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
           python3 - "${workdir}" <<'PY'
           from __future__ import annotations
-          import hashlib, os, pathlib, re, sys
+          import hashlib, io, os, pathlib, re, ssl, tarfile, urllib.request, sys
 
-          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
           root = pathlib.Path(sys.argv[1])
+          repo = root / "repo"
+          repo.mkdir()
+          event_sha = os.environ["EVENT_SHA"]
+          if len(event_sha) != 40 or any(ch not in "0123456789abcdef" for ch in event_sha):
+              raise SystemExit("invalid event SHA")
+          required = [
+              os.environ["BUILDER_PATH"], os.environ["BASE_REQUEST_PATH"], os.environ["BASE_PATCHER_PATH"], os.environ["LOCK_PATH"],
+              f"{os.environ['BASE_PAYLOAD_DIR']}/SHA256SUMS", f"{os.environ['BASE_PAYLOAD_DIR']}/SIZE",
+              *[f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}" for i in range(20)],
+          ]
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{event_sha}"
+          request = urllib.request.Request(
+              url,
+              headers={"User-Agent": "kaggle-actions-bridge/1", "Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(request, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000:
+              raise SystemExit("repository archive exceeds byte budget")
+          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+              members = {member.name: member for member in tf.getmembers() if member.isfile()}
+              prefixes = {name.split("/", 1)[0] for name in members if "/" in name}
+              if len(prefixes) != 1:
+                  raise SystemExit("repository archive prefix is ambiguous")
+              prefix = next(iter(prefixes))
+              for path in required:
+                  member = members.get(f"{prefix}/{path}")
+                  if member is None or member.size > 100_000:
+                      raise SystemExit(f"required archive member missing or too large: {path}")
+                  stream = tf.extractfile(member)
+                  if stream is None:
+                      raise SystemExit(f"cannot read archive member: {path}")
+                  data = stream.read(member.size + 1)
+                  if len(data) != member.size:
+                      raise SystemExit(f"archive member size mismatch: {path}")
+                  target = repo / path
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(data)
 
           def read(path: str, limit: int) -> bytes:
-              candidate = workspace / path
-              if candidate.is_symlink():
-                  raise SystemExit(f"symlink input refused: {path}")
-              resolved = candidate.resolve()
-              if resolved != workspace and workspace not in resolved.parents:
-                  raise SystemExit(f"path escapes workspace: {path}")
-              if not resolved.is_file():
-                  raise SystemExit(f"required input missing: {path}")
-              data = resolved.read_bytes()
+              candidate = repo / path
+              if candidate.is_symlink() or not candidate.is_file():
+                  raise SystemExit(f"required input missing or symlinked: {path}")
+              data = candidate.read_bytes()
               if len(data) > limit:
                   raise SystemExit(f"input exceeds byte budget: {path}")
               return data
@@ -320,10 +374,8 @@ jobs:
           evaluation = plain(content["evaluation"])
           data_text = " ".join(plain(content[name]) for name in content if "data" in name)
           if not all(term in rules for term in (
-              "maximum of five (5) submissions per day",
-              "maximum team size is five (5)",
-              "data security",
-              "external data and tools",
+              "maximum of five (5) submissions per day", "maximum team size is five (5)",
+              "data security", "external data and tools",
           )):
               raise SystemExit("live Competition rules differ from approved guardrails")
           if not all(term in evaluation for term in ("mean spearman correlation", "40 donors", "-99")):
@@ -413,18 +465,11 @@ jobs:
           metadata = {
               "id": os.environ["TARGET_KERNEL"],
               "title": "CMI Flu Baseline Diagnostics 20260903 001",
-              "code_file": "script.py",
-              "language": "python",
-              "kernel_type": "script",
-              "is_private": True,
-              "enable_gpu": False,
-              "enable_tpu": False,
-              "enable_internet": False,
-              "machine_shape": "",
-              "dataset_sources": [],
+              "code_file": "script.py", "language": "python", "kernel_type": "script",
+              "is_private": True, "enable_gpu": False, "enable_tpu": False, "enable_internet": False,
+              "machine_shape": "", "dataset_sources": [],
               "competition_sources": [os.environ["TARGET_COMPETITION"]],
-              "kernel_sources": [],
-              "model_sources": [],
+              "kernel_sources": [], "model_sources": [],
           }
           (root / "kernel-metadata.json").write_text(
               json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
