@@ -1,0 +1,226 @@
+name: Poisoned Chalice Stage1 length-interaction mount repair v2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-stage1-length-interactions-run-002.json
+      - scripts/poisoned_chalice_stage1_length_interaction_builder_v2.py
+      - scripts/poisoned_chalice_stage1_length_interaction_launch_v2.py
+      - .github/workflows/134-poisoned-chalice-stage1-length-interactions-v2-launch.yml
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-stage1-length-interactions-run-002.json
+      - scripts/poisoned_chalice_stage1_length_interaction_builder_v2.py
+      - scripts/poisoned_chalice_stage1_length_interaction_launch_v2.py
+      - .github/workflows/134-poisoned-chalice-stage1-length-interactions-v2-launch.yml
+
+permissions: {}
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-stage1-length-interactions-run-002.json
+  BASE_BUILDER_PATH: scripts/poisoned_chalice_stage1_length_interaction_builder.py
+  BUILDER_PATH: scripts/poisoned_chalice_stage1_length_interaction_builder_v2.py
+  LAUNCHER_PATH: scripts/poisoned_chalice_stage1_length_interaction_launch_v2.py
+  BUILDER_BLOB_SHA: 8f2cd12ecbad8160e86bbd42cf9b70649e1aa56b
+  LAUNCHER_BLOB_SHA: 9db49fa2160a7fe40beb447bf0f2dbe858f3ba9d
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate repaired frozen Stage1 request without credentials
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free boundary and fetch exact commit
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY RESEARCH_REPO_READ_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${source_sha}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+          echo 'STAGE1_LENGTH_V2_SECRET_FREE_BOUNDARY PASS'
+
+      - name: Validate exact pins and generated bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${WORKDIR}/repo"
+          python3 - "${repo}/${LAUNCHER_PATH}" "${LAUNCHER_BLOB_SHA}" <<'PY'
+          import hashlib, pathlib, sys
+          path = pathlib.Path(sys.argv[1]); expected = sys.argv[2]
+          data = path.read_bytes()
+          observed = hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+          if observed != expected:
+              raise SystemExit(f"launcher Git blob mismatch: {observed}")
+          compile(data, str(path), "exec")
+          PY
+          python3 "${repo}/${LAUNCHER_PATH}" \
+            --static \
+            --request "${repo}/${REQUEST_PATH}" \
+            --launcher "${repo}/${LAUNCHER_PATH}" \
+            --builder "${repo}/${BUILDER_PATH}" \
+            --base-builder "${repo}/${BASE_BUILDER_PATH}"
+          mkdir -p "${WORKDIR}/kernel"
+          python3 "${repo}/${BUILDER_PATH}" \
+            --output-dir "${WORKDIR}/kernel" \
+            --builder-blob-sha "${BUILDER_BLOB_SHA}" >/dev/null
+          python3 - "${repo}/${LAUNCHER_PATH}" "${WORKDIR}/kernel" <<'PY'
+          import importlib.util, pathlib, sys
+          launcher_path = pathlib.Path(sys.argv[1]); kernel_dir = pathlib.Path(sys.argv[2])
+          spec = importlib.util.spec_from_file_location("pc_length_v2_launcher", launcher_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit("cannot load v2 launcher")
+          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          module.validate_bundle(kernel_dir)
+          print("STAGE1_LENGTH_V2_BUNDLE_STATIC PASS model_features=523 mount_compatibility=true")
+          PY
+          rm -rf "${WORKDIR}"
+
+  launch:
+    name: Launch exactly one repaired frozen Stage1 CPU Notebook
+    needs: validate
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    concurrency:
+      group: poisoned-chalice-stage1-length-interaction-run-002
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce protected boundary and fetch exact main commit
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/134-poisoned-chalice-stage1-length-interactions-v2-launch.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          echo "KERNEL_DIR=${workdir}/kernel" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${EVENT_SHA}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+          echo 'PROTECTED_STAGE1_LENGTH_V2_BOUNDARY PASS request=002 write_calls=1 retries=0'
+
+      - name: Build exact repaired Notebook and SHA-locked Kaggle client
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${WORKDIR}/repo"
+          mkdir -p "${KERNEL_DIR}"
+          python3 "${repo}/${BUILDER_PATH}" \
+            --output-dir "${KERNEL_DIR}" \
+            --builder-blob-sha "${BUILDER_BLOB_SHA}" >/dev/null
+          python3 "${repo}/${LAUNCHER_PATH}" \
+            --static \
+            --request "${repo}/${REQUEST_PATH}" \
+            --launcher "${repo}/${LAUNCHER_PATH}" \
+            --builder "${repo}/${BUILDER_PATH}" \
+            --base-builder "${repo}/${BASE_BUILDER_PATH}"
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps --only-binary=:all: \
+            --require-hashes -r "${repo}/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo 'STAGE1_LENGTH_V2_CLIENT PASS kaggle=2.2.4'
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl, urllib.request
+          context = ssl.create_default_context()
+          for url in (
+              "https://www.kaggle.com/terms", "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines", "https://www.kaggle.com/docs/api",
+              "https://www.kaggle.com/docs/notebooks",
+          ):
+              request = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
+          PY
+
+      - name: Live-preflight and push repaired request 002 exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          repo="${WORKDIR}/repo"
+          "${WORKDIR}/kaggle-venv/bin/python" "${repo}/${LAUNCHER_PATH}" \
+            --execute \
+            --request "${repo}/${REQUEST_PATH}" \
+            --launcher "${repo}/${LAUNCHER_PATH}" \
+            --builder "${repo}/${BUILDER_PATH}" \
+            --base-builder "${repo}/${BASE_BUILDER_PATH}" \
+            --kaggle-bin "${WORKDIR}/kaggle-venv/bin/kaggle" \
+            --kernel-dir "${KERNEL_DIR}"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'STAGE1_LENGTH_V2_RUNNER_MATERIAL_REMOVED'
