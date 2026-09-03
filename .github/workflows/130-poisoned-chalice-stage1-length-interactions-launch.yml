@@ -185,12 +185,12 @@ jobs:
           python3 "${repo}/${LAUNCHER_PATH}" \
             --static --request "${repo}/${REQUEST_PATH}" \
             --launcher "${repo}/${LAUNCHER_PATH}" --builder "${repo}/${BUILDER_PATH}"
-          python3 -m venv "${workdir}/kaggle-venv"
-          "${workdir}/kaggle-venv/bin/python" -m pip install \
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install \
             --disable-pip-version-check --no-input --no-deps --only-binary=:all: \
             --require-hashes -r "${repo}/${LOCK_PATH}" >/dev/null
-          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
-          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
           echo 'STAGE1_LENGTH_INTERACTION_CLIENTS PASS kaggle=2.2.4'
 
       - name: Confirm current public Kaggle policy pages are reachable
