@@ -1,0 +1,77 @@
+name: CMI-Flu B2 request 003 static validation
+
+on:
+  push:
+    branches:
+      - fix/cmi-flu-b2-flow-target-003
+    paths:
+      - .github/workflows/111-cmi-flu-b2-launch-v3-static.yml
+      - .github/workflows/112-cmi-flu-b2-launch-v3.yml
+      - requests/cmi-flu-b2-launch-v3.json
+      - scripts/cmi_flu_b2_patch_v3.py
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/111-cmi-flu-b2-launch-v3-static.yml
+      - .github/workflows/112-cmi-flu-b2-launch-v3.yml
+      - requests/cmi-flu-b2-launch-v3.json
+      - scripts/cmi_flu_b2_patch_v3.py
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Reconstruct, patch, compile, and self-test request 003
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib, os, pathlib, ssl, sys, urllib.request
+          root = pathlib.Path(sys.argv[1])
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+          def read(path: str, limit: int) -> bytes:
+              req = urllib.request.Request(base + path, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"input exceeds byte budget: {path}")
+              return data
+          parts = [read(f"payloads/cmi-flu-b2-001/part-{i:02d}", 5000) for i in range(20)]
+          source = b"".join(parts)
+          if len(source) != 92839 or hashlib.sha256(source).hexdigest() != "a039b56868e5f9e2f10ae8016466a02fe4a6e5342854487ca6c6a198a21abd5e":
+              raise SystemExit("B2 request 003 base payload mismatch")
+          (root / "source.py").write_bytes(source)
+          (root / "request.json").write_bytes(read("requests/cmi-flu-b2-launch-v3.json", 32768))
+          (root / "patch.py").write_bytes(read("scripts/cmi_flu_b2_patch_v3.py", 32768))
+          runtime = read(".github/workflows/112-cmi-flu-b2-launch-v3.yml", 32768).decode("utf-8")
+          if runtime.count('"${WORKDIR}/venv/bin/kaggle" kernels push') != 1:
+              raise SystemExit("request 003 runtime must contain exactly one kernels push")
+          for forbidden in ("competitions submit", "kernels delete", "datasets create", "datasets version", "upload-artifact", "actions/cache"):
+              if forbidden in runtime.lower():
+                  raise SystemExit(f"forbidden request 003 capability: {forbidden}")
+          PY
+          python3 "${workdir}/patch.py" --source "${workdir}/source.py" --request "${workdir}/request.json" --output "${workdir}/script.py"
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/patch.py" "${workdir}/script.py"
+          python3 "${workdir}/script.py" --self-test
+          grep -F 'rglob("sample_submission_part1.csv")' "${workdir}/script.py" >/dev/null
+          grep -F 'datasets_text.replace(old_flow_target, new_flow_target, 1)' "${workdir}/script.py" >/dev/null
+          grep -F 'sys.path.insert(0, str(package_dir))' "${workdir}/script.py" >/dev/null
+          echo 'CMI_FLU_B2_003_STATIC PASS'
