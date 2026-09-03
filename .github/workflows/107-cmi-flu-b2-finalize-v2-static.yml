@@ -1,0 +1,218 @@
+name: CMI-Flu B2 finalization v2 static validation
+
+on:
+  push:
+    branches:
+      - fix/cmi-flu-b2-finalizer-transient-output
+    paths:
+      - .github/workflows/107-cmi-flu-b2-finalize-v2-static.yml
+      - .github/workflows/108-cmi-flu-b2-finalize-v2.yml
+      - requests/cmi-flu-b2-finalize-v2.json
+      - scripts/cmi_flu_b2_finalize.py
+      - scripts/cmi_flu_b2_finalize_v2.py
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/107-cmi-flu-b2-finalize-v2-static.yml
+      - .github/workflows/108-cmi-flu-b2-finalize-v2.yml
+      - requests/cmi-flu-b2-finalize-v2.json
+      - scripts/cmi_flu_b2_finalize.py
+      - scripts/cmi_flu_b2_finalize_v2.py
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Validate exact retry-safe finalizer without credentials
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+          EXPECTED_CORE_SHA256: 35c3ece9abf218f2c0c8d44788081312169ae6f2786ceb1115615e86f8764f02
+          EXPECTED_WRAPPER_SHA256: db02fca6813f3fc135bea5db2cc6eb2f4fb244e2c657406f79f5440c095bdb7d
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import ast
+          import hashlib
+          import importlib.util
+          import json
+          import os
+          import pathlib
+          import ssl
+          import tempfile
+          import urllib.request
+
+          import requests
+
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(
+                  base + path,
+                  headers={"User-Agent": "kaggle-actions-bridge/1"},
+              )
+              with urllib.request.urlopen(
+                  request,
+                  timeout=30,
+                  context=ssl.create_default_context(),
+              ) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"input exceeds byte budget: {path}")
+              return data
+
+          runtime = read(".github/workflows/108-cmi-flu-b2-finalize-v2.yml", 32768).decode("utf-8")
+          core_bytes = read("scripts/cmi_flu_b2_finalize.py", 65536)
+          wrapper_bytes = read("scripts/cmi_flu_b2_finalize_v2.py", 8192)
+          request = json.loads(read("requests/cmi-flu-b2-finalize-v2.json", 16384))
+
+          core_digest = hashlib.sha256(core_bytes).hexdigest()
+          wrapper_digest = hashlib.sha256(wrapper_bytes).hexdigest()
+          if core_digest != os.environ["EXPECTED_CORE_SHA256"]:
+              raise SystemExit(f"B2 core SHA mismatch: {core_digest}")
+          if wrapper_digest != os.environ["EXPECTED_WRAPPER_SHA256"]:
+              raise SystemExit(f"B2 wrapper SHA mismatch: {wrapper_digest}")
+          core = core_bytes.decode("utf-8")
+          wrapper = wrapper_bytes.decode("utf-8")
+          compile(core, "cmi_flu_b2_finalize.py", "exec")
+          compile(wrapper, "cmi_flu_b2_finalize_v2.py", "exec")
+
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260903-cmi-flu-b2-finalize-002",
+              "parent_request_id": "20260903-cmi-flu-b2-001",
+              "competition": "cmi-flu-first-prediction-challenge",
+              "operation": "wait_verify_submit_score",
+              "target_kernel": "renta0426/cmi-flu-b2-taskwise-compact-20260903-001",
+              "kernel_version": 1,
+              "source_commit": "1596ba5b7ab2369c0b70c9da178aec1d71c80658",
+              "package_zip_sha256": "390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0",
+              "kernel_wait": {"interval_seconds": 60, "max_attempts": 180},
+              "score_wait": {"interval_seconds": 20, "max_attempts": 120},
+              "api_budget": {"max_calls": 320, "max_pages": 1},
+              "side_effects": [
+                  "create at most one Competition submission after exact output verification"
+              ],
+              "automatic_compute_retries": 0,
+              "automatic_submission_retries": 0,
+              "public_score_tuning": False,
+              "select_final_submission": False,
+              "rules_checked_at_utc": "2026-09-03T02:50:00Z",
+          }
+          if request != expected:
+              raise SystemExit("B2 finalization v2 request differs from exact allowlist")
+
+          wrapper_tree = ast.parse(wrapper)
+          imported = set()
+          for node in ast.walk(wrapper_tree):
+              if isinstance(node, ast.Import):
+                  imported.update(alias.name.split(".", 1)[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imported.add(node.module.split(".", 1)[0])
+          if not {"importlib", "pathlib", "requests", "sys", "types"}.issubset(imported):
+              raise SystemExit("B2 wrapper import boundary is incomplete")
+          if imported & {"subprocess", "socket", "http", "ftplib"}:
+              raise SystemExit("B2 wrapper has a forbidden import")
+          required_wrapper = (
+              'CORE_FILENAME = "cmi_flu_b2_finalize.py"',
+              'FINALIZE_REQUEST_ID = "20260903-cmi-flu-b2-finalize-002"',
+              "TRANSIENT_OUTPUT_STATUS_CODES = frozenset({404})",
+              "except requests.exceptions.HTTPError as error:",
+              'return SimpleNamespace(log="", files=[])',
+              "core.FINALIZE_REQUEST_ID = FINALIZE_REQUEST_ID",
+              "install_transient_output_guard(core)",
+          )
+          for token in required_wrapper:
+              if token not in wrapper:
+                  raise SystemExit(f"B2 wrapper guard missing: {token}")
+          if "{403}" in wrapper or "500" in wrapper or "429" in wrapper:
+              raise SystemExit("B2 wrapper broadens the transient HTTP allowlist")
+
+          with tempfile.TemporaryDirectory() as temporary:
+              path = pathlib.Path(temporary) / "cmi_flu_b2_finalize_v2.py"
+              path.write_bytes(wrapper_bytes)
+              spec = importlib.util.spec_from_file_location("wrapper_under_test", path)
+              if spec is None or spec.loader is None:
+                  raise SystemExit("unable to load wrapper test module")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+
+              class Fake404:
+                  @staticmethod
+                  def read_kernel_output(api):
+                      response = requests.Response()
+                      response.status_code = 404
+                      raise requests.HTTPError("pending", response=response)
+
+              fake = Fake404()
+              module.install_transient_output_guard(fake)
+              snapshot = fake.read_kernel_output(None)
+              if snapshot.log != "" or snapshot.files != []:
+                  raise SystemExit("B2 wrapper did not convert exact 404 to a pending snapshot")
+
+              class Fake500:
+                  @staticmethod
+                  def read_kernel_output(api):
+                      response = requests.Response()
+                      response.status_code = 500
+                      raise requests.HTTPError("server", response=response)
+
+              fake = Fake500()
+              module.install_transient_output_guard(fake)
+              try:
+                  fake.read_kernel_output(None)
+              except requests.HTTPError as error:
+                  if error.response is None or error.response.status_code != 500:
+                      raise
+              else:
+                  raise SystemExit("B2 wrapper swallowed a non-404 HTTP error")
+
+          required_runtime = (
+              "permissions: {}",
+              "group: kaggle-resource-global",
+              "queue: max",
+              "environment: kaggle-readonry",
+              "timeout-minutes: 240",
+              "scripts/cmi_flu_b2_finalize.py",
+              "scripts/cmi_flu_b2_finalize_v2.py",
+              "20260903-cmi-flu-b2-finalize-002",
+              "Wait through transient output 404",
+              "steps.submit_decision.outputs.should_submit == 'true'",
+              "automatic_submission_retries=0",
+              "Runner-local CMI-Flu B2 finalization v2 content removed",
+          )
+          for token in required_runtime:
+              if token not in runtime:
+                  raise SystemExit(f"B2 v2 runtime guard missing: {token}")
+          if runtime.count('"${WORKDIR}/venv/bin/kaggle" competitions submit') != 1:
+              raise SystemExit("B2 v2 runtime must contain exactly one executable submission command")
+          if runtime.count("secrets.KAGGLE_API_TOKEN") != 4:
+              raise SystemExit("B2 v2 secret scope count mismatch")
+          for token in (
+              "kernels push",
+              "kernels delete",
+              "datasets create",
+              "datasets version",
+              "models create",
+              "upload-artifact",
+              "actions/cache",
+              "--follow",
+          ):
+              if token in runtime.lower():
+                  raise SystemExit(f"forbidden B2 v2 runtime capability present: {token}")
+
+          print(
+              "CMI_FLU_B2_FINALIZE_V2_STATIC PASS "
+              f"core_sha256={core_digest} wrapper_sha256={wrapper_digest} submit_commands=1"
+          )
+          PY

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-cmi-flu-b2-finalize-002",
+  "parent_request_id": "20260903-cmi-flu-b2-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "wait_verify_submit_score",
+  "target_kernel": "renta0426/cmi-flu-b2-taskwise-compact-20260903-001",
+  "kernel_version": 1,
+  "source_commit": "1596ba5b7ab2369c0b70c9da178aec1d71c80658",
+  "package_zip_sha256": "390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0",
+  "kernel_wait": {
+    "interval_seconds": 60,
+    "max_attempts": 180
+  },
+  "score_wait": {
+    "interval_seconds": 20,
+    "max_attempts": 120
+  },
+  "api_budget": {
+    "max_calls": 320,
+    "max_pages": 1
+  },
+  "side_effects": [
+    "create at most one Competition submission after exact output verification"
+  ],
+  "automatic_compute_retries": 0,
+  "automatic_submission_retries": 0,
+  "public_score_tuning": false,
+  "select_final_submission": false,
+  "rules_checked_at_utc": "2026-09-03T02:50:00Z"
+}
