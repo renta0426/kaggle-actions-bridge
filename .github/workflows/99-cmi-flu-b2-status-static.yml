@@ -1,0 +1,113 @@
+name: CMI-Flu B2 status verifier static validation
+
+on:
+  push:
+    branches:
+      - ops/cmi-flu-b2-status-001
+    paths:
+      - .github/workflows/99-cmi-flu-b2-status-static.yml
+      - .github/workflows/100-cmi-flu-b2-status.yml
+      - requests/cmi-flu-b2-status-v1.json
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/99-cmi-flu-b2-status-static.yml
+      - .github/workflows/100-cmi-flu-b2-status.yml
+      - requests/cmi-flu-b2-status-v1.json
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact request and read-only runtime workflow
+        shell: bash
+        env:
+          CONTENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+          import json, os, ssl, urllib.request
+
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['CONTENT_SHA']}/"
+
+          def read(path: str, limit: int) -> str:
+              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f'input exceeds byte budget: {path}')
+              return data.decode('utf-8')
+
+          request = json.loads(read('requests/cmi-flu-b2-status-v1.json', 16384))
+          expected = {
+              'schema_version': 1,
+              'request_id': '20260903-cmi-flu-b2-status-001',
+              'parent_request_id': '20260903-cmi-flu-b2-001',
+              'competition': 'cmi-flu-first-prediction-challenge',
+              'operation': 'private_kernel_output_verification',
+              'target': 'renta0426/cmi-flu-b2-taskwise-compact-20260903-001',
+              'api_budget': {'max_calls': 10, 'max_pages': 1},
+              'allowed_outputs': [
+                  'bridge-result.json',
+                  'bridge-failure.json',
+                  'b2-metrics-safe.json',
+                  'submission.csv',
+              ],
+              'side_effects': [],
+              'rules_checked_at_utc': '2026-09-03T00:30:00Z',
+          }
+          if request != expected:
+              raise SystemExit('B2 status request differs from exact allowlist')
+
+          workflow = read('.github/workflows/100-cmi-flu-b2-status.yml', 60000)
+          required = (
+              'permissions: {}',
+              'group: kaggle-read-global',
+              'environment: kaggle-readonry',
+              'workflow_dispatch:',
+              'ApiGetKernelRequest',
+              'ApiListKernelSessionOutputRequest',
+              'list_kernel_session_output',
+              'TARGET_KERNEL: renta0426/cmi-flu-b2-taskwise-compact-20260903-001',
+              'bridge-result.json',
+              'bridge-failure.json',
+              'b2-metrics-safe.json',
+              'submission.csv',
+              'allow_redirects=False',
+              'submission_sha256',
+              'supervised_public_proxy_macro_spearman',
+              'CMI_FLU_B2_OUTPUT_VERIFIED',
+              'CMI_FLU_B2_NONTERMINAL',
+          )
+          for token in required:
+              if token not in workflow:
+                  raise SystemExit(f'B2 runtime verifier guard missing: {token}')
+
+          forbidden = (
+              'kernels ' + 'push',
+              'competitions ' + 'submit',
+              'kernels ' + 'delete',
+              'datasets ' + 'create',
+              'datasets ' + 'version',
+              'models ' + 'create',
+              'upload-' + 'artifact',
+              '--' + 'follow',
+              'pull_' + 'request:',
+          )
+          lowered = workflow.lower()
+          for token in forbidden:
+              if token in lowered:
+                  raise SystemExit(f'forbidden B2 verifier capability present: {token}')
+          if workflow.count('KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}') != 1:
+              raise SystemExit('B2 verifier token must be scoped to exactly one read step')
+          print('CMI_FLU_B2_STATUS_STATIC PASS')
+          PY
