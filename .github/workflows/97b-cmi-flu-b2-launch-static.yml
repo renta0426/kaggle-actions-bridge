@@ -23,21 +23,27 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Check out secret-free validation tree
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Validate protected launch semantics without secrets
+      - name: Validate protected launch semantics from the exact commit
         shell: bash
+        env:
+          CONTENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from __future__ import annotations
-          import pathlib
+          import os, ssl, urllib.request
 
-          path = pathlib.Path('.github/workflows/98-cmi-flu-b2-launch.yml')
-          workflow = path.read_text(encoding='utf-8')
+          url = (
+              f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/"
+              f"{os.environ['CONTENT_SHA']}/.github/workflows/98-cmi-flu-b2-launch.yml"
+          )
+          request = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+              data = response.read(50001)
+          if len(data) > 50000:
+              raise SystemExit('B2 launch workflow exceeds static byte budget')
+          workflow = data.decode('utf-8')
           required = (
               'permissions: {}',
               'group: kaggle-resource-global',
@@ -74,6 +80,7 @@ jobs:
               'enable_tpu": True',
               'enable_internet": True',
               '--follow',
+              'pull_request:',
           )
           lowered = workflow.lower()
           for token in forbidden:
@@ -89,11 +96,9 @@ jobs:
               raise SystemExit(f'expected exactly one executable kernels push, found {len(executable)}')
           if workflow.count('KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}') != 2:
               raise SystemExit('Kaggle token must be scoped to exactly the admission and push steps')
-          if workflow.count('if: steps.admission.outputs.can_launch == \'true\'') != 1:
+          if workflow.count("if: steps.admission.outputs.can_launch == 'true'") != 1:
               raise SystemExit('Kaggle push must have one admission condition')
-          if workflow.count('if: steps.admission.outputs.can_launch != \'true\'') != 1:
+          if workflow.count("if: steps.admission.outputs.can_launch != 'true'") != 1:
               raise SystemExit('deferred admission branch must occur exactly once')
-          if 'pull_request:' in workflow:
-              raise SystemExit('secret-bearing launch workflow must not run on pull_request')
           print('CMI_FLU_B2_LAUNCH_STATIC PASS')
           PY
