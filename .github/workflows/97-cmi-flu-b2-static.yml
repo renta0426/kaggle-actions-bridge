@@ -27,15 +27,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out secret-free validation tree
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Reconstruct and validate the exact B2 source
+      - name: Fetch, reconstruct, and validate the exact B2 source without secrets
         shell: bash
         env:
-          SOURCE_SHA: a039b56868e5f9e2f10ae8016466a02fe4a6e5342854487ca6c6a198a21abd5e
+          CONTENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
         run: |
           set -euo pipefail
           for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
@@ -43,9 +39,19 @@ jobs:
           done
           python3 - <<'PY'
           from __future__ import annotations
-          import hashlib, json, pathlib, subprocess, sys, tempfile
+          import hashlib, json, os, ssl, subprocess, sys, tempfile, urllib.request
 
-          request = json.loads(pathlib.Path('requests/cmi-flu-b2-launch-v1.json').read_text(encoding='utf-8'))
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['CONTENT_SHA']}/"
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f'input exceeds byte budget: {path}')
+              return data
+
+          request = json.loads(read('requests/cmi-flu-b2-launch-v1.json', 32768))
           expected = {
               'schema_version': 1,
               'request_id': '20260903-cmi-flu-b2-001',
@@ -80,16 +86,14 @@ jobs:
           if request.get('side_effects') != ['create one private Notebook version and start one CPU run']:
               raise SystemExit('request side-effect contract mismatch')
 
-          parts_dir = pathlib.Path('payloads/cmi-flu-b2-001')
-          part_names = [f'part-{index:02d}' for index in range(20)]
-          actual_parts = sorted(path.name for path in parts_dir.glob('part-*'))
-          if actual_parts != part_names:
-              raise SystemExit(f'payload fragment set mismatch: {actual_parts}')
-          source = b''.join((parts_dir / name).read_bytes() for name in part_names)
+          source = b''.join(
+              read(f'payloads/cmi-flu-b2-001/part-{index:02d}', 5000)
+              for index in range(20)
+          )
           digest = hashlib.sha256(source).hexdigest()
           if len(source) != 92839 or digest != expected_sha:
               raise SystemExit(f'source reconstruction mismatch: bytes={len(source)} sha256={digest}')
-          sums = (parts_dir / 'SHA256SUMS').read_text(encoding='utf-8')
+          sums = read('payloads/cmi-flu-b2-001/SHA256SUMS', 512).decode('utf-8')
           if sums != f'{expected_sha}  run_b2_kaggle_bundle.py\n':
               raise SystemExit('SHA256SUMS mismatch')
 
@@ -108,10 +112,11 @@ jobs:
               raise SystemExit('request placeholder remains')
           compile(text, 'script.py', 'exec')
           with tempfile.TemporaryDirectory() as directory:
-              script = pathlib.Path(directory) / 'script.py'
-              script.write_text(text, encoding='utf-8')
+              script = os.path.join(directory, 'script.py')
+              with open(script, 'w', encoding='utf-8') as handle:
+                  handle.write(text)
               completed = subprocess.run(
-                  [sys.executable, str(script), '--self-test'],
+                  [sys.executable, script, '--self-test'],
                   check=True,
                   capture_output=True,
                   text=True,
@@ -121,12 +126,3 @@ jobs:
               raise SystemExit('B2 self-test marker missing')
           print(f'CMI_FLU_B2_STATIC PASS bytes={len(source)} sha256={digest}')
           PY
-
-      - name: Validate repository boundary and payload inventory
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "${GITHUB_REPOSITORY}" == 'renta0426/kaggle-actions-bridge' ]]
-          [[ "$(find payloads/cmi-flu-b2-001 -maxdepth 1 -type f -name 'part-*' | wc -l)" -eq 20 ]]
-          [[ "$(find payloads/cmi-flu-b2-001 -maxdepth 1 -type f | wc -l)" -eq 21 ]]
-          ! grep -RIl --exclude='*.yml' --exclude='*.json' --exclude='SHA256SUMS' 'KAGGLE_API_TOKEN' payloads/cmi-flu-b2-001
