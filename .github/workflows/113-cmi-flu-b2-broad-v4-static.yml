@@ -1,0 +1,135 @@
+name: CMI-Flu B2 broad request 004 static validation
+
+on:
+  push:
+    branches:
+      - ops/cmi-flu-b2-broad-004
+    paths:
+      - .github/workflows/113-cmi-flu-b2-broad-v4-static.yml
+      - .github/workflows/114-cmi-flu-b2-broad-v4-launch.yml
+      - requests/cmi-flu-b2-launch-v4.json
+      - scripts/cmi_flu_b2_patch_v4.py
+      - payloads/cmi-flu-b2-broad-004/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/113-cmi-flu-b2-broad-v4-static.yml
+      - .github/workflows/114-cmi-flu-b2-broad-v4-launch.yml
+      - requests/cmi-flu-b2-launch-v4.json
+      - scripts/cmi_flu_b2_patch_v4.py
+      - payloads/cmi-flu-b2-broad-004/**
+
+permissions: {}
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  REQUEST_PATH: requests/cmi-flu-b2-launch-v4.json
+  PATCHER_PATH: scripts/cmi_flu_b2_patch_v4.py
+  LAUNCH_PATH: .github/workflows/114-cmi-flu-b2-broad-v4-launch.yml
+  PAYLOAD_DIR: payloads/cmi-flu-b2-broad-004
+  EXPECTED_SOURCE_SHA256: 7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db
+  EXPECTED_SOURCE_SIZE: "93363"
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Reconstruct, verify, patch, compile, and self-test broad B2
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib, os, pathlib, ssl, sys, urllib.request
+
+          root = pathlib.Path(sys.argv[1])
+          base = f"https://raw.githubusercontent.com/{os.environ['EXPECTED_REPOSITORY']}/{os.environ['EVENT_SHA']}/"
+
+          def read(path: str, limit: int) -> bytes:
+              request = urllib.request.Request(base + path, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"input exceeds byte budget: {path}")
+              return data
+
+          parts = [read(f"{os.environ['PAYLOAD_DIR']}/part-{index:02d}", 5000) for index in range(20)]
+          source = b"".join(parts)
+          digest = hashlib.sha256(source).hexdigest()
+          if len(source) != int(os.environ["EXPECTED_SOURCE_SIZE"]) or digest != os.environ["EXPECTED_SOURCE_SHA256"]:
+              raise SystemExit(f"B2 broad payload mismatch: bytes={len(source)} sha256={digest}")
+          sums = read(f"{os.environ['PAYLOAD_DIR']}/SHA256SUMS", 512).decode("utf-8")
+          size = read(f"{os.environ['PAYLOAD_DIR']}/SIZE", 64).decode("utf-8")
+          if sums != f"{digest}  run_b2_kaggle_bundle.py\n" or size != f"{len(source)}\n":
+              raise SystemExit("B2 broad transfer manifest mismatch")
+          (root / "source.py").write_bytes(source)
+          (root / "request.json").write_bytes(read(os.environ["REQUEST_PATH"], 32768))
+          (root / "patch.py").write_bytes(read(os.environ["PATCHER_PATH"], 32768))
+          (root / "launch.yml").write_bytes(read(os.environ["LAUNCH_PATH"], 32768))
+          print(f"CMI_FLU_B2_004_TRANSFER PASS bytes={len(source)} sha256={digest} parts={len(parts)}")
+          PY
+          python3 "${workdir}/patch.py" \
+            --source "${workdir}/source.py" \
+            --request "${workdir}/request.json" \
+            --output "${workdir}/script.py"
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/patch.py" "${workdir}/script.py"
+          python3 "${workdir}/script.py" --self-test
+
+          python3 - "${workdir}/script.py" "${workdir}/launch.yml" <<'PY'
+          import ast, pathlib, sys
+          text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          launch = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+          tree = ast.parse(text)
+          request_assignments = [
+              node for node in tree.body
+              if isinstance(node, ast.Assign)
+              and len(node.targets) == 1
+              and isinstance(node.targets[0], ast.Name)
+              and node.targets[0].id == "REQUEST_ID"
+          ]
+          if len(request_assignments) != 1 or ast.literal_eval(request_assignments[0].value) != "20260903-cmi-flu-b2-004":
+              raise SystemExit("B2 request 004 runtime identity mismatch")
+          if '.rglob("sample_submission_part1.csv")' not in text:
+              raise SystemExit("B2 request 004 recursive mount locator missing")
+          if text.count("kernels push") or text.count("competitions submit"):
+              raise SystemExit("B2 runtime source unexpectedly contains Kaggle write commands")
+
+          required_launch = (
+              "permissions: {}",
+              "group: kaggle-resource-global",
+              "queue: max",
+              "environment: kaggle-readonry",
+              "TARGET_KERNEL: renta0426/cmi-flu-b2-taskwise-compact-broad-20260903-004",
+              "enable_gpu\": False",
+              "enable_tpu\": False",
+              "enable_internet\": False",
+              "automatic_compute_retries=0",
+              "KERNEL_LAUNCH PASS request_id=20260903-cmi-flu-b2-004",
+          )
+          for token in required_launch:
+              if token not in launch:
+                  raise SystemExit(f"B2 request 004 launch guard missing: {token}")
+          if launch.count('"${WORKDIR}/venv/bin/kaggle" kernels push') != 1:
+              raise SystemExit("B2 request 004 launch must contain exactly one executable kernels push")
+          if "competitions submit" in launch.lower() or "kernels delete" in launch.lower():
+              raise SystemExit("B2 request 004 launch contains an unauthorized Kaggle write")
+          if "actions/upload-artifact" in launch.lower() or "actions/cache" in launch.lower():
+              raise SystemExit("B2 request 004 launch exposes private artifact/cache capability")
+          if launch.count("secrets.KAGGLE_API_TOKEN") != 2:
+              raise SystemExit("B2 request 004 secret scope count mismatch")
+          print("CMI_FLU_B2_004_STATIC PASS request=004 flow=broad locator=recursive submit_commands=0 kernels_push=1")
+          PY
