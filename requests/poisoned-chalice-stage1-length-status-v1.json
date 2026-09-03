@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-poisoned-chalice-stage1-length-status-001",
+  "parent_request_id": "20260903-poisoned-chalice-stage1-length-interactions-run-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_status_output",
+  "target": "renta0426/stage1-length-interactions-v1",
+  "expected_kernel_version": 1,
+  "output_allowlist": [
+    "run_manifest.json",
+    "submission.csv",
+    "feature_schema.json",
+    "source_shards.json"
+  ],
+  "verifier_path": "scripts/validate_poisoned_chalice_stage1_length_interaction_output.py",
+  "verifier_blob_sha": "296912b1cd6f157e326782a9985d021614878fd5",
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": []
+}
