@@ -1,0 +1,75 @@
+name: repair-b2-status-static-self-reference
+
+on:
+  push:
+    branches:
+      - ops/cmi-flu-b2-status-001
+    paths:
+      - .github/workflows/99a-fix-b2-status-static.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.ref == 'refs/heads/ops/cmi-flu-b2-status-001'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Patch the self-referential forbidden-token scan through the Contents API
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ops/cmi-flu-b2-status-001
+          TARGET_PATH: .github/workflows/99-cmi-flu-b2-status.yml
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          repository = os.environ['REPOSITORY']
+          branch = os.environ['BRANCH']
+          path = os.environ['TARGET_PATH']
+          token = os.environ['GH_TOKEN']
+          api = f'https://api.github.com/repos/{repository}/contents/{path}?ref={branch}'
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'User-Agent': 'kaggle-actions-bridge-repair/1',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          request = urllib.request.Request(api, headers=headers)
+          with urllib.request.urlopen(request, timeout=30) as response:
+              payload = json.load(response)
+          text = base64.b64decode(payload['content']).decode('utf-8')
+          old = """          forbidden = (\n              'kernels push',\n              'competitions submit',\n              'kernels delete',\n              'datasets create',\n              'datasets version',\n              'models create',\n              'upload-artifact',\n              '--follow',\n          )\n"""
+          new = """          forbidden = (\n              'kernels ' + 'push',\n              'competitions ' + 'submit',\n              'kernels ' + 'delete',\n              'datasets ' + 'create',\n              'datasets ' + 'version',\n              'models ' + 'create',\n              'upload-' + 'artifact',\n              '--' + 'follow',\n          )\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one self-referential block, found {text.count(old)}')
+          updated = text.replace(old, new)
+          if updated == text:
+              raise SystemExit('status workflow was not changed')
+          body = json.dumps({
+              'message': 'ci: avoid self-referential B2 verifier scan',
+              'content': base64.b64encode(updated.encode('utf-8')).decode('ascii'),
+              'sha': payload['sha'],
+              'branch': branch,
+          }).encode('utf-8')
+          write = urllib.request.Request(
+              f'https://api.github.com/repos/{repository}/contents/{path}',
+              data=body,
+              headers={**headers, 'Content-Type': 'application/json'},
+              method='PUT',
+          )
+          with urllib.request.urlopen(write, timeout=30) as response:
+              result = json.load(response)
+          print(f"B2_STATUS_STATIC_REPAIRED commit={result['commit']['sha']}")
+          PY
