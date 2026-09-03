@@ -11,6 +11,8 @@
   "base_builder_blob_sha": "a10c7a76be1a4d700d7b1d9846e42348c5711651",
   "builder_script_path": "scripts/poisoned_chalice_stage1_length_interaction_builder_v2.py",
   "builder_blob_sha": "8f2cd12ecbad8160e86bbd42cf9b70649e1aa56b",
+  "launcher_script_path": "scripts/poisoned_chalice_stage1_length_interaction_launch_v2.py",
+  "launcher_blob_sha": "9db49fa2160a7fe40beb447bf0f2dbe858f3ba9d",
   "repair": {
     "failed_target": "renta0426/stage1-length-interactions-v1",
     "failed_version": 1,
