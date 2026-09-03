@@ -556,7 +556,7 @@ def _rank_compact_candidates(
 
 
 '''
-    replace_between(path, "def run_compact_task(\n", "def _post_hai_metrics(\n", compact)
+    replace_between(path, "def run_compact_task(\n", "def _resolve_hai_panel(\n", compact)
 
     replace_once(
         path,
