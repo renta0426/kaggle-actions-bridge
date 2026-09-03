@@ -501,8 +501,8 @@ jobs:
               "83cce2605fbdf6a3868627e9b0a5924e0072b94d",
               "min_kpp_zselect_10__max",
               "best_local_64__max",
-              "target_labels_embedded_in_gpu_notebook=False",
-              "public_leaderboard_tuning_used=False",
+              '"target_labels_embedded_in_gpu_notebook": False',
+              '"public_leaderboard_tuning_used": False',
           )
           if not all(token in joined for token in required):
               raise SystemExit("generated scientific contract markers missing")
