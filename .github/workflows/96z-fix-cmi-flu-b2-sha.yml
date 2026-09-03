@@ -1,0 +1,84 @@
+name: repair-cmi-flu-b2-source-sha
+
+on:
+  push:
+    branches:
+      - ops/cmi-flu-b2-001
+    paths:
+      - .github/workflows/96z-fix-cmi-flu-b2-sha.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.ref == 'refs/heads/ops/cmi-flu-b2-001'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ops/cmi-flu-b2-001
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Replace the transcribed SHA with the reconstructed SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import pathlib
+
+          old = 'a039b5689dbcd3ae47fc7c07cd91a6505c28180f8495cf9a149066b72fb8f383'
+          new = 'a039b56868e5f9e2f10ae8016466a02fe4a6e5342854487ca6c6a198a21abd5e'
+          paths = [
+              pathlib.Path('requests/cmi-flu-b2-launch-v1.json'),
+              pathlib.Path('payloads/cmi-flu-b2-001/SHA256SUMS'),
+              pathlib.Path('.github/workflows/97-cmi-flu-b2-static.yml'),
+              pathlib.Path('.github/workflows/97b-cmi-flu-b2-launch-static.yml'),
+              pathlib.Path('.github/workflows/98-cmi-flu-b2-launch.yml'),
+          ]
+          counts = {}
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count < 1:
+                  raise SystemExit(f'old SHA not found in {path}')
+              path.write_text(text.replace(old, new), encoding='utf-8')
+              counts[str(path)] = count
+
+          parts = [
+              pathlib.Path(f'payloads/cmi-flu-b2-001/part-{index:02d}').read_bytes()
+              for index in range(20)
+          ]
+          source = b''.join(parts)
+          actual = hashlib.sha256(source).hexdigest()
+          if len(source) != 92839 or actual != new:
+              raise SystemExit(f'reconstructed payload differs: bytes={len(source)} sha256={actual}')
+          sums = pathlib.Path('payloads/cmi-flu-b2-001/SHA256SUMS').read_text(encoding='utf-8')
+          if sums != f'{new}  run_b2_kaggle_bundle.py\n':
+              raise SystemExit('SHA256SUMS was not repaired exactly')
+          print(f'CMI_FLU_B2_SHA_REPAIRED occurrences={sum(counts.values())} sha256={actual}')
+          PY
+          git diff --check
+
+      - name: Commit the audited repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            requests/cmi-flu-b2-launch-v1.json \
+            payloads/cmi-flu-b2-001/SHA256SUMS \
+            .github/workflows/97-cmi-flu-b2-static.yml \
+            .github/workflows/97b-cmi-flu-b2-launch-static.yml \
+            .github/workflows/98-cmi-flu-b2-launch.yml
+          git commit -m 'fix: bind B2 request to reconstructed source SHA'
+          git push origin HEAD:ops/cmi-flu-b2-001
