@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-cmi-flu-baseline-diagnostics-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-baseline-diagnostics-20260903-001",
+  "purpose": "aggregate B1 anchor diagnostics and B2 negative controls; no submission",
+  "source": {
+    "builder_path": "scripts/cmi_flu_baseline_diagnostics_builder.py",
+    "builder_blob_sha": "1a691b3706a069de4a998f048ad0d93595256d8c",
+    "diagnostics_cmi_commit": "6cc984f6bd2e8e744795c14d13034def2c5dc9e7",
+    "diagnostics_blob_sha": "6dd5e9f69095b5db63fded3913f22c0041a30f2a",
+    "negative_controls_blob_sha": "250d255e9f5e768238143b14b89325f4ccb0f111",
+    "base_b2_request": "20260903-cmi-flu-b2-004",
+    "base_payload_dir": "payloads/cmi-flu-b2-broad-004",
+    "base_payload_sha256": "7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db",
+    "base_package_sha256": "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3"
+  },
+  "outputs": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 180,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "submission_created": false,
+  "submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-03T11:14:00Z"
+}
