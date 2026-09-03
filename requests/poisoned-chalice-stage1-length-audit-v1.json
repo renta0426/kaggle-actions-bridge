@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-poisoned-chalice-stage1-length-audit-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "private_dataset_readonly_cpu_analysis",
+  "source_dataset": "renta0426/stage1-raw-fim-submission-v1-output",
+  "source_dataset_version": 1,
+  "expected_feature_shards": {
+    "train_10k": 40,
+    "validation_5k": 20,
+    "rows_per_shard": 250
+  },
+  "analysis_script_path": "scripts/poisoned_chalice_stage1_length_audit_v1.py",
+  "analysis_script_blob_sha": "96c326cc432bab17b800735da059e2368e95d47a",
+  "research_source": {
+    "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+    "branch": "analysis/stage1-length-audit-v1",
+    "commit": "faeac269c7a5f332e4991f540260a290563e35b6",
+    "path": "scripts/run_stage1_length_audit.py",
+    "git_blob_sha": "08ad7cb7832ff87713c396e0b602a100483cdd3b"
+  },
+  "analysis_contract": {
+    "rows": 10000,
+    "base_features": 113,
+    "structure_features": 50,
+    "fim_features": 11,
+    "baseline": "raw_plus_fim",
+    "expected_baseline_auc": 0.664524,
+    "baseline_auc_tolerance": 0.002,
+    "seeds": [2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036],
+    "candidates": [
+      "raw_plus_fim",
+      "no_explicit_length",
+      "replace_raw_length_with_log",
+      "plus_log_length",
+      "plus_length_interactions"
+    ],
+    "diagnostics": ["length_only_raw", "length_only_log"],
+    "selection_uses_public_lb": false,
+    "mellum_labels_used": false,
+    "model_forward_pass": false
+  },
+  "resource": {
+    "execution": "github_hosted_cpu",
+    "kaggle_compute": false,
+    "accelerator": "none",
+    "expected_runtime_minutes": 20,
+    "hard_timeout_minutes": 60
+  },
+  "download_budget": {
+    "max_dataset_files": 150,
+    "max_dataset_bytes": 1073741824,
+    "max_api_calls": 12,
+    "max_pages": 2
+  },
+  "output_policy": {
+    "row_level_outputs_logged": false,
+    "actions_artifact": false,
+    "actions_cache": false,
+    "retain_private_dataset_on_runner": false,
+    "aggregate_outputs_logged": true
+  },
+  "side_effects": [],
+  "automatic_retries": 0,
+  "competition_submission": false
+}
