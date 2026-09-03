@@ -1,0 +1,106 @@
+name: Poisoned Chalice Mellum transfer v1 static validation
+
+on:
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-mellum-transfer-v1-launch.json
+      - scripts/poisoned_chalice_mellum_transfer_builder.py
+      - scripts/poisoned_chalice_nbformat_minimal.py
+      - scripts/validate_poisoned_chalice_mellum_launch.py
+      - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-static.yml
+      - .github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml
+  push:
+    branches:
+      - ops/poisoned-chalice-mellum-v1-001
+    paths:
+      - requests/poisoned-chalice-mellum-transfer-v1-launch.json
+      - scripts/poisoned_chalice_mellum_transfer_builder.py
+      - scripts/poisoned_chalice_nbformat_minimal.py
+      - scripts/validate_poisoned_chalice_mellum_launch.py
+      - .github/workflows/110-poisoned-chalice-mellum-transfer-v1-static.yml
+      - .github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml
+
+permissions: {}
+
+concurrency:
+  group: mellum-transfer-v1-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate frozen Mellum bundle without credentials
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free GitHub-hosted boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
+          [[ "${EVENT_ACTOR}" == "renta0426" ]]
+          [[ "${EVENT_ACTOR_ID}" == "71638068" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY RESEARCH_REPO_READ_TOKEN AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          echo "MELLUM_STATIC_SECRET_FREE_BOUNDARY PASS"
+
+      - name: Fetch exact event files and run synthetic materialization test
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          from __future__ import annotations
+          import pathlib, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          files = {
+              "requests/poisoned-chalice-mellum-transfer-v1-launch.json": 32768,
+              "scripts/poisoned_chalice_mellum_transfer_builder.py": 131072,
+              "scripts/poisoned_chalice_nbformat_minimal.py": 32768,
+              "scripts/validate_poisoned_chalice_mellum_launch.py": 131072,
+              ".github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml": 131072,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path, limit in files.items():
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"source exceeds byte budget: {path}")
+              destination = root / path
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+          PY
+          python3 "${workdir}/scripts/validate_poisoned_chalice_mellum_launch.py" \
+            --request "${workdir}/requests/poisoned-chalice-mellum-transfer-v1-launch.json" \
+            --builder "${workdir}/scripts/poisoned_chalice_mellum_transfer_builder.py" \
+            --shim "${workdir}/scripts/poisoned_chalice_nbformat_minimal.py" \
+            --launch-workflow "${workdir}/.github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml"
