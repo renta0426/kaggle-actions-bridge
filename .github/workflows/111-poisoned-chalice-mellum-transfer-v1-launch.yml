@@ -1,0 +1,549 @@
+name: Poisoned Chalice Mellum transfer v1 guarded GPU launch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requests/poisoned-chalice-mellum-transfer-v1-launch.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-mellum-transfer-v1-launch.json
+  BUILDER_PATH: scripts/poisoned_chalice_mellum_transfer_builder.py
+  SHIM_PATH: scripts/poisoned_chalice_nbformat_minimal.py
+  VALIDATOR_PATH: scripts/validate_poisoned_chalice_mellum_launch.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/mellum-transfer-v1
+  TARGET_SLUG: mellum-transfer-v1
+  SOURCE_KERNEL: renta0426/pseudo-stage2-starcoder2-7b-v1
+  SOURCE_EXPECTED_VERSION: "1"
+  REQUESTED_ACCELERATOR: gpu
+  EXPECTED_PUBLIC_SCORE: "0.34575"
+
+jobs:
+  validate:
+    name: Validate immutable Mellum request without credentials
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY RESEARCH_REPO_READ_TOKEN AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          echo "MELLUM_SECRET_FREE_BOUNDARY PASS"
+
+      - name: Fetch and validate exact request and source files
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          from __future__ import annotations
+          import pathlib, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          files = {
+              "requests/poisoned-chalice-mellum-transfer-v1-launch.json": 32768,
+              "scripts/poisoned_chalice_mellum_transfer_builder.py": 131072,
+              "scripts/poisoned_chalice_nbformat_minimal.py": 32768,
+              "scripts/validate_poisoned_chalice_mellum_launch.py": 131072,
+              ".github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml": 131072,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path, limit in files.items():
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              destination = root / path
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+          PY
+          python3 "${workdir}/${VALIDATOR_PATH}" \
+            --request "${workdir}/${REQUEST_PATH}" \
+            --builder "${workdir}/${BUILDER_PATH}" \
+            --shim "${workdir}/${SHIM_PATH}" \
+            --launch-workflow "${workdir}/.github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml"
+
+      - name: Cleanup validation material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "MELLUM_VALIDATION_TEMPORARY_CONTENT_REMOVED"
+
+  launch:
+    name: Admit or launch exactly one private Mellum T4 run
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_NAME}" == "push" ]]
+          [[ "${EVENT_REF}" == "refs/heads/main" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo "PROTECTED_MELLUM_LAUNCH_BOUNDARY PASS max_active_account_runs=0"
+
+      - name: Prepare exact materializer and SHA-locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib, json, pathlib, re, ssl, sys, urllib.request
+          from urllib.parse import urlparse
+
+          sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          files = {
+              "requests/poisoned-chalice-mellum-transfer-v1-launch.json": 32768,
+              "scripts/poisoned_chalice_mellum_transfer_builder.py": 131072,
+              "scripts/poisoned_chalice_nbformat_minimal.py": 32768,
+              "scripts/validate_poisoned_chalice_mellum_launch.py": 131072,
+              ".github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml": 131072,
+              "requirements/kaggle-2.2.4.lock": 65536,
+          }
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+              RejectRedirects(),
+          )
+          for path, limit in files.items():
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              parsed = urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+                  raise SystemExit("unexpected bridge source origin")
+              with opener.open(url, timeout=30) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise SystemExit(f"bridge source exceeds byte budget: {path}")
+              destination = root / path
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(data)
+
+          request = json.loads((root / "requests/poisoned-chalice-mellum-transfer-v1-launch.json").read_text())
+          for path_key, sha_key in (
+              ("builder_path", "builder_blob_sha"),
+              ("nbformat_shim_path", "nbformat_shim_blob_sha"),
+          ):
+              data = (root / request[path_key]).read_bytes()
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+              if blob != request[sha_key]:
+                  raise SystemExit(f"Git blob mismatch: {path_key}")
+
+          lock = (root / "requirements/kaggle-2.2.4.lock").read_text(encoding="utf-8")
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          lines = [line.strip() for line in lock.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle CLI lock validation failed")
+          if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
+              raise SystemExit("Kaggle CLI 2.2.4 pin missing")
+          PY
+          python3 "${workdir}/${VALIDATOR_PATH}" \
+            --request "${workdir}/${REQUEST_PATH}" \
+            --builder "${workdir}/${BUILDER_PATH}" \
+            --shim "${workdir}/${SHIM_PATH}" \
+            --launch-workflow "${workdir}/.github/workflows/111-poisoned-chalice-mellum-transfer-v1-launch.yml"
+          mkdir -p "${workdir}/tool"
+          cp "${workdir}/${BUILDER_PATH}" "${workdir}/tool/builder.py"
+          cp "${workdir}/${SHIM_PATH}" "${workdir}/tool/nbformat.py"
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes \
+            -r "${workdir}/requirements/kaggle-2.2.4.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "MELLUM_LOCKED_CLIENT_AND_MATERIALIZER PASS"
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl, urllib.request
+          for url in (
+              "https://www.kaggle.com/terms",
+              "https://www.kaggle.com/aup",
+              "https://www.kaggle.com/community-guidelines",
+              "https://www.kaggle.com/docs/api",
+          ):
+              request = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+          print("CURRENT_KAGGLE_POLICY_REACHABILITY PASS")
+          PY
+
+      - name: Verify live rules, score, source, quota, and account-wide admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import math, os, re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import (
+              ApiGetAcceleratorQuotaStatisticsRequest,
+              ApiGetKernelRequest,
+          )
+
+          api = KaggleApi(); api.authenticate()
+          competition = os.environ["TARGET_COMPETITION"]
+          target = os.environ["TARGET_KERNEL"]
+          target_slug = os.environ["TARGET_SLUG"]
+          source_ref = os.environ["SOURCE_KERNEL"]
+
+          pages = api.competition_list_pages(competition) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, "to_dict") else dict(page)
+              name = str(data.get("name") or "").strip().lower()
+              if name:
+                  content[name] = str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content or not any("data" in name for name in content):
+              raise SystemExit("live Competition policy pages unavailable")
+          plain = lambda value: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value.replace(r"\%", "%"))).casefold()
+          evaluation = plain(content["evaluation"])
+          if not all(term in evaluation for term in ("auc", "novelty", "1%", "false-positive")):
+              raise SystemExit("live Competition evaluation contract changed")
+
+          try:
+              submissions = api.competition_submissions(competition, page_size=100) or []
+          except TypeError:
+              submissions = api.competition_submissions(competition) or []
+
+          def value(item, *names):
+              data = item.to_dict() if hasattr(item, "to_dict") else (item if isinstance(item, dict) else {})
+              for name in names:
+                  candidate = getattr(item, name, None)
+                  if candidate is None:
+                      candidate = data.get(name)
+                  if candidate is not None:
+                      return candidate
+              return None
+
+          expected_score = float(os.environ["EXPECTED_PUBLIC_SCORE"])
+          score_match = False
+          for submission in submissions:
+              status = str(value(submission, "status") or "").upper()
+              raw_score = value(submission, "public_score", "publicScore")
+              try:
+                  score = float(raw_score)
+              except (TypeError, ValueError):
+                  continue
+              if "COMPLETE" in status and math.isclose(score, expected_score, rel_tol=0.0, abs_tol=5e-6):
+                  score_match = True
+                  break
+          if not score_match:
+              raise SystemExit("approved Stage1 Public score was not found in current submission history")
+
+          existing = api.kernels_list(user="renta0426", search=target_slug, page_size=20) or []
+          exact_refs = {str(getattr(item, "ref", "")) for item in existing}
+          if target in exact_refs:
+              raise SystemExit("target Mellum kernel already exists; duplicate launch refused")
+
+          source_status = str(getattr(api.kernels_status(source_ref), "status", "")).upper()
+          if "COMPLETE" not in source_status:
+              raise SystemExit(f"source kernel is not complete: {source_status}")
+          source_owner, source_slug = source_ref.split("/", 1)
+          with api.build_kaggle_client() as client:
+              source_request = ApiGetKernelRequest()
+              source_request.user_name = source_owner
+              source_request.kernel_slug = source_slug
+              source_details = client.kernels.kernels_api_client.get_kernel(source_request)
+              source_metadata = source_details.metadata
+              quota_request = ApiGetAcceleratorQuotaStatisticsRequest()
+              quota_response = client.kernels.kernels_api_client.get_accelerator_quota_statistics(quota_request)
+          if int(source_metadata.current_version_number) != int(os.environ["SOURCE_EXPECTED_VERSION"]):
+              raise SystemExit("source kernel version changed")
+          if not bool(source_metadata.is_private):
+              raise SystemExit("source kernel unexpectedly public")
+
+          gpu_msec = None
+          for stat in list(getattr(quota_response, "quota_stats", None) or []):
+              data = stat.to_dict() if hasattr(stat, "to_dict") else {}
+              remaining = getattr(stat, "remaining_amount", None)
+              if remaining is None:
+                  remaining = data.get("remainingAmount") or data.get("remaining_amount")
+              for key, candidate in data.items():
+                  if "gpu" in str(key).casefold() and isinstance(candidate, (int, float)):
+                      gpu_msec = max(gpu_msec or 0.0, float(candidate))
+              if remaining is not None and "gpu" in str(stat).casefold():
+                  gpu_msec = max(gpu_msec or 0.0, float(remaining))
+          if gpu_msec is None:
+              raise SystemExit("GPU quota could not be determined")
+          gpu_hours = gpu_msec / 3_600_000.0
+          if gpu_hours < 4.0:
+              raise SystemExit(f"insufficient GPU quota: {gpu_hours:.2f} hours")
+
+          active = 0
+          uncertain = 0
+          recent = api.kernels_list(user="renta0426", sort_by="dateRun", page_size=25) or []
+          for item in recent[:25]:
+              ref = str(getattr(item, "ref", ""))
+              if not ref:
+                  continue
+              try:
+                  status = str(getattr(api.kernels_status(ref), "status", "")).upper()
+              except Exception:
+                  uncertain += 1
+                  continue
+              if any(token in status for token in ("RUNNING", "QUEUED", "PENDING")):
+                  active += 1
+          can_launch = active == 0 and uncertain == 0
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
+          if can_launch:
+              print(
+                  "MELLUM_LIVE_PREFLIGHT PASS "
+                  f"score={expected_score:.5f} source_version=1 gpu_quota_hours={gpu_hours:.2f} "
+                  "active_account_runs=0 max_active_account_runs=0"
+              )
+          else:
+              print(
+                  "MELLUM_LAUNCH_DEFERRED "
+                  f"active_account_runs={active} uncertain_recent_statuses={uncertain} "
+                  "side_effect=false request_unexecuted=true"
+              )
+          PY
+
+      - name: Record deferred account-wide admission
+        if: steps.admission.outputs.can_launch != 'true'
+        shell: bash
+        run: |
+          echo "Mellum request was not executed because account-wide Kaggle resource state was active or uncertain."
+
+      - name: Pull exact source, build label-free notebook, and push once
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          source_dir="${WORKDIR}/source-kernel"
+          kernel_dir="${WORKDIR}/mellum-kernel"
+          mkdir -p "${source_dir}" "${kernel_dir}"
+
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels pull "${SOURCE_KERNEL}" -p "${source_dir}" -m \
+            >"${WORKDIR}/pull.stdout" 2>"${WORKDIR}/pull.stderr"
+          pull_rc=$?
+          set -e
+          rm -f "${WORKDIR}/pull.stdout" "${WORKDIR}/pull.stderr"
+          if [[ "${pull_rc}" -ne 0 ]]; then
+            echo "ERROR: exact private source-kernel pull failed; response suppressed"
+            exit 1
+          fi
+          mapfile -t source_notebooks < <(find "${source_dir}" -maxdepth 1 -type f -name '*.ipynb' -print)
+          [[ "${#source_notebooks[@]}" -eq 1 ]]
+          [[ -f "${source_dir}/kernel-metadata.json" ]]
+
+          PYTHONPATH="${WORKDIR}/tool" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/tool/builder.py" \
+            --source-notebook "${source_notebooks[0]}" \
+            --output-dir "${kernel_dir}" \
+            >"${WORKDIR}/builder.stdout" 2>"${WORKDIR}/builder.stderr"
+          rm -f "${WORKDIR}/builder.stdout" "${WORKDIR}/builder.stderr"
+
+          "${WORKDIR}/venv/bin/python" - "${kernel_dir}" <<'PY'
+          from __future__ import annotations
+          import ast, hashlib, json, pathlib, sys
+
+          root = pathlib.Path(sys.argv[1])
+          metadata = json.loads((root / "kernel-metadata.json").read_text(encoding="utf-8"))
+          expected = {
+              "id": "renta0426/mellum-transfer-v1",
+              "code_file": "mellum-transfer-v1.ipynb",
+              "kernel_type": "notebook",
+              "is_private": True,
+              "enable_gpu": True,
+              "enable_tpu": False,
+              "enable_internet": True,
+              "machine_shape": "NvidiaTeslaT4",
+              "dataset_sources": [],
+              "kernel_sources": [],
+              "competition_sources": [],
+              "model_sources": [],
+          }
+          for key, value in expected.items():
+              if metadata.get(key) != value:
+                  raise SystemExit(f"generated metadata mismatch: {key}")
+          notebook_path = root / metadata["code_file"]
+          if not notebook_path.is_file() or notebook_path.is_symlink():
+              raise SystemExit("generated notebook missing or symbolic")
+          raw = notebook_path.read_bytes()
+          if len(raw) > 5_000_000:
+              raise SystemExit("generated notebook exceeds 5 MB budget")
+          notebook = json.loads(raw)
+          if len(notebook.get("cells", [])) != 9:
+              raise SystemExit("generated notebook cell count changed")
+          records = None
+          code = []
+          for cell in notebook["cells"]:
+              if cell.get("cell_type") != "code":
+                  continue
+              source = cell.get("source", "")
+              source = "".join(source) if isinstance(source, list) else str(source)
+              code.append(source)
+              if "PREDICTION_MANIFEST = pd.DataFrame(" not in source:
+                  continue
+              tree = ast.parse(source)
+              for node in tree.body:
+                  if not isinstance(node, ast.Assign):
+                      continue
+                  if any(isinstance(target, ast.Name) and target.id == "PREDICTION_MANIFEST" for target in node.targets):
+                      records = ast.literal_eval(node.value.args[0])
+          if not isinstance(records, list) or len(records) != 2000:
+              raise SystemExit("embedded prediction manifest mismatch")
+          allowed = {"sample_id", "content_sha256", "language", "sample_index"}
+          if any(set(row) != allowed for row in records):
+              raise SystemExit("label or unexpected field crossed GPU notebook boundary")
+          if [row["sample_index"] for row in records] != list(range(2000)):
+              raise SystemExit("embedded prediction order mismatch")
+          joined = "\n".join(code)
+          required = (
+              "JetBrains/Mellum-4b-base",
+              "83cce2605fbdf6a3868627e9b0a5924e0072b94d",
+              "min_kpp_zselect_10__max",
+              "best_local_64__max",
+              "target_labels_embedded_in_gpu_notebook=False",
+              "public_leaderboard_tuning_used=False",
+          )
+          if not all(token in joined for token in required):
+              raise SystemExit("generated scientific contract markers missing")
+          digest = hashlib.sha256(raw).hexdigest()
+          print(f"MELLUM_GENERATED_BUNDLE PASS bytes={len(raw)} sha256={digest} labels_embedded=false")
+          PY
+
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 10800 \
+            >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          push_rc=$?
+          set -e
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${push_rc}" -ne 0 ]]; then
+            echo "ERROR: Kaggle Mellum kernel push failed; response suppressed"
+            exit 1
+          fi
+
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api = KaggleApi(); api.authenticate()
+          with api.build_kaggle_client() as client:
+              request = ApiGetKernelRequest()
+              request.user_name = "renta0426"
+              request.kernel_slug = "mellum-transfer-v1"
+              response = client.kernels.kernels_api_client.get_kernel(request)
+          metadata = response.metadata
+          if int(metadata.current_version_number) != 1:
+              raise SystemExit("unexpected Mellum kernel version after push")
+          if not bool(metadata.is_private) or not bool(metadata.enable_gpu) or bool(metadata.enable_tpu):
+              raise SystemExit("Mellum privacy/accelerator contract changed after push")
+          if not bool(metadata.enable_internet):
+              raise SystemExit("Mellum Internet contract changed after push")
+          print("MELLUM_LAUNCH PASS target=renta0426/mellum-transfer-v1 version=1 accelerator=gpu machine=NvidiaTeslaT4 automatic_compute_retries=0 competition_submission=false")
+          PY
+
+      - name: Cleanup runner-local private source and generated bundle
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "MELLUM_RUNNER_LOCAL_PRIVATE_CONTENT_REMOVED retention_days=0"
