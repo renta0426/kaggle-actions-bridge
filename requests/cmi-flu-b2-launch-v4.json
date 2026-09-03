@@ -1,0 +1,53 @@
+{
+  "schema_version": 4,
+  "request_id": "20260903-cmi-flu-b2-004",
+  "parent_request_id": "20260903-cmi-flu-b2-003",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-b2-taskwise-compact-broad-20260903-004",
+  "payload": {
+    "parts_dir": "payloads/cmi-flu-b2-broad-004",
+    "part_count": 20,
+    "size_bytes": 93363,
+    "source_sha256": "7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db",
+    "generated_source_commit": "d6297c36366ab5c3ef49b9077c2357277f82a708",
+    "merged_cmi_commit": "802d93bac61b97844adf846199863c7ca9604ea1",
+    "package_zip_sha256": "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3",
+    "request_id_replacement": {
+      "old": "REQUEST_ID = \"__REQUEST_ID__\"",
+      "new": "REQUEST_ID = \"20260903-cmi-flu-b2-004\"",
+      "count": 1
+    },
+    "mount_locator_patch": {
+      "old_sha256": "ec14e5dcb5fc8d33d01a3751dc81589290d32ddd79415665c25c56cf45987d21",
+      "new_sha256": "fdd1248fcea6527c4897c887a3a51200a4aa26f3aebf55e368b297bb94a7201e",
+      "count": 1,
+      "design": "recursively locate sample_submission_part1.csv under /kaggle/input and validate CORE_FILES in its parent"
+    },
+    "scientific_contract": {
+      "task_12_mode": "broad",
+      "task_13_mode": "broad",
+      "flow_target_source": "public_flow",
+      "broad_rank_strata": ["study_accession", "name", "_unit_key", "_material_key"],
+      "broad_raw_features": false,
+      "broad_log1p_features": false
+    }
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 240,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-03T07:00:00Z"
+}
