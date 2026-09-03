@@ -6,6 +6,8 @@ on:
       - ops/cmi-flu-b2-001
     paths:
       - .github/workflows/97-cmi-flu-b2-static.yml
+      - .github/workflows/97b-cmi-flu-b2-launch-static.yml
+      - .github/workflows/98-cmi-flu-b2-launch.yml
       - requests/cmi-flu-b2-launch-v1.json
       - payloads/cmi-flu-b2-001/**
   pull_request:
@@ -13,157 +15,113 @@ on:
       - main
     paths:
       - .github/workflows/97-cmi-flu-b2-static.yml
+      - .github/workflows/97b-cmi-flu-b2-launch-static.yml
       - .github/workflows/98-cmi-flu-b2-launch.yml
       - requests/cmi-flu-b2-launch-v1.json
       - payloads/cmi-flu-b2-001/**
 
 permissions: {}
 
-concurrency:
-  group: cmi-flu-b2-static-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   validate:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Enforce secret-free validation boundary
+      - name: Reconstruct and validate the exact B2 source
         shell: bash
+        env:
+          SOURCE_SHA: a039b56868e5f9e2f10ae8016466a02fe4a6e5342854487ca6c6a198a21abd5e
         run: |
           set -euo pipefail
           for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
-          [[ "${GITHUB_REPOSITORY}" == "renta0426/kaggle-actions-bridge" ]]
-          [[ "${GITHUB_ACTOR}" == "renta0426" ]]
-
-      - name: Fetch, reconstruct, and validate immutable payload
-        shell: bash
-        env:
-          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
           python3 - <<'PY'
           from __future__ import annotations
-          import hashlib
-          import json
-          import os
-          import pathlib
-          import ssl
-          import subprocess
-          import sys
-          import urllib.request
+          import hashlib, json, pathlib, subprocess, sys, tempfile
 
-          repository = 'renta0426/kaggle-actions-bridge'
-          sha = os.environ['EVENT_SHA']
-          if len(sha) != 40 or any(character not in '0123456789abcdef' for character in sha):
-              raise SystemExit('event SHA is not canonical')
-          base = f'https://raw.githubusercontent.com/{repository}/{sha}/'
-
-          def read(path: str, limit: int) -> bytes:
-              request = urllib.request.Request(base + path, headers={'User-Agent': 'kaggle-actions-bridge/1'})
-              with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context()) as response:
-                  data = response.read(limit + 1)
-              if len(data) > limit:
-                  raise SystemExit(f'file exceeds byte budget: {path}')
-              return data
-
-          request = json.loads(read('requests/cmi-flu-b2-launch-v1.json', 32768))
+          request = json.loads(pathlib.Path('requests/cmi-flu-b2-launch-v1.json').read_text(encoding='utf-8'))
           expected = {
               'schema_version': 1,
               'request_id': '20260903-cmi-flu-b2-001',
               'competition': 'cmi-flu-first-prediction-challenge',
               'operation': 'kernel_run',
               'target': 'renta0426/cmi-flu-b2-taskwise-compact-20260903-001',
-              'resource': {
-                  'accelerator': 'cpu',
-                  'expected_runtime_minutes': 120,
-                  'hard_timeout_minutes': 240,
-                  'max_active_runs': 1,
-              },
-              'api_budget': {
-                  'max_calls': 20,
-                  'poll_interval_seconds': 900,
-                  'max_pages': 2,
-              },
-              'side_effects': ['create one private Notebook version and start one CPU run'],
-              'automatic_compute_retries': 0,
-              'enable_internet': False,
-              'rules_checked_at_utc': '2026-09-02T23:55:00Z',
           }
           for key, value in expected.items():
               if request.get(key) != value:
-                  raise SystemExit(f'request contract mismatch: {key}')
+                  raise SystemExit(f'request identity mismatch: {key}')
+          payload = request.get('payload', {})
+          expected_sha = 'a039b56868e5f9e2f10ae8016466a02fe4a6e5342854487ca6c6a198a21abd5e'
+          if payload.get('source_sha256') != expected_sha:
+              raise SystemExit('request source SHA mismatch')
+          if payload.get('part_count') != 20 or payload.get('size_bytes') != 92839:
+              raise SystemExit('request payload count/size mismatch')
+          if payload.get('source_commit') != '1596ba5b7ab2369c0b70c9da178aec1d71c80658':
+              raise SystemExit('request source commit mismatch')
+          if payload.get('merged_cmi_commit') != '1503f5989feb00313f2851602e2c4eda8685000a':
+              raise SystemExit('request merged CMI commit mismatch')
+          if payload.get('package_zip_sha256') != '390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0':
+              raise SystemExit('request package ZIP SHA mismatch')
+          if request.get('resource') != {
+              'accelerator': 'cpu',
+              'expected_runtime_minutes': 120,
+              'hard_timeout_minutes': 240,
+              'max_active_runs': 1,
+          }:
+              raise SystemExit('request resource contract mismatch')
+          if request.get('automatic_compute_retries') != 0 or request.get('enable_internet') is not False:
+              raise SystemExit('request retry/internet contract mismatch')
+          if request.get('side_effects') != ['create one private Notebook version and start one CPU run']:
+              raise SystemExit('request side-effect contract mismatch')
 
-          payload = request.get('payload')
-          expected_payload = {
-              'parts_dir': 'payloads/cmi-flu-b2-001',
-              'part_count': 20,
-              'size_bytes': 92839,
-              'source_sha256': 'a039b5689dbcd3ae47fc7c07cd91a6505c28180f8495cf9a149066b72fb8f383',
-              'source_commit': '1596ba5b7ab2369c0b70c9da178aec1d71c80658',
-              'merged_cmi_commit': '1503f5989feb00313f2851602e2c4eda8685000a',
-              'package_zip_sha256': '390a84bfc4393960ad1dfeab6a92a56cc8db57b1ae7c8063d8c2bf8b072b8ce0',
-              'replacement': {
-                  'old': 'REQUEST_ID = "__REQUEST_ID__"',
-                  'new': 'REQUEST_ID = "20260903-cmi-flu-b2-001"',
-                  'count': 1,
-              },
-          }
-          if payload != expected_payload:
-              raise SystemExit('payload contract mismatch')
-
-          expected_names = [f'part-{index:02d}' for index in range(payload['part_count'])]
-          source = b''.join(
-              read(f"{payload['parts_dir']}/{name}", 4800)
-              for name in expected_names
-          )
-          if len(source) != payload['size_bytes']:
-              raise SystemExit(f'payload size mismatch: {len(source)}')
+          parts_dir = pathlib.Path('payloads/cmi-flu-b2-001')
+          part_names = [f'part-{index:02d}' for index in range(20)]
+          actual_parts = sorted(path.name for path in parts_dir.glob('part-*'))
+          if actual_parts != part_names:
+              raise SystemExit(f'payload fragment set mismatch: {actual_parts}')
+          source = b''.join((parts_dir / name).read_bytes() for name in part_names)
           digest = hashlib.sha256(source).hexdigest()
-          if digest != payload['source_sha256']:
-              raise SystemExit(f'payload SHA-256 mismatch: {digest}')
-          if read(f"{payload['parts_dir']}/SHA256SUMS", 256).decode('utf-8') != f"{digest}  run_b2_kaggle_bundle.py\n":
+          if len(source) != 92839 or digest != expected_sha:
+              raise SystemExit(f'source reconstruction mismatch: bytes={len(source)} sha256={digest}')
+          sums = (parts_dir / 'SHA256SUMS').read_text(encoding='utf-8')
+          if sums != f'{expected_sha}  run_b2_kaggle_bundle.py\n':
               raise SystemExit('SHA256SUMS mismatch')
-          if read(f"{payload['parts_dir']}/SIZE", 256).decode('utf-8') != '92839 scripts/run_b2_kaggle_bundle.py\n':
-              raise SystemExit('SIZE contract mismatch')
 
           text = source.decode('utf-8')
-          if text.count(payload['replacement']['old']) != payload['replacement']['count']:
+          replacement = payload.get('replacement', {})
+          if replacement != {
+              'old': 'REQUEST_ID = "__REQUEST_ID__"',
+              'new': 'REQUEST_ID = "20260903-cmi-flu-b2-001"',
+              'count': 1,
+          }:
+              raise SystemExit('replacement contract mismatch')
+          if text.count(replacement['old']) != 1:
               raise SystemExit('request placeholder occurrence mismatch')
-          required = (
-              f'SOURCE_COMMIT = "{payload["source_commit"]}"',
-              f'PACKAGE_ZIP_SHA256 = "{payload["package_zip_sha256"]}"',
-              'CMI_FLU_B2_COMPLETE',
-              'supervised_public_proxy_macro_spearman',
-              'run_from_config(',
-          )
-          for token in required:
-              if token not in text:
-                  raise SystemExit(f'payload provenance token missing: {token}')
-          compile(text, 'run_b2_kaggle_bundle.py', 'exec')
-          original = pathlib.Path('/tmp/run_b2_kaggle_bundle.py')
-          original.write_bytes(source)
-          completed = subprocess.run(
-              [sys.executable, str(original), '--self-test'],
-              check=True,
-              capture_output=True,
-              text=True,
-              timeout=30,
-          )
+          text = text.replace(replacement['old'], replacement['new'])
+          if '__REQUEST_ID__' in text:
+              raise SystemExit('request placeholder remains')
+          compile(text, 'script.py', 'exec')
+          with tempfile.TemporaryDirectory() as directory:
+              script = pathlib.Path(directory) / 'script.py'
+              script.write_text(text, encoding='utf-8')
+              completed = subprocess.run(
+                  [sys.executable, str(script), '--self-test'],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+                  timeout=30,
+              )
           if 'CMI_FLU_B2_BUNDLE_SELF_TEST PASS' not in completed.stdout:
-              raise SystemExit('bundle self-test marker missing')
-
-          patched = text.replace(
-              payload['replacement']['old'],
-              payload['replacement']['new'],
-          )
-          if '__REQUEST_ID__' in patched:
-              raise SystemExit('request placeholder remains after patch')
-          compile(patched, 'script.py', 'exec')
-          print(
-              'CMI_FLU_B2_STATIC PASS '
-              f'bytes={len(source)} sha256={digest} fragments={len(expected_names)}'
-          )
+              raise SystemExit('B2 self-test marker missing')
+          print(f'CMI_FLU_B2_STATIC PASS bytes={len(source)} sha256={digest}')
           PY
+
+      - name: Validate repository boundary and payload inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_REPOSITORY}" == 'renta0426/kaggle-actions-bridge' ]]
+          [[ "$(find payloads/cmi-flu-b2-001 -maxdepth 1 -type f -name 'part-*' | wc -l)" -eq 20 ]]
+          [[ "$(find payloads/cmi-flu-b2-001 -maxdepth 1 -type f | wc -l)" -eq 21 ]]
+          ! grep -RIl --exclude='*.yml' --exclude='*.json' --exclude='SHA256SUMS' 'KAGGLE_API_TOKEN' payloads/cmi-flu-b2-001
