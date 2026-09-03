@@ -1,0 +1,118 @@
+replace")
+    ).hexdigest()[:20]
+    payload = {
+        "schema_version": 1,
+        "request_id": REQUEST_ID,
+        "competition": COMPETITION,
+        "source_commit": SOURCE_COMMIT,
+        "stage": stage,
+        "exception_type": type(error).__name__,
+        "error_code": error_code,
+    }
+    (output_dir / "bridge-failure.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        "CMI_FLU_B2_FAILED "
+        f"stage={stage} exception_type={type(error).__name__} error_code={error_code}"
+    )
+
+
+def execute(input_dir: Path, output_dir: Path) -> Mapping[str, Any]:
+    stage = "initialize"
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runtime_root = output_dir / "runtime"
+    if runtime_root.exists():
+        shutil.rmtree(runtime_root)
+    runtime_root.mkdir(parents=True)
+
+    try:
+        stage = "materialize_package"
+        bundle = package_bytes()
+        package_path = runtime_root / "cmi_flu_bundle.zip"
+        package_path.write_bytes(bundle)
+        sys.path.insert(0, str(package_path))
+
+        stage = "prepare_runtime_tree"
+        data_parent = runtime_root / "data"
+        data_parent.mkdir(parents=True, exist_ok=True)
+        data_link = data_parent / "raw"
+        data_link.symlink_to(input_dir, target_is_directory=True)
+        reference_dir = (
+            runtime_root
+            / "external"
+            / "google-drive"
+            / "challenge-resources"
+            / "reference_files"
+        )
+        vaccine_panel, challenge_panel = derive_reference_files(input_dir, reference_dir)
+        config_dir = runtime_root / "configs"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "baseline_b02_taskwise.yaml"
+        config_path.write_text(CONFIG_TEXT, encoding="utf-8")
+
+        stage = "dependency_preflight"
+        import joblib
+        import numpy as np
+        import pandas as pd
+        import scipy
+        import sklearn
+        import yaml
+        _ = (joblib.__version__, np.__version__, pd.__version__, scipy.__version__, sklearn.__version__, yaml.__version__)
+
+        stage = "run_b02"
+        from cmi_flu.runner import run_from_config
+
+        result = run_from_config(
+            config_path,
+            repository_root=runtime_root,
+            verify_md5=True,
+        )
+
+        stage = "validate_outputs"
+        submission_path = Path(result.submission_path)
+        metrics_path = Path(result.metrics_path)
+        summary_path = Path(result.summary_path)
+        if result.validation_report.rows != 40:
+            raise BundleContractError("B2 submission row contract failed")
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        tasks = metrics.get("tasks")
+        selected = metrics.get("selected_models")
+        if not isinstance(tasks, dict) or set(tasks) != set(TASK_COLUMNS):
+            raise BundleContractError("B2 metrics task set mismatch")
+        if not isinstance(selected, dict) or set(selected) != set(TASK_COLUMNS):
+            raise BundleContractError("B2 selected-model task set mismatch")
+        if metrics.get("submission_validation", {}).get("rows") != 40:
+            raise BundleContractError("B2 metrics submission validation mismatch")
+
+        spearman = {task: task_cv_spearman(tasks, task) for task in TASK_COLUMNS}
+        rmse = {task: task_cv_rmse(tasks, task) for task in TASK_COLUMNS}
+        proxy_values = [spearman[task] for task in PUBLIC_PROXY_TASKS if spearman[task] is not None]
+        if len(proxy_values) < 4:
+            raise BundleContractError("fewer than four finite supervised Public-proxy Spearman values")
+        proxy_macro = float(sum(proxy_values) / len(proxy_values))
+
+        final_submission = output_dir / "submission.csv"
+        final_metrics = output_dir / "b2-metrics-safe.json"
+        final_summary = output_dir / "summary.md"
+        shutil.copy2(submission_path, final_submission)
+        shutil.copy2(metrics_path, final_metrics)
+        summary_text = summary_path.read_text(encoding="utf-8")
+        summary_text += (
+            "\n## Kaggle bundle provenance\n\n"
+            f"- request_id: `{REQUEST_ID}`\n"
+            f"- source_commit: `{SOURCE_COMMIT}`\n"
+            f"- package_sha256: `{PACKAGE_ZIP_SHA256}`\n"
+            f"- supervised_public_proxy_macro_spearman: `{proxy_macro:.12g}` "
+            f"({len(proxy_values)} finite tasks)\n"
+        )
+        final_summary.write_text(summary_text, encoding="utf-8")
+
+        stage = "finalize_manifest"
+        submission_sha = sha256_file(final_submission)
+        metrics_sha = sha256_file(final_metrics)
+        compact_tasks = {}
+        for task in TASK_COLUMNS:
+            item =
