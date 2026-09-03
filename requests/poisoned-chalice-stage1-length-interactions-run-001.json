@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "request_id": "20260903-poisoned-chalice-stage1-length-interactions-run-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/stage1-length-interactions-v1",
+  "source_dataset": "renta0426/stage1-raw-fim-submission-v1-output",
+  "source_dataset_version": 1,
+  "builder_script_path": "scripts/poisoned_chalice_stage1_length_interaction_builder.py",
+  "builder_blob_sha": "a10c7a76be1a4d700d7b1d9846e42348c5711651",
+  "research_evidence": {
+    "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+    "audit_commit": "faeac269c7a5f332e4991f540260a290563e35b6",
+    "aggregate_bridge_run_id": 33759558064,
+    "selected_variant": "plus_length_interactions",
+    "expected_oof_auc": 0.68013844,
+    "expected_tpr_at_0.01_fpr": 0.0682,
+    "public_lb_used_for_selection": false,
+    "mellum_labels_used": false
+  },
+  "resource": {
+    "execution": "kaggle_notebook",
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 12,
+    "hard_timeout_minutes": 45,
+    "max_active_runs": 2,
+    "enable_internet": false
+  },
+  "api_budget": {
+    "max_calls": 24,
+    "max_pages": 2,
+    "poll_interval_seconds": 0
+  },
+  "input_budget": {
+    "expected_train_shards": 40,
+    "expected_validation_shards": 20,
+    "expected_rows_per_shard": 250,
+    "max_dataset_files": 150,
+    "max_dataset_bytes": 1073741824
+  },
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version at renta0426/stage1-length-interactions-v1"
+  ],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "submission_inside_notebook": false
+}
