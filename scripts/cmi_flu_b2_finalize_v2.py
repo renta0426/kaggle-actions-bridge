@@ -3,7 +3,7 @@
 
 Kaggle's ListKernelSessionOutput RPC can return HTTP 404 while a newly created
 private kernel version has metadata but no published session output yet. The
-v1 finalizer treated that state as terminal. This wrapper preserves every v1
+v1 finalizer treated that state as terminal.  This wrapper preserves every v1
 verification/submission guard and converts only that exact 404 into an empty,
 non-terminal output snapshot so the existing bounded polling loop continues.
 """
