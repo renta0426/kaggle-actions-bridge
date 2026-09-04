@@ -1,0 +1,75 @@
+name: Cross-repo private caller boundary probe
+
+on:
+  workflow_call:
+    inputs:
+      expected_caller_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe private caller token and protected Kaggle secret boundary
+    if: >-
+      github.repository == 'renta0426/The-Poisoned-Chalice-of-LLM-Evaluation' &&
+      github.sha == inputs.expected_caller_sha
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Enforce exact caller boundary
+        shell: bash
+        env:
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CALLER_SHA: ${{ github.sha }}
+          EXPECTED_CALLER_SHA: ${{ inputs.expected_caller_sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${CALLER_REPOSITORY}" == "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation" ]]
+          [[ "${CALLER_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${CALLER_SHA}" == "${EXPECTED_CALLER_SHA}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          echo 'CROSS_REPO_CALLER_BOUNDARY PASS private_source_logged=false kaggle_calls=0 kaggle_writes=0'
+
+      - name: Verify caller GITHUB_TOKEN can read exact private source commit
+        shell: bash
+        env:
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CALLER_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ -n "${GH_TOKEN}" ]]
+          umask 077
+          response="$(mktemp)"
+          trap 'rm -f "${response}"' EXIT
+          curl --fail --silent --show-error \
+            --proto '=https' --tlsv1.2 \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${CALLER_REPOSITORY}/contents/AGENTS.MD?ref=${CALLER_SHA}" \
+            -o "${response}"
+          python3 - "${response}" <<'PY'
+          import json, pathlib, sys
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+          if payload.get('path') != 'AGENTS.MD' or payload.get('type') != 'file':
+              raise SystemExit('caller private source read contract failed')
+          if not isinstance(payload.get('sha'), str) or len(payload['sha']) != 40:
+              raise SystemExit('caller private source blob identity missing')
+          PY
+          echo 'CROSS_REPO_CALLER_TOKEN PASS private_repo_read=true content_emitted=false'
+
+      - name: Verify protected bridge Kaggle secret is available without using it
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" ]]
+          [[ "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          echo 'CROSS_REPO_BRIDGE_ENV PASS kaggle_secret_available=true kaggle_calls=0 kaggle_writes=0'
