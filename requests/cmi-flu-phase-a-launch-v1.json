@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-cmi-flu-phase-a-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-phase-a-b1-vs-b21-20260904-001",
+  "purpose": "run the pre-registered Phase A B1-vs-B2.1 same-contract aggregate diagnostics on Competition Data; do not create or submit a competition submission",
+  "science_source_commit": "0282262e049683135ec01a56f71b44a46356b194",
+  "science_main_merge_commit": "cd735ee41ed338e32cb6f27ae05c36d51cc03de0",
+  "phase_a_source_blob_sha": "bd9351a2857bc0964309ca117f60c766354066a0",
+  "native_phase_a_package_sha256": "e656f6cd355d4065c8340007e5493d80d38e6fca0e300cfd2b781096dfa6b1fd",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 240,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-04T00:24:00Z"
+}
