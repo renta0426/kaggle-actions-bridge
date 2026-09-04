@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-cmi-flu-anchor-residual-readout-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "current_kernel_output_read",
+  "target": "renta0426/cmi-flu-phase-a-anchor-residual-20260904-001",
+  "expected_kernel_version": 1,
+  "purpose": "Read the already-completed Phase A anchor-residual version 1 outputs and emit only the locked aggregate held-study diagnostics needed for the scientific report.",
+  "source_request_id": "20260904-cmi-flu-anchor-residual-001",
+  "science_source_commit": "23ab4ff53d65eeb8b8e5582f5442081f245f03b3",
+  "anchor_residual_blob_sha": "9a7814ecdf70e0b38b2740ade21e9db588869379",
+  "expected_output_sha256": {
+    "bridge-result.json": "20d052725855c06f76d3143b136116fb1a293e2226a924f755ee98eb2bc3ff3a",
+    "metrics.json": "791f8acd137179a320cdf3a1ec218d159bad5539f74861c6ca92101c2c8f82ee",
+    "summary.md": "4c4818572d2af8a666ca2067589596a1cfab826c4889d61226c9f70b7728b140"
+  },
+  "allowed_output_files": {
+    "bridge-result.json": 5242880,
+    "metrics.json": 5242880,
+    "summary.md": 1048576
+  },
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": [],
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "rules_checked_at_utc": "2026-09-04T08:40:16Z"
+}
