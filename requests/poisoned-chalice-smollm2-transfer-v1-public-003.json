@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-poisoned-chalice-smollm2-transfer-v1-003",
+  "parent_failed_requests": [
+    "20260903-poisoned-chalice-smollm2-transfer-v1-001",
+    "20260904-poisoned-chalice-smollm2-transfer-v1-002"
+  ],
+  "failure_repair": {
+    "prior_failure_class": "private_repository_token_dependency",
+    "prior_runs": [33758422614, 33817896342],
+    "prior_kaggle_write_occurred": false,
+    "scientific_protocol_changed": false,
+    "repair": "reconstruct the already-frozen cohort from its two pinned public sources and remove private-repository access from the launch path"
+  },
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/smollm2-transfer-v1",
+  "builder_path": "scripts/poisoned_chalice_smollm2_public_builder_v3.py",
+  "builder_blob_sha": "ca2d92cd3afa27ac4c3150c983207fa7c7685168",
+  "launcher_path": "scripts/poisoned_chalice_smollm2_public_launch_v3.py",
+  "launcher_blob_sha": "f950041e17ae2f3820e2e15be8adbae8f1c11dfa",
+  "target_model_id": "HuggingFaceTB/SmolLM2-1.7B",
+  "target_model_revision": "effd688a12921b4cc83e3312b6feb579f70f9c71",
+  "public_sources": {
+    "current_dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+    "current_dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "previous_competition_repository": "Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026",
+    "previous_competition_commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+    "previous_competition_eval_path": "data/7b_train_test/eval_results.parquet",
+    "previous_competition_eval_sha256": "6e8559279e8ebd94ec8c25561c91d38c454a4e109ea0813b07864ff6a66d4068",
+    "current_10k_seed": 2027,
+    "expected_current_overlap_excluded": 23,
+    "rows_per_language_label": 200,
+    "expected_rows": 2000
+  },
+  "stage2_v2": {
+    "nuisance_numeric": ["log1p(token_count)", "log1p(window_count)"],
+    "nuisance_categorical": ["language"],
+    "components": ["minkpp_length_residual", "logrank_length_residual"],
+    "within_language_percentile": true,
+    "weights": [0.5, 0.5],
+    "weights_searched": false
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 180,
+    "max_active_runs": 1,
+    "min_remaining_quota_hours": 3.0
+  },
+  "api_budget": {
+    "max_calls": 60,
+    "max_recent_kernels_inspected": 25,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "read two pinned public sources to reconstruct the frozen transfer cohort",
+    "create one private SmolLM2 Notebook version and start one T4 GPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "select_as_final": false,
+  "private_repository_content_used": false,
+  "clean_room": {
+    "target_labels_embedded_in_gpu_notebook": false,
+    "target_labels_used_for_training_or_normalization": false,
+    "previous_model_scores_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "public_leaderboard_tuning_used": false,
+    "competition_submission_created": false,
+    "cohort_selection_changed_after_mellum": false,
+    "stage2_v2_weights_searched": false
+  }
+}
