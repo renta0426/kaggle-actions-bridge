@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "experiment_id": "shadow-tpu-pilot-v2",
+  "phase": "P4-stage2-transfer",
+  "purpose": "TPU/XLA compatibility re-test after one scoped runtime-API repair; this pilot is not a scientific model-transfer comparison and must not be used to select Stage2-v3.",
+  "hypothesis": "After restoring only the two PyTorch/XLA aliases removed in release 2.7, both default controlled-shadow architecture code paths can execute the same frozen protocol on Kaggle TPU/XLA while preserving the original runtime invariants.",
+  "repair_from": "shadow-tpu-pilot-v1",
+  "repair_scope": {
+    "compatibility_layer": "shadow-xla-compat-v1",
+    "removed_api_aliases": {
+      "xla_model.get_ordinal": "torch_xla.runtime.global_ordinal",
+      "xla_model.xrt_world_size": "torch_xla.runtime.world_size"
+    },
+    "scientific_protocol_changed": false
+  },
+  "data": {
+    "kind": "synthetic_compatibility_only",
+    "evaluation_inputs_used": false,
+    "evaluation_labels_used": false,
+    "competition_train_rows_used": 0,
+    "synthetic_training_rows": 128,
+    "synthetic_languages": [
+      "Python-like",
+      "Rust-like"
+    ],
+    "membership_labels_exact_for_emitted_training_corpus": true
+  },
+  "protocol": {
+    "protocol_version": "controlled-shadow-protocol-v1",
+    "tokenizer": "lossless_utf8_bytes",
+    "max_sequence_tokens": 256,
+    "seed": 2027,
+    "global_batch_size": 64,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.1,
+    "warmup_fraction": 0.05,
+    "gradient_clip_norm": 1.0,
+    "architecture_slots": [
+      "left",
+      "right"
+    ],
+    "architecture_pair": [
+      "shadow-gpt2-byte-5m",
+      "shadow-llama-byte-5m"
+    ]
+  },
+  "runtime": {
+    "backend": "xla",
+    "accelerator": "tpu",
+    "machine_shape": "Tpu1VmV38",
+    "max_steps_per_architecture": 2,
+    "expected_world_size": 8,
+    "checkpoint_reload_atol": 1e-05,
+    "parameter_sync_atol": 1e-05,
+    "save_optimizer_state": true,
+    "automatic_compute_retries": 0,
+    "notebook_internet": false
+  },
+  "acceptance_gates": {
+    "both_architectures_complete": true,
+    "backend_must_equal": "xla",
+    "world_size_must_equal": 8,
+    "completed_steps_per_architecture": 2,
+    "finite_loss_required": true,
+    "cross_replica_parameter_checksum_spread_max": 1e-05,
+    "checkpoint_reload_required": true,
+    "checkpoint_reload_max_absolute_logit_difference": 1e-05,
+    "random_initialisation_required": true,
+    "pretrained_weights_forbidden": true,
+    "evaluation_inputs_read_forbidden": true,
+    "evaluation_labels_read_forbidden": true
+  },
+  "outputs": {
+    "persistent_files": [
+      "shadow_tpu_pilot_manifest.json"
+    ],
+    "persist_checkpoints": false,
+    "persist_training_corpus": false,
+    "persist_synthetic_protocol": false
+  },
+  "interpretation": {
+    "on_pass": "Authorize preparation of the full controlled architecture-only dual-shadow benchmark. This pilot provides no evidence for or against any membership attack and cannot tune Stage2-v3.",
+    "on_fail": "Do not retry automatically. Identify one concrete remaining XLA/runtime incompatibility, apply one scoped repair, and require a fresh Kaggle run approval.",
+    "smollm2_consumed_test_labels_used": false,
+    "stage2_v3_selection_allowed": false
+  }
+}
