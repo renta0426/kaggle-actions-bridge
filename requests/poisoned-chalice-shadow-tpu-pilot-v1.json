@@ -5,7 +5,7 @@
   "operation": "kernel_run",
   "target": "renta0426/shadow-tpu-pilot-v1",
   "launcher_path": "scripts/poisoned_chalice_shadow_tpu_pilot_v2.py",
-  "launcher_blob_sha": "694af61a72420d5e77578808ed98675d286a62ea",
+  "launcher_blob_sha": "17c77002d96c8b6f6cd136bee6305e0abeb8afdc",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
   "research_commit": "4e221829e37af88553e780488b27730cf167d6f8",
   "materialized_files": [
