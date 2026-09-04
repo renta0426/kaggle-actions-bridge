@@ -4,8 +4,8 @@
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
   "target": "renta0426/shadow-tpu-pilot-v1",
-  "launcher_path": "scripts/poisoned_chalice_shadow_tpu_pilot_v1.py",
-  "launcher_blob_sha": "481b138077557baf219a508be1710ea5a81afe92",
+  "launcher_path": "scripts/poisoned_chalice_shadow_tpu_pilot_v2.py",
+  "launcher_blob_sha": "e8c328ec0f4ff6b0a117ccbf622ac5e9c1f395dc",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
   "research_commit": "4e221829e37af88553e780488b27730cf167d6f8",
   "materialized_files": [
