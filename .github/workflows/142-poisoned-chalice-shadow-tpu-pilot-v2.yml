@@ -180,8 +180,9 @@ jobs:
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"
+          kernel_dir="${workdir}/kernel"
           echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
-          echo "KERNEL_DIR=${workdir}/kernel" >> "${GITHUB_ENV}"
+          echo "KERNEL_DIR=${kernel_dir}" >> "${GITHUB_ENV}"
           python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
           import hashlib, json, pathlib, re, ssl, sys, urllib.request
           from urllib.parse import urlparse
@@ -227,7 +228,7 @@ jobs:
               raise SystemExit("Kaggle CLI lock validation failed")
           PY
           python3 "${workdir}/${LAUNCHER_PATH}" --static --request "${workdir}/${REQUEST_PATH}" --launcher "${workdir}/${LAUNCHER_PATH}"
-          python3 "${workdir}/${LAUNCHER_PATH}" --materialize --request "${workdir}/${REQUEST_PATH}" --launcher "${workdir}/${LAUNCHER_PATH}" --snapshot-root "${workdir}" --kernel-dir "${KERNEL_DIR}"
+          python3 "${workdir}/${LAUNCHER_PATH}" --materialize --request "${workdir}/${REQUEST_PATH}" --launcher "${workdir}/${LAUNCHER_PATH}" --snapshot-root "${workdir}" --kernel-dir "${kernel_dir}"
           python3 -m venv "${workdir}/kaggle-venv"
           "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/${LOCK_PATH}" >/dev/null
           "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
