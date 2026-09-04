@@ -7,15 +7,16 @@ on:
       - .github/workflows/128-cmi-flu-phase-a-launch-v3.yml
       - requests/cmi-flu-phase-a-launch-v3.json
       - scripts/cmi_flu_phase_a_patch_v3.py
+      - scripts/cmi_flu_phase_a_prepare_v3.py
   pull_request:
     paths:
       - .github/workflows/128-cmi-flu-phase-a-launch-v3.yml
       - requests/cmi-flu-phase-a-launch-v3.json
       - scripts/cmi_flu_phase_a_patch_v3.py
+      - scripts/cmi_flu_phase_a_prepare_v3.py
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: kaggle-resource-global
@@ -26,26 +27,10 @@ env:
   EXPECTED_REPOSITORY_ID: "1354356687"
   EXPECTED_ACTOR: renta0426
   EXPECTED_ACTOR_ID: "71638068"
-  REQUEST_PATH: requests/cmi-flu-phase-a-launch-v3.json
-  B21_REQUEST_PATH: requests/cmi-flu-b21-launch-v1.json
-  BASE_REQUEST_PATH: requests/cmi-flu-b2-launch-v4.json
-  BASE_PATCHER_PATH: scripts/cmi_flu_b2_patch_v4.py
-  B21_PATCHER_PATH: scripts/cmi_flu_b21_patch.py
-  B21_ADAPTER_PATH: scripts/cmi_flu_b21_runtime_adapter.py
-  PHASE_A_PATCHER_V1_PATH: scripts/cmi_flu_phase_a_patch.py
-  PHASE_A_PATCHER_V2_PATH: scripts/cmi_flu_phase_a_patch_v2.py
-  PHASE_A_PATCHER_V3_PATH: scripts/cmi_flu_phase_a_patch_v3.py
-  BASE_PAYLOAD_DIR: payloads/cmi-flu-b2-broad-004
-  PHASE_A_PAYLOAD_DIR: payloads/cmi-flu-phase-a-001
-  LOCK_PATH: requirements/kaggle-2.2.4.lock
   TARGET_COMPETITION: cmi-flu-first-prediction-challenge
   TARGET_KERNEL: renta0426/cmi-flu-phase-a-b1-vs-b2-1-20260904-003
   TARGET_SLUG: cmi-flu-phase-a-b1-vs-b2-1-20260904-003
-  EXPECTED_PHASE_A_BLOB: bd9351a2857bc0964309ca117f60c766354066a0
-  EXPECTED_PHASE_A_PACKAGE_SHA256: e656f6cd355d4065c8340007e5493d80d38e6fca0e300cfd2b781096dfa6b1fd
-  EXPECTED_B21_ADAPTER_BLOB: de71dea0e335bdcd79325c0de926bf8848d0979f
-  EXPECTED_BASE_SHA256: 7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db
-  EXPECTED_BASE_SIZE: "93363"
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
 
 jobs:
   validate:
@@ -53,11 +38,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Enforce secret-free validation boundary
         shell: bash
         run: |
@@ -66,66 +46,36 @@ jobs:
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
 
-      - name: Validate manifest and immutable inputs
+      - name: Materialize exact commit and smoke-test Phase A 003
         shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${workdir}/repo" <<'PY'
           from __future__ import annotations
-          import hashlib, json, os, pathlib
-          root=pathlib.Path('.')
-          request=json.loads((root/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
-          allowed={
-              'schema_version','request_id','competition','operation','target','purpose',
-              'science_source_commit','phase_a_source_blob_sha','phase_a_package_zip_sha256',
-              'b21_base_request_id','failed_request_id','failed_request_error','resource',
-              'api_budget','side_effects','competition_submission_attempted',
-              'automatic_compute_retries','enable_internet','rules_checked_at_utc'
-          }
-          if set(request) != allowed: raise SystemExit(f'Phase A 003 manifest fields mismatch: {sorted(set(request)^allowed)}')
-          if request['schema_version'] != 1 or request['request_id'] != '20260904-cmi-flu-phase-a-003': raise SystemExit('Phase A 003 identity mismatch')
-          if request['competition'] != os.environ['TARGET_COMPETITION'] or request['target'] != os.environ['TARGET_KERNEL'] or request['operation'] != 'kernel_run': raise SystemExit('Phase A 003 target mismatch')
-          if request['science_source_commit'] != '0282262e049683135ec01a56f71b44a46356b194': raise SystemExit('Phase A 003 science provenance mismatch')
-          if request['phase_a_source_blob_sha'] != os.environ['EXPECTED_PHASE_A_BLOB'] or request['phase_a_package_zip_sha256'] != os.environ['EXPECTED_PHASE_A_PACKAGE_SHA256']: raise SystemExit('Phase A 003 source/package mismatch')
-          if request['b21_base_request_id'] != '20260903-cmi-flu-b21-001' or request['failed_request_id'] != '20260904-cmi-flu-phase-a-002': raise SystemExit('Phase A 003 lineage mismatch')
-          if request['competition_submission_attempted'] is not False or request['automatic_compute_retries'] != 0 or request['enable_internet'] is not False: raise SystemExit('Phase A 003 safety mismatch')
-          if request['resource'] != {'accelerator':'cpu','expected_runtime_minutes':120,'hard_timeout_minutes':240,'max_active_runs':1}: raise SystemExit('Phase A 003 resource mismatch')
-          if request['api_budget'] != {'max_calls':20,'poll_interval_seconds':900,'max_pages':2}: raise SystemExit('Phase A 003 API budget mismatch')
-          adapter=(root/os.environ['B21_ADAPTER_PATH']).read_bytes()
-          adapter_blob=hashlib.sha1(b'blob '+str(len(adapter)).encode()+b'\0'+adapter).hexdigest()
-          if adapter_blob != os.environ['EXPECTED_B21_ADAPTER_BLOB']: raise SystemExit('B2.1 adapter blob mismatch')
-          phase=(root/f"{os.environ['PHASE_A_PAYLOAD_DIR']}/part-00").read_bytes().rstrip(b'\n')+b'\n'+(root/f"{os.environ['PHASE_A_PAYLOAD_DIR']}/part-01").read_bytes().lstrip(b'\n').rstrip(b'\n')+b'\n'
-          phase_blob=hashlib.sha1(b'blob '+str(len(phase)).encode()+b'\0'+phase).hexdigest()
-          if phase_blob != os.environ['EXPECTED_PHASE_A_BLOB']: raise SystemExit('staged Phase A source blob mismatch')
-          base=b''.join((root/f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}").read_bytes() for i in range(20))
-          if len(base) != int(os.environ['EXPECTED_BASE_SIZE']) or hashlib.sha256(base).hexdigest() != os.environ['EXPECTED_BASE_SHA256']: raise SystemExit('B2 004 base payload mismatch')
-          pathlib.Path('/tmp/base-source.py').write_bytes(base)
+          import io, os, pathlib, ssl, sys, tarfile, urllib.request
+          target=pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url=f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              archive=response.read(20_000_001)
+          if len(archive)>20_000_000: raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tf:
+              members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
+              if len(prefixes)!=1: raise SystemExit('unexpected commit archive layout')
+              prefix=next(iter(prefixes))+'/'
+              for member in members:
+                  if not member.isfile(): continue
+                  if not member.name.startswith(prefix): raise SystemExit('unexpected archive member')
+                  rel=pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit('unsafe archive path')
+                  data=tf.extractfile(member).read()
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
           PY
-
-      - name: Build and statically smoke-test Phase A v3 runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 "${BASE_PATCHER_PATH}" --source /tmp/base-source.py --request "${BASE_REQUEST_PATH}" --output /tmp/base004.py
-          python3 "${B21_PATCHER_PATH}" --source /tmp/base004.py --adapter "${B21_ADAPTER_PATH}" --request "${B21_REQUEST_PATH}" --output /tmp/b21.py
-          python3 "${PHASE_A_PATCHER_V3_PATH}" --source /tmp/b21.py --parts-dir "${PHASE_A_PAYLOAD_DIR}" --request "${REQUEST_PATH}" --output /tmp/script.py
-          python3 -W error::SyntaxWarning -m py_compile "${PHASE_A_PATCHER_V1_PATH}" "${PHASE_A_PATCHER_V2_PATH}" "${PHASE_A_PATCHER_V3_PATH}" /tmp/script.py
-          python3 /tmp/script.py --self-test
-          grep -F 'REQUEST_ID = "20260904-cmi-flu-phase-a-003"' /tmp/script.py >/dev/null
-          grep -F 'models.summarize_metric_frame = metric_summary' /tmp/script.py >/dev/null
-          grep -F 'def json_safe(value: Any) -> Any:' /tmp/script.py >/dev/null
-          grep -F 'TARGET_STAGE = "phase_a_b1_vs_b21_same_contract"' /tmp/script.py >/dev/null
-          python3 - <<'PY'
-          import pathlib
-          ns={'__name__':'phase_a_static_preflight'}
-          exec(compile(pathlib.Path('/tmp/script.py').read_text(encoding='utf-8'),'/tmp/script.py','exec'),ns,ns)
-          helper=ns.get('json_safe')
-          if not callable(helper): raise SystemExit('json_safe missing after module load')
-          import numpy as np
-          out=helper({'nan':float('nan'),'integer':np.int64(7),'values':(np.float64(1.5),)})
-          if out != {'nan':None,'integer':7,'values':[1.5]}: raise SystemExit(f'json_safe smoke mismatch: {out!r}')
-          print('PHASE_A_JSON_SAFE_PREFLIGHT PASS')
-          PY
+          python3 "${workdir}/repo/scripts/cmi_flu_phase_a_prepare_v3.py" --repository-root "${workdir}/repo" --output "${workdir}/script.py"
           echo 'CMI_FLU_PHASE_A_003_VALIDATE PASS'
 
       - name: Confirm current public Kaggle policy pages are reachable
@@ -137,7 +87,7 @@ jobs:
           for url in ('https://www.kaggle.com/terms','https://www.kaggle.com/aup','https://www.kaggle.com/community-guidelines','https://www.kaggle.com/docs/api'):
               req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
               with urllib.request.urlopen(req,timeout=30,context=ssl.create_default_context()) as response:
-                  if response.status != 200 or not response.read(65536): raise SystemExit(f'official Kaggle page unavailable: {url}')
+                  if response.status!=200 or not response.read(65536): raise SystemExit(f'official Kaggle page unavailable: {url}')
           print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
           PY
 
@@ -154,11 +104,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
-      - name: Check out exact approved commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Enforce protected execution boundary
         shell: bash
         env:
@@ -178,35 +123,46 @@ jobs:
           [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
           [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
           [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/128-cmi-flu-phase-a-launch-v3.yml@refs/heads/main" ]]
-          [[ "$(git rev-parse HEAD)" == "${EVENT_SHA}" ]]
           echo 'PROTECTED_CMI_FLU_PHASE_A_003_BOUNDARY PASS'
 
-      - name: Prepare locked Kaggle CLI and exact Phase A v3 script
+      - name: Materialize approved commit, runtime, and locked Kaggle CLI
         shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
-          python3 - "${workdir}" <<'PY'
-          import hashlib,os,pathlib,sys
-          root=pathlib.Path('.')
-          out=pathlib.Path(sys.argv[1])
-          base=b''.join((root/f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}").read_bytes() for i in range(20))
-          if len(base)!=int(os.environ['EXPECTED_BASE_SIZE']) or hashlib.sha256(base).hexdigest()!=os.environ['EXPECTED_BASE_SHA256']: raise SystemExit('B2 004 base payload mismatch')
-          (out/'base-source.py').write_bytes(base)
-          phase=(root/f"{os.environ['PHASE_A_PAYLOAD_DIR']}/part-00").read_bytes().rstrip(b'\n')+b'\n'+(root/f"{os.environ['PHASE_A_PAYLOAD_DIR']}/part-01").read_bytes().lstrip(b'\n').rstrip(b'\n')+b'\n'
-          phase_blob=hashlib.sha1(b'blob '+str(len(phase)).encode()+b'\0'+phase).hexdigest()
-          if phase_blob!=os.environ['EXPECTED_PHASE_A_BLOB']: raise SystemExit('Phase A source blob mismatch')
+          python3 - "${workdir}/repo" <<'PY'
+          from __future__ import annotations
+          import io, os, pathlib, ssl, sys, tarfile, urllib.request
+          target=pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url=f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              archive=response.read(20_000_001)
+          if len(archive)>20_000_000: raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tf:
+              members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
+              if len(prefixes)!=1: raise SystemExit('unexpected commit archive layout')
+              prefix=next(iter(prefixes))+'/'
+              for member in members:
+                  if not member.isfile(): continue
+                  rel=pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit('unsafe archive path')
+                  data=tf.extractfile(member).read(); out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
           PY
-          python3 "${BASE_PATCHER_PATH}" --source "${WORKDIR}/base-source.py" --request "${BASE_REQUEST_PATH}" --output "${WORKDIR}/base004.py"
-          python3 "${B21_PATCHER_PATH}" --source "${WORKDIR}/base004.py" --adapter "${B21_ADAPTER_PATH}" --request "${B21_REQUEST_PATH}" --output "${WORKDIR}/b21.py"
-          python3 "${PHASE_A_PATCHER_V3_PATH}" --source "${WORKDIR}/b21.py" --parts-dir "${PHASE_A_PAYLOAD_DIR}" --request "${REQUEST_PATH}" --output "${WORKDIR}/script.py"
-          python3 -W error::SyntaxWarning -m py_compile "${WORKDIR}/script.py"
-          python3 "${WORKDIR}/script.py" --self-test
-          grep -F 'def json_safe(value: Any) -> Any:' "${WORKDIR}/script.py" >/dev/null
-          python3 -m venv "${WORKDIR}/venv"
-          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${LOCK_PATH}" >/dev/null
-          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
-          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          python3 "${workdir}/repo/scripts/cmi_flu_phase_a_prepare_v3.py" --repository-root "${workdir}/repo" --output "${workdir}/script.py"
+          python3 - "${workdir}/repo/${LOCK_PATH}" <<'PY'
+          import pathlib,re,sys
+          lock=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          pattern=re.compile(r'^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$')
+          lines=[x.strip() for x in lock.splitlines() if x.strip() and not x.lstrip().startswith('#')]
+          if len(lines)!=33 or not all(pattern.fullmatch(x) for x in lines) or not any(x.startswith('kaggle==2.2.4 ') for x in lines): raise SystemExit('Kaggle CLI lock validation failed')
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/repo/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
 
       - name: Fetch live Competition rules and determine CPU admission
         id: admission
@@ -263,7 +219,7 @@ jobs:
         if: steps.admission.outputs.can_launch != 'true'
         run: echo 'Phase A 003 request deferred before Kaggle write; fresh approval required on manual redispatch.'
 
-      - name: Push one private CPU Phase A v3 run
+      - name: Push one private CPU Phase A 003 run
         if: steps.admission.outputs.can_launch == 'true'
         shell: bash
         env:
@@ -287,4 +243,4 @@ jobs:
         if: always()
         run: |
           if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
-          echo 'Runner-local Phase A v3 content removed'
+          echo 'Runner-local Phase A 003 content removed'
