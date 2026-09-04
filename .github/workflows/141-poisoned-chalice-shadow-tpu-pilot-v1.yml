@@ -7,11 +7,13 @@ on:
     paths:
       - requests/poisoned-chalice-shadow-tpu-pilot-v1.json
       - scripts/poisoned_chalice_shadow_tpu_pilot_v1.py
+      - materialized/poisoned-chalice-shadow-tpu-pilot-v1/**
       - .github/workflows/141-poisoned-chalice-shadow-tpu-pilot-v1.yml
   pull_request:
     paths:
       - requests/poisoned-chalice-shadow-tpu-pilot-v1.json
       - scripts/poisoned_chalice_shadow_tpu_pilot_v1.py
+      - materialized/poisoned-chalice-shadow-tpu-pilot-v1/**
       - .github/workflows/141-poisoned-chalice-shadow-tpu-pilot-v1.yml
 
 permissions: {}
@@ -27,7 +29,7 @@ env:
 
 jobs:
   validate:
-    name: Validate shadow TPU pilot without credentials
+    name: Validate self-contained shadow TPU pilot without credentials
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
       github.actor == 'renta0426' &&
@@ -53,9 +55,9 @@ jobs:
           for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY AWS_ACCESS_KEY_ID AZURE_CLIENT_SECRET; do
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
-          echo 'SHADOW_TPU_SECRET_FREE_BOUNDARY PASS'
+          echo 'SHADOW_TPU_SECRET_FREE_BOUNDARY PASS private_repo_access=0'
 
-      - name: Fetch exact event sources and statically validate
+      - name: Fetch approved bridge snapshot and statically validate
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -82,7 +84,10 @@ jobs:
           root = pathlib.Path(root_value)
           files = {
               "requests/poisoned-chalice-shadow-tpu-pilot-v1.json": 32768,
-              "scripts/poisoned_chalice_shadow_tpu_pilot_v1.py": 65536,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v1.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_protocol.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_training.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/shadow_tpu_pilot_v1.json": 32768,
           }
           context = ssl.create_default_context()
           for path, limit in files.items():
@@ -101,37 +106,48 @@ jobs:
 
           request = json.loads((root / "requests/poisoned-chalice-shadow-tpu-pilot-v1.json").read_text())
           launcher = root / request["launcher_path"]
-          data = launcher.read_bytes()
-          blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
-          if blob != request["launcher_blob_sha"]:
+          launcher_data = launcher.read_bytes()
+          launcher_blob = hashlib.sha1(b"blob " + str(len(launcher_data)).encode() + b"\0" + launcher_data).hexdigest()
+          if launcher_blob != request["launcher_blob_sha"]:
               raise SystemExit("bridge launcher Git blob mismatch")
-          compile(data, request["launcher_path"], "exec")
+          compile(launcher_data, request["launcher_path"], "exec")
+
+          for item in request["materialized_files"]:
+              path = root / item["bridge_path"]
+              data = path.read_bytes()
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != item["git_blob_sha"]:
+                  raise SystemExit(f"materialized source Git blob mismatch: {item['bridge_path']}")
+              if len(data) > int(item["max_bytes"]):
+                  raise SystemExit(f"materialized source exceeds byte budget: {item['bridge_path']}")
+              if item["logical_path"].endswith(".py"):
+                  compile(data, item["logical_path"], "exec")
+              else:
+                  json.loads(data)
+
           if request["request_id"] != "20260904-poisoned-chalice-shadow-tpu-pilot-v1-001":
               raise SystemExit("request ID changed")
           if request["research_commit"] != "4e221829e37af88553e780488b27730cf167d6f8":
-              raise SystemExit("research commit changed")
-          if request["resource"] != {
-              "accelerator": "tpu",
-              "machine_shape": "Tpu1VmV38",
-              "expected_runtime_minutes": 20,
-              "hard_timeout_minutes": 60,
-              "max_active_runs": 1,
-              "min_remaining_quota_hours": 1.0,
-          }:
-              raise SystemExit("TPU resource contract changed")
+              raise SystemExit("research provenance commit changed")
+          if request["clean_room"].get("protected_job_private_repository_access") is not False:
+              raise SystemExit("private repository access guard changed")
           if request["automatic_compute_retries"] != 0 or request["competition_submission"]:
               raise SystemExit("one-shot/no-submission contract changed")
-          print('SHADOW_TPU_BRIDGE_SOURCE_STATIC PASS write_calls=1 retries=0 submissions=0')
+          print('SHADOW_TPU_BRIDGE_SNAPSHOT_STATIC PASS snapshots=3 private_repo_access=0')
           PY
+
           python3 "${workdir}/${LAUNCHER_PATH}" \
             --static \
             --request "${workdir}/${REQUEST_PATH}" \
             --launcher "${workdir}/${LAUNCHER_PATH}"
+
           python3 "${workdir}/${LAUNCHER_PATH}" \
             --materialize \
             --request "${workdir}/${REQUEST_PATH}" \
             --launcher "${workdir}/${LAUNCHER_PATH}" \
+            --snapshot-root "${workdir}" \
             --kernel-dir "${workdir}/kernel"
+
           python3 - "${workdir}/kernel" <<'PY'
           import json
           import pathlib
@@ -143,10 +159,18 @@ jobs:
           notebook = json.loads((root / "shadow-tpu-pilot-v1.ipynb").read_text())
           code = "".join(notebook["cells"][1]["source"])
           compile(code, "shadow-tpu-pilot-v1.ipynb", "exec")
+          lowered = code.casefold()
+          for forbidden in (
+              "research_repo_read_token",
+              "api.github.com/repos/renta0426/the-poisoned-chalice-of-llm-evaluation",
+              "raw.githubusercontent.com/renta0426/the-poisoned-chalice-of-llm-evaluation",
+          ):
+              if forbidden in lowered:
+                  raise SystemExit(f"private research access leaked into Notebook: {forbidden}")
           metadata = json.loads((root / "kernel-metadata.json").read_text())
           if metadata.get("machine_shape") != "Tpu1VmV38" or metadata.get("enable_gpu") or not metadata.get("enable_tpu") or metadata.get("enable_internet"):
               raise SystemExit("bundle accelerator contract changed")
-          print('SHADOW_TPU_BUNDLE_STATIC PASS notebook_compile=true internet=false')
+          print('SHADOW_TPU_BUNDLE_STATIC PASS notebook_compile=true internet=false private_repo_access=0')
           PY
 
   launch:
@@ -187,9 +211,10 @@ jobs:
           [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
           [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/141-poisoned-chalice-shadow-tpu-pilot-v1.yml@refs/heads/main" ]]
           [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
-          echo 'PROTECTED_SHADOW_TPU_BOUNDARY PASS request=001 write_calls=1 retries=0'
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" ]]
+          echo 'PROTECTED_SHADOW_TPU_BOUNDARY PASS request=001 write_calls=1 retries=0 private_repo_access=0'
 
-      - name: Prepare exact sources, kernel bundle, and isolated Kaggle client
+      - name: Prepare exact bridge snapshot, kernel bundle, and isolated Kaggle client
         shell: bash
         env:
           EVENT_SHA: ${{ github.sha }}
@@ -213,7 +238,10 @@ jobs:
           root = pathlib.Path(root_value)
           files = {
               "requests/poisoned-chalice-shadow-tpu-pilot-v1.json": 32768,
-              "scripts/poisoned_chalice_shadow_tpu_pilot_v1.py": 65536,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v1.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_protocol.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_training.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/shadow_tpu_pilot_v1.json": 32768,
               "requirements/kaggle-2.2.4.lock": 65536,
           }
           context = ssl.create_default_context()
@@ -233,11 +261,17 @@ jobs:
 
           request = json.loads((root / "requests/poisoned-chalice-shadow-tpu-pilot-v1.json").read_text())
           launcher = root / request["launcher_path"]
-          data = launcher.read_bytes()
-          blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
-          if blob != request["launcher_blob_sha"]:
+          launcher_data = launcher.read_bytes()
+          launcher_blob = hashlib.sha1(b"blob " + str(len(launcher_data)).encode() + b"\0" + launcher_data).hexdigest()
+          if launcher_blob != request["launcher_blob_sha"]:
               raise SystemExit("bridge launcher Git blob mismatch")
-          compile(data, request["launcher_path"], "exec")
+          compile(launcher_data, request["launcher_path"], "exec")
+          for item in request["materialized_files"]:
+              path = root / item["bridge_path"]
+              data = path.read_bytes()
+              blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != item["git_blob_sha"]:
+                  raise SystemExit(f"materialized source Git blob mismatch: {item['bridge_path']}")
           lock = (root / "requirements/kaggle-2.2.4.lock").read_text(encoding="utf-8")
           pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
           lines = [line.strip() for line in lock.splitlines() if line.strip() and not line.lstrip().startswith("#")]
@@ -246,22 +280,26 @@ jobs:
           if not any(line.startswith("kaggle==2.2.4 ") for line in lines):
               raise SystemExit("Kaggle CLI 2.2.4 pin missing")
           PY
+
           python3 "${workdir}/${LAUNCHER_PATH}" \
             --static \
             --request "${workdir}/${REQUEST_PATH}" \
             --launcher "${workdir}/${LAUNCHER_PATH}"
+
           python3 "${workdir}/${LAUNCHER_PATH}" \
             --materialize \
             --request "${workdir}/${REQUEST_PATH}" \
             --launcher "${workdir}/${LAUNCHER_PATH}" \
+            --snapshot-root "${workdir}" \
             --kernel-dir "${workdir}/kernel"
+
           python3 -m venv "${workdir}/kaggle-venv"
           "${workdir}/kaggle-venv/bin/python" -m pip install \
             --disable-pip-version-check --no-input --no-deps --only-binary=:all: \
             --require-hashes -r "${workdir}/requirements/kaggle-2.2.4.lock" >/dev/null
           "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
           "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
-          echo 'SHADOW_TPU_ISOLATED_CLIENT PASS'
+          echo 'SHADOW_TPU_ISOLATED_CLIENT PASS private_repo_access=0'
 
       - name: Confirm current public Kaggle policy pages are reachable
         shell: bash
@@ -291,6 +329,7 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" ]]
           [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
           "${WORKDIR}/kaggle-venv/bin/python" "${WORKDIR}/${LAUNCHER_PATH}" \
             --execute \
@@ -299,7 +338,7 @@ jobs:
             --kaggle-bin "${WORKDIR}/kaggle-venv/bin/kaggle" \
             --kernel-dir "${KERNEL_DIR}"
 
-      - name: Cleanup runner-local public material
+      - name: Cleanup runner-local material
         if: always()
         shell: bash
         run: |
