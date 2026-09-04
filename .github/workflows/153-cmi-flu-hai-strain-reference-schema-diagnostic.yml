@@ -1,0 +1,98 @@
+name: CMI-Flu HAI strain reference schema diagnostic
+
+on:
+  push:
+    paths:
+      - .github/workflows/153-cmi-flu-hai-strain-reference-schema-diagnostic.yml
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  diagnose:
+    name: Inspect locked public strain reference schema without credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Download only locked public strain reference and report schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input 'gdown==5.2.0' >/dev/null
+          "${workdir}/venv/bin/python" - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import csv, hashlib, pathlib, sys
+          import gdown
+
+          ROOT = pathlib.Path(sys.argv[1])
+          FOLDER_ID = "1D1kwYPO0tGAJOGlRVNwObT__CxIHH3cP"
+          EXPECTED_SHA256 = "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887"
+          EXPECTED_BYTES = 206797
+          listing = gdown.download_folder(
+              id=FOLDER_ID,
+              output=str(ROOT / "listing-root"),
+              quiet=True,
+              use_cookies=False,
+              remaining_ok=True,
+              skip_download=True,
+          )
+          if listing is None:
+              raise SystemExit("organizer folder metadata unavailable")
+          matches = []
+          for item in listing:
+              path = pathlib.PurePosixPath(str(item.path))
+              if path.name == "strain_sequences.csv" and "reference_files" in {part.casefold() for part in path.parts[:-1]}:
+                  matches.append(item)
+          if len(matches) != 1:
+              raise SystemExit(f"expected exactly one strain_sequences.csv, found {len(matches)}")
+          destination = ROOT / "strain_sequences.csv"
+          result = gdown.download(
+              id=str(matches[0].id),
+              output=str(destination),
+              quiet=True,
+              use_cookies=False,
+          )
+          if result is None or not destination.is_file():
+              raise SystemExit("locked strain reference download failed")
+          data = destination.read_bytes()
+          digest = hashlib.sha256(data).hexdigest()
+          if len(data) != EXPECTED_BYTES or digest != EXPECTED_SHA256:
+              raise SystemExit(f"locked reference identity mismatch bytes={len(data)} sha256={digest}")
+          text = data.decode("utf-8-sig")
+          rows = list(csv.reader(text.splitlines()))
+          if not rows:
+              raise SystemExit("strain reference is empty")
+          header = rows[0]
+          body = rows[1:]
+          widths = [len(row) for row in body]
+          print(f"HAI_STRAIN_SCHEMA rows={len(body)} columns={len(header)} row_width_min={min(widths)} row_width_max={max(widths)}")
+          print("HAI_STRAIN_SCHEMA_HEADER " + " | ".join(f"{i}:{name}" for i, name in enumerate(header)))
+          for index, name in enumerate(header):
+              values = [(row[index] if index < len(row) else "").strip() for row in body]
+              nonempty = [value for value in values if value]
+              unique = sorted(set(nonempty))
+              lengths = [len(value) for value in nonempty]
+              min_len = min(lengths) if lengths else 0
+              max_len = max(lengths) if lengths else 0
+              lower = name.casefold()
+              sequence_like = ("seq" in lower) or max_len > 200
+              print(
+                  f"HAI_STRAIN_SCHEMA_COLUMN index={index} name={name!r} nonempty={len(nonempty)} "
+                  f"unique={len(unique)} min_len={min_len} max_len={max_len} sequence_like={sequence_like}"
+              )
+              if not sequence_like and len(unique) <= 20 and max_len <= 80:
+                  safe = [value.replace("\n", " ").replace("\r", " ") for value in unique]
+                  print(f"HAI_STRAIN_SCHEMA_VALUES index={index} values={safe!r}")
+          print(f"HAI_STRAIN_SCHEMA_IDENTITY PASS bytes={len(data)} sha256={digest}")
+          PY
