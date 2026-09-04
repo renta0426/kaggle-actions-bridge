@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-poisoned-chalice-shadow-gpu-t4x2-pilot-v2-002",
+  "parent_request_id": "20260904-poisoned-chalice-shadow-gpu-t4x2-pilot-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/shadow-gpu-t4x2-pilot-v1",
+  "launcher_path": "scripts/poisoned_chalice_shadow_gpu_t4x2_pilot_v2.py",
+  "launcher_blob_sha": "d7d1985b972aba627848157ca668f8a6e82868b5",
+  "base_launcher_path": "scripts/poisoned_chalice_shadow_gpu_t4x2_pilot_v1.py",
+  "base_launcher_blob_sha": "0bc8342d9831f75e16ea297b486669d4e067ace1",
+  "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "research_commit": "251e9f0b7063dc2288a4fa258b9a314963f6ad19",
+  "materialized_files": [
+    {
+      "logical_path": "poisoned_chalice/shadow_protocol.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_protocol.py",
+      "git_blob_sha": "1c47b80696050aa2e5e7c62384617df61ecb80da",
+      "max_bytes": 131072
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_training.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_training.py",
+      "git_blob_sha": "2fe3cf2079659ae10e1ebe0d5973f3ce96c26a03",
+      "max_bytes": 131072
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_training_dual_gpu.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gpu-t4x2-pilot-v1/poisoned_chalice/shadow_training_dual_gpu.py",
+      "git_blob_sha": "c75a5963fa930916024cb16b4fbf562ba4afa818",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "shadow_gpu_t4x2_pilot_v1.json",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gpu-t4x2-pilot-v1/shadow_gpu_t4x2_pilot_v1.json",
+      "git_blob_sha": "1edcea3100f1d873ee015da44b2fdba002424476",
+      "max_bytes": 32768
+    }
+  ],
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 15,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 2,
+    "min_remaining_quota_hours": 1.0
+  },
+  "side_effects": [
+    "consume four exact public bridge snapshots",
+    "create one NEW private Kaggle GPU Notebook at renta0426/shadow-gpu-t4x2-pilot-v1 and start exactly one T4 x2 run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission": false,
+  "select_as_final": false,
+  "runner_local_public_material_retention_days": 0,
+  "clean_room": {
+    "synthetic_training_only": true,
+    "competition_train_rows_used": 0,
+    "evaluation_inputs_embedded": false,
+    "evaluation_labels_embedded": false,
+    "smollm2_labels_used": false,
+    "previous_model_scores_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "public_leaderboard_tuning_used": false,
+    "pretrained_weights_used": false,
+    "competition_submission_created": false,
+    "protected_job_private_repository_access": false
+  },
+  "pilot_contract": {
+    "transition_from": "shadow-tpu-pilot-v6",
+    "backend": "cuda",
+    "expected_gpu_count": 2,
+    "expected_gpu_name_contains": "T4",
+    "architecture_gpu_assignment": {"left": 0, "right": 1},
+    "per_architecture_world_size": 1,
+    "distributed_training": false,
+    "ddp_used": false,
+    "nccl_used": false,
+    "run_architectures_concurrently": true,
+    "synthetic_training_rows": 128,
+    "max_sequence_tokens": 256,
+    "seed": 2027,
+    "global_batch_size": 64,
+    "max_steps_per_architecture": 2,
+    "checkpoint_reload_atol": 1e-05,
+    "persistent_outputs": ["shadow_gpu_pilot_manifest.json"],
+    "persist_checkpoints": false,
+    "persist_training_protocol": false,
+    "stage2_v3_selection_allowed": false
+  }
+}
