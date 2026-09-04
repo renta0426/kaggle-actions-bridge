@@ -49,35 +49,33 @@ jobs:
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
 
-      - name: Materialize, verify, build twice, and self-test
+      - name: Materialize exact public commits
         shell: bash
         env:
           EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_REF: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
-          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
-          python3 - "${workdir}" <<'PY'
-          from __future__ import annotations
-          import hashlib,io,json,os,pathlib,ssl,sys,tarfile,urllib.request
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git init -q "${workdir}/bridge"
+          git -C "${workdir}/bridge" remote add origin "https://github.com/${EXPECTED_REPOSITORY}.git"
+          git -C "${workdir}/bridge" fetch -q --depth=1 origin "${EVENT_REF}"
+          git -C "${workdir}/bridge" checkout -q --detach FETCH_HEAD
+          [[ "$(git -C "${workdir}/bridge" rev-parse HEAD)" == "${EVENT_SHA}" ]]
+
+          git init -q "${workdir}/science"
+          git -C "${workdir}/science" remote add origin "https://github.com/${SCIENCE_REPOSITORY}.git"
+          git -C "${workdir}/science" fetch -q --depth=1 origin "${SCIENCE_SOURCE_COMMIT}"
+          git -C "${workdir}/science" checkout -q --detach FETCH_HEAD
+          [[ "$(git -C "${workdir}/science" rev-parse HEAD)" == "${SCIENCE_SOURCE_COMMIT}" ]]
+
+      - name: Verify manifest and science blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}" <<'PY'
+          import hashlib,json,os,pathlib,sys
           root=pathlib.Path(sys.argv[1])
-          def download(repository:str,sha:str,target:pathlib.Path,limit:int=25_000_000)->None:
-              url=f"https://codeload.github.com/{repository}/tar.gz/{sha}"
-              req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
-              with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
-                  data=response.read(limit+1)
-              if len(data)>limit: raise SystemExit(f'archive too large: {repository}')
-              with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
-                  members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
-                  if len(prefixes)!=1: raise SystemExit(f'archive layout mismatch: {repository}')
-                  prefix=next(iter(prefixes))+'/'
-                  for member in members:
-                      if not member.isfile(): continue
-                      if not member.name.startswith(prefix): raise SystemExit('unexpected archive member')
-                      rel=pathlib.PurePosixPath(member.name[len(prefix):])
-                      if not rel.parts or '..' in rel.parts: raise SystemExit('unsafe archive path')
-                      out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(member).read())
-          download(os.environ['EXPECTED_REPOSITORY'],os.environ['EVENT_SHA'],root/'bridge')
-          download(os.environ['SCIENCE_REPOSITORY'],os.environ['SCIENCE_SOURCE_COMMIT'],root/'science')
           request=json.loads((root/'bridge'/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
           allowed={'schema_version','request_id','competition','operation','target','purpose','science_repository','science_source_commit','rank_transfer_blob_sha','bundle_builder_blob_sha','phase_builder_blob_sha','b21_config_blob_sha','resource','api_budget','side_effects','competition_submission_attempted','automatic_compute_retries','enable_internet','rules_checked_at_utc'}
           if set(request)!=allowed: raise SystemExit(f'manifest fields mismatch: {sorted(set(request)^allowed)}')
@@ -87,19 +85,25 @@ jobs:
           if request['resource']!={'accelerator':'cpu','expected_runtime_minutes':60,'hard_timeout_minutes':180,'max_active_runs':1}: raise SystemExit('resource contract mismatch')
           if request['api_budget']!={'max_calls':20,'poll_interval_seconds':900,'max_pages':2}: raise SystemExit('API budget mismatch')
           if request['competition_submission_attempted'] is not False or request['automatic_compute_retries']!=0 or request['enable_internet'] is not False: raise SystemExit('safety contract mismatch')
-          def blob(path:pathlib.Path)->str:
-              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode('ascii')+b'\0'+data).hexdigest()
+          def blob(path):
+              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
           science=root/'science'
           checks={'src/cmi_flu/rank_transfer.py':os.environ['EXPECTED_RANK_TRANSFER_BLOB'],'scripts/build_rank_transfer_kaggle_bundle.py':os.environ['EXPECTED_BUNDLE_BUILDER_BLOB'],'scripts/build_phase_a_kaggle_bundle.py':os.environ['EXPECTED_PHASE_BUILDER_BLOB'],'configs/baseline_b021_robust.yaml':os.environ['EXPECTED_B21_CONFIG_BLOB']}
+          manifest_keys={'src/cmi_flu/rank_transfer.py':'rank_transfer_blob_sha','scripts/build_rank_transfer_kaggle_bundle.py':'bundle_builder_blob_sha','scripts/build_phase_a_kaggle_bundle.py':'phase_builder_blob_sha','configs/baseline_b021_robust.yaml':'b21_config_blob_sha'}
           for rel,expected in checks.items():
               found=blob(science/rel)
-              if found!=expected: raise SystemExit(f'science blob mismatch: {rel} {found}')
+              if found!=expected or request[manifest_keys[rel]]!=expected: raise SystemExit(f'science blob mismatch: {rel} {found}')
           PY
-          science="${workdir}/science"
-          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${workdir}/a.py"
-          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${workdir}/b.py"
-          cmp "${workdir}/a.py" "${workdir}/b.py"
-          python3 - "${workdir}/a.py" <<'PY'
+
+      - name: Build exact native runner twice and self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          science="${WORKDIR}/science"
+          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/a.py"
+          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/b.py"
+          cmp "${WORKDIR}/a.py" "${WORKDIR}/b.py"
+          python3 - "${WORKDIR}/a.py" <<'PY'
           import hashlib,pathlib,re,sys
           path=pathlib.Path(sys.argv[1]); text=path.read_text(encoding='utf-8')
           old='REQUEST_ID = "__REQUEST_ID__"'; new='REQUEST_ID = "20260904-cmi-flu-rank-transfer-001"'
@@ -109,11 +113,11 @@ jobs:
           if package is None: raise SystemExit('package SHA missing')
           print(f"RANK_TRANSFER_RUNNER script_sha256={hashlib.sha256(text.encode()).hexdigest()} package_sha256={package.group(1)}")
           PY
-          python3 -W error::SyntaxWarning -m py_compile "${workdir}/a.py"
-          python3 "${workdir}/a.py" --self-test
-          grep -F '"kernel_stage": "phase_a_rank_transfer_task11_task12"' "${workdir}/a.py" >/dev/null
-          grep -F 'cmi_flu/rank_transfer.py' "${workdir}/a.py" >/dev/null
-          grep -F 'CMI_FLU_RANK_TRANSFER_COMPLETE' "${workdir}/a.py" >/dev/null
+          python3 -W error::SyntaxWarning -m py_compile "${WORKDIR}/a.py"
+          python3 "${WORKDIR}/a.py" --self-test
+          grep -F '"kernel_stage": "phase_a_rank_transfer_task11_task12"' "${WORKDIR}/a.py" >/dev/null
+          grep -F 'cmi_flu/rank_transfer.py' "${WORKDIR}/a.py" >/dev/null
+          grep -F 'CMI_FLU_RANK_TRANSFER_COMPLETE' "${WORKDIR}/a.py" >/dev/null
           echo 'CMI_FLU_RANK_TRANSFER_001_VALIDATE PASS'
 
       - name: Confirm current public Kaggle policy pages are reachable
@@ -128,6 +132,11 @@ jobs:
                   if response.status!=200 or not response.read(65536): raise SystemExit(f'official Kaggle page unavailable: {url}')
           print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
           PY
+
+      - name: Cleanup validation content
+        if: always()
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
 
   launch:
     name: Admit or launch exactly one rank-transfer CPU run 001
@@ -163,40 +172,38 @@ jobs:
           [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/129-cmi-flu-rank-transfer-launch.yml@refs/heads/main" ]]
           echo 'PROTECTED_CMI_FLU_RANK_TRANSFER_001_BOUNDARY PASS'
 
-      - name: Materialize exact approved commits and native runner
+      - name: Materialize exact approved commits
         shell: bash
         env:
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git init -q "${workdir}/bridge"
+          git -C "${workdir}/bridge" remote add origin "https://github.com/${EXPECTED_REPOSITORY}.git"
+          git -C "${workdir}/bridge" fetch -q --depth=1 origin main
+          git -C "${workdir}/bridge" checkout -q --detach FETCH_HEAD
+          [[ "$(git -C "${workdir}/bridge" rev-parse HEAD)" == "${EVENT_SHA}" ]]
+          git init -q "${workdir}/science"
+          git -C "${workdir}/science" remote add origin "https://github.com/${SCIENCE_REPOSITORY}.git"
+          git -C "${workdir}/science" fetch -q --depth=1 origin "${SCIENCE_SOURCE_COMMIT}"
+          git -C "${workdir}/science" checkout -q --detach FETCH_HEAD
+          [[ "$(git -C "${workdir}/science" rev-parse HEAD)" == "${SCIENCE_SOURCE_COMMIT}" ]]
           python3 - "${workdir}" <<'PY'
-          import hashlib,io,json,os,pathlib,ssl,sys,tarfile,urllib.request
-          root=pathlib.Path(sys.argv[1])
-          def download(repository,sha,target,limit=25_000_000):
-              url=f"https://codeload.github.com/{repository}/tar.gz/{sha}"; req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
-              with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(limit+1)
-              if len(data)>limit: raise SystemExit(f'archive too large: {repository}')
-              with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
-                  members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
-                  if len(prefixes)!=1: raise SystemExit('archive layout mismatch')
-                  prefix=next(iter(prefixes))+'/'
-                  for m in members:
-                      if not m.isfile(): continue
-                      rel=pathlib.PurePosixPath(m.name[len(prefix):])
-                      if not rel.parts or '..' in rel.parts: raise SystemExit('unsafe archive path')
-                      out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
-          download(os.environ['EXPECTED_REPOSITORY'],os.environ['EVENT_SHA'],root/'bridge')
-          download(os.environ['SCIENCE_REPOSITORY'],os.environ['SCIENCE_SOURCE_COMMIT'],root/'science')
-          request=json.loads((root/'bridge'/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
+          import hashlib,json,os,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); request=json.loads((root/'bridge'/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
           if request['request_id']!='20260904-cmi-flu-rank-transfer-001' or request['target']!=os.environ['TARGET_KERNEL']: raise SystemExit('approved request mismatch')
           def blob(path):
               data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
-          science=root/'science'
-          checks={'src/cmi_flu/rank_transfer.py':os.environ['EXPECTED_RANK_TRANSFER_BLOB'],'scripts/build_rank_transfer_kaggle_bundle.py':os.environ['EXPECTED_BUNDLE_BUILDER_BLOB'],'scripts/build_phase_a_kaggle_bundle.py':os.environ['EXPECTED_PHASE_BUILDER_BLOB'],'configs/baseline_b021_robust.yaml':os.environ['EXPECTED_B21_CONFIG_BLOB']}
+          science=root/'science'; checks={'src/cmi_flu/rank_transfer.py':os.environ['EXPECTED_RANK_TRANSFER_BLOB'],'scripts/build_rank_transfer_kaggle_bundle.py':os.environ['EXPECTED_BUNDLE_BUILDER_BLOB'],'scripts/build_phase_a_kaggle_bundle.py':os.environ['EXPECTED_PHASE_BUILDER_BLOB'],'configs/baseline_b021_robust.yaml':os.environ['EXPECTED_B21_CONFIG_BLOB']}
           for rel,expected in checks.items():
               if blob(science/rel)!=expected: raise SystemExit(f'science blob mismatch: {rel}')
           PY
+
+      - name: Prepare locked Kaggle CLI and exact native runner
+        shell: bash
+        run: |
+          set -euo pipefail
           science="${WORKDIR}/science"; bridge="${WORKDIR}/bridge"
           python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/a.py"
           python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/b.py"
