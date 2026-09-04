@@ -1,0 +1,100 @@
+name: Bridge output-contract regression checks
+
+on:
+  pull_request:
+    paths:
+      - README.md
+      - docs/OPERATIONS.md
+      - docs/OPERATIONAL_LESSONS.md
+      - scripts/kaggle_current_output_read.py
+      - .github/workflows/141-bridge-output-contract-regression.yml
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - docs/OPERATIONS.md
+      - docs/OPERATIONAL_LESSONS.md
+      - scripts/kaggle_current_output_read.py
+      - .github/workflows/141-bridge-output-contract-regression.yml
+
+permissions: {}
+
+concurrency:
+  group: bridge-output-contract-regression-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate current-output read contract without credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Materialize exact event commit without credentials
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${EVENT_SHA}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+
+      - name: Enforce output-reader invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${WORKDIR}/repo"
+          script="${repo}/scripts/kaggle_current_output_read.py"
+          python3 -W error::SyntaxWarning -m py_compile "${script}"
+          SCRIPT_PATH="${script}" python3 - <<'PY'
+          import ast
+          import os
+          from pathlib import Path
+
+          source = Path(os.environ["SCRIPT_PATH"]).read_text(encoding="utf-8")
+          tree = ast.parse(source)
+          assert "current_version_number" in source
+          assert "historical output substitution is forbidden" in source
+          assert '"kernels", "output"' in source
+          assert "capture_output=True" in source
+          assert "unexpected saved output files count=" in source
+          assert "TemporaryDirectory" in source
+          assert "shell=True" not in source
+          assert "os.system(" not in source
+          assert "subprocess.Popen" not in source
+          runs = [
+              node for node in ast.walk(tree)
+              if isinstance(node, ast.Call)
+              and isinstance(node.func, ast.Attribute)
+              and isinstance(node.func.value, ast.Name)
+              and node.func.value.id == "subprocess"
+              and node.func.attr == "run"
+          ]
+          if len(runs) != 1:
+              raise SystemExit(f"expected exactly one subprocess.run, got {len(runs)}")
+          print("BRIDGE_OUTPUT_CONTRACT_STATIC PASS current_only=true captured_cli=true writes=0")
+          PY
+
+      - name: Enforce documentation lessons
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${WORKDIR}/repo"
+          grep -F 'Historical versus current Notebook output' "${repo}/docs/OPERATIONAL_LESSONS.md" >/dev/null
+          grep -F '/kaggle/working' "${repo}/docs/OPERATIONAL_LESSONS.md" >/dev/null
+          grep -F 'scripts/kaggle_current_output_read.py' "${repo}/README.md" >/dev/null
+          grep -F 'current version' "${repo}/docs/OPERATIONS.md" >/dev/null
+          echo 'BRIDGE_OUTPUT_CONTRACT_DOCS PASS'
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
