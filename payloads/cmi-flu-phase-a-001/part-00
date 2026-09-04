@@ -1,0 +1,260 @@
+"""Phase A: compare B1 anchors with B2.1 under one validation contract.
+
+This module is deliberately aggregate-only at its public API.  It re-runs the
+locked B2.1 model selection, evaluates B1 on the same supervised cohorts, and
+reports whether the two systems make complementary within-study ranking errors.
+No participant identifiers or row-level predictions are returned.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from .aliases import canonicalize_flow_population, canonicalize_strain
+from .anchors import build_b1_anchor_predictions
+from .contracts import DataContractError, require_columns
+from .evaluation import (
+    aggregate_hai_task_predictions,
+    default_splits_for_task,
+    run_compact_task,
+    run_hai_compact_for_panels,
+)
+from .metrics import grouped_metrics, percentile_rank, safe_spearman, signed_percentile_rank
+from .models import summarize_metric_frame
+from .runner import InputBundle, build_b02_datasets
+from .targets import build_task_11_target, build_task_14_anchor, geometric_mean
+
+
+def _metric_dict(true: Sequence[float], prediction: Sequence[float]) -> dict[str, Any]:
+    return safe_spearman(true, prediction).to_dict()
+
+
+def _rank_within_group(
+    frame: pd.DataFrame,
+    *,
+    group_column: str,
+    value_column: str,
+) -> pd.Series:
+    return frame.groupby(group_column, dropna=False, observed=True)[value_column].transform(
+        lambda values: percentile_rank(values.to_numpy(dtype=float))
+    )
+
+
+def _fold_metrics(
+    frame: pd.DataFrame,
+    *,
+    group_column: str,
+    prediction_column: str,
+) -> tuple[list[dict[str, Any]], Mapping[str, Any]]:
+    folds = grouped_metrics(
+        frame,
+        group_columns=[group_column],
+        target_column="target",
+        prediction_column=prediction_column,
+    )
+    return folds.to_dict(orient="records"), summarize_metric_frame(folds)
+
+
+def compare_aligned_predictions(
+    frame: pd.DataFrame,
+    *,
+    group_column: str = "study_group",
+) -> Mapping[str, Any]:
+    """Compare aligned B1/B2.1 predictions without exposing row-level data.
+
+    The fixed 50/50 blend is diagnostic only.  Its weight is not selected from
+    these outcomes; it is used to measure whether the two inductive biases are
+    complementary enough to justify a later pre-registered blend experiment.
+    """
+
+    require_columns(
+        frame,
+        [group_column, "target", "b1_prediction", "b21_prediction"],
+        table_name="Phase A aligned predictions",
+    )
+    working = frame[[group_column, "target", "b1_prediction", "b21_prediction"]].copy()
+    for column in ("target", "b1_prediction", "b21_prediction"):
+        working[column] = pd.to_numeric(working[column], errors="coerce")
+    working = working.dropna().reset_index(drop=True)
+    if working.empty:
+        raise DataContractError("Phase A comparison has zero aligned finite rows")
+
+    working["target_rank"] = _rank_within_group(
+        working, group_column=group_column, value_column="target"
+    )
+    working["b1_rank"] = _rank_within_group(
+        working, group_column=group_column, value_column="b1_prediction"
+    )
+    working["b21_rank"] = _rank_within_group(
+        working, group_column=group_column, value_column="b21_prediction"
+    )
+    working["blend_rank"] = 0.5 * (working["b1_rank"] + working["b21_rank"])
+    working["b1_rank_error"] = working["b1_rank"] - working["target_rank"]
+    working["b21_rank_error"] = working["b21_rank"] - working["target_rank"]
+
+    b1_folds, b1_summary = _fold_metrics(
+        working, group_column=group_column, prediction_column="b1_prediction"
+    )
+    b21_folds, b21_summary = _fold_metrics(
+        working, group_column=group_column, prediction_column="b21_prediction"
+    )
+    blend_folds = grouped_metrics(
+        working,
+        group_columns=[group_column],
+        target_column="target_rank",
+        prediction_column="blend_rank",
+    )
+
+    return {
+        "rows": int(len(working)),
+        "groups": int(working[group_column].nunique(dropna=False)),
+        "b1": {
+            "pooled_spearman": _metric_dict(working["target"], working["b1_prediction"]),
+            "within_group_rank_spearman": _metric_dict(
+                working["target_rank"], working["b1_rank"]
+            ),
+            "folds": b1_folds,
+            "fold_summary": b1_summary,
+        },
+        "b21": {
+            "pooled_spearman": _metric_dict(working["target"], working["b21_prediction"]),
+            "within_group_rank_spearman": _metric_dict(
+                working["target_rank"], working["b21_rank"]
+            ),
+            "folds": b21_folds,
+            "fold_summary": b21_summary,
+        },
+        "fixed_equal_rank_blend": {
+            "within_group_rank_spearman": _metric_dict(
+                working["target_rank"], working["blend_rank"]
+            ),
+            "folds": blend_folds.to_dict(orient="records"),
+            "fold_summary": summarize_metric_frame(blend_folds),
+            "weight_b1": 0.5,
+            "weight_b21": 0.5,
+            "pre_registered_diagnostic": True,
+        },
+        "complementarity": {
+            "prediction_rank_spearman": _metric_dict(
+                working["b1_rank"], working["b21_rank"]
+            ),
+            "rank_error_spearman": _metric_dict(
+                working["b1_rank_error"], working["b21_rank_error"]
+            ),
+            "interpretation": (
+                "Lower prediction agreement and lower/negative rank-error agreement indicate more potential blend complementarity."
+            ),
+        },
+    }
+
+
+def _task11_direction(training: pd.DataFrame) -> int:
+    study_values: list[float] = []
+    for _, group in training.groupby("study_group", dropna=False, observed=True):
+        metric = safe_spearman(group["pre_vacc"], group["target"])
+        if metric.status == "ok" and metric.value != 0:
+            study_values.append(metric.value)
+    if study_values:
+        median = float(np.median(study_values))
+        if median != 0:
+            return 1 if median > 0 else -1
+        sign_sum = int(np.sign(study_values).sum())
+        if sign_sum:
+            return 1 if sign_sum > 0 else -1
+    pooled = safe_spearman(training["pre_vacc"], training["target"])
+    if pooled.status == "ok" and pooled.value != 0:
+        return 1 if pooled.value > 0 else -1
+    return -1
+
+
+def _task11_b1_frame(
+    dataset: Any,
+    public_cytokine: pd.DataFrame,
+    splits: Sequence[Any],
+) -> pd.DataFrame:
+    anchor = build_task_11_target(public_cytokine)[["participant_id", "pre_vacc"]]
+    source = (
+        dataset.train.reset_index()
+        .rename(columns={"index": "row_index", dataset.target_column: "target"})[
+            ["row_index", "participant_id", "study_group", "target"]
+        ]
+        .merge(anchor, on="participant_id", how="left", validate="one_to_one")
+    )
+    if source["pre_vacc"].isna().any():
+        raise DataContractError("Task1.1 B1 anchor is missing on the B2.1 training cohort")
+
+    parts: list[pd.DataFrame] = []
+    for split in splits:
+        train = source.iloc[split.train_indices]
+        validation = source.iloc[split.validation_indices].copy()
+        direction = _task11_direction(train)
+        validation["b1_prediction"] = signed_percentile_rank(
+            validation["pre_vacc"], direction=direction
+        )
+        parts.append(
+            validation[["row_index", "study_group", "target", "b1_prediction"]]
+        )
+    result = pd.concat(parts, ignore_index=True)
+    if result["row_index"].duplicated().any():
+        raise DataContractError("Task1.1 LOSO B1 frame predicts a row more than once")
+    return result
+
+
+def _flow_b1_frame(dataset: Any, *, population: str) -> pd.DataFrame:
+    column = f"flow_rank__{canonicalize_flow_population(population)}"
+    if column not in dataset.train:
+        raise DataContractError(f"B1 broad-flow rank column is unavailable: {column}")
+    return (
+        dataset.train.reset_index()
+        .rename(
+            columns={
+                "index": "row_index",
+                dataset.target_column: "target",
+                column: "b1_prediction",
+            }
+        )[["row_index", "study_group", "target", "b1_prediction"]]
+        .copy()
+    )
+
+
+def _align_compact_result(dataset: Any, b1: pd.DataFrame, result: Any) -> pd.DataFrame:
+    b21 = result.oof_predictions[["row_index", "target", "prediction"]].rename(
+        columns={"prediction": "b21_prediction", "target": "b21_target"}
+    )
+    aligned = b1.merge(b21, on="row_index", how="inner", validate="one_to_one")
+    if not np.allclose(
+        aligned["target"].to_numpy(dtype=float),
+        aligned["b21_target"].to_numpy(dtype=float),
+        rtol=0.0,
+        atol=1e-10,
+    ):
+        raise DataContractError("B1 and B2.1 compact targets disagree after alignment")
+    return aligned.drop(columns=["b21_target"])
+
+
+def _hai_panel_frame(
+    result: Any,
+    *,
+    panel_strains: Sequence[str],
+) -> tuple[pd.DataFrame, Mapping[str, Any]]:
+    panel = {canonicalize_strain(strain) for strain in panel_strains}
+    oof = result.oof_predictions.copy()
+    require_columns(
+        oof,
+        [
+            "participant_id",
+            "virus_strain",
+            "post_hai",
+            "post_prediction",
+            "log2_pre_hai",
+            "study_group",
+        ],
+        table_name="B2.1 HAI OOF",
+    )
+    oof["virus_strain"] = oof["virus_strain"].map(canonicalize_strain)
+    working = oof.loc[oof["virus_strain"].isin(panel)].copy()
+    if working.empty:
