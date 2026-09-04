@@ -5,27 +5,25 @@
   "operation": "kernel_run",
   "target": "renta0426/shadow-tpu-pilot-v1",
   "launcher_path": "scripts/poisoned_chalice_shadow_tpu_pilot_v1.py",
-  "launcher_blob_sha": "a5bdd3322da44cc42ffcf9b4787671665f4233a4",
+  "launcher_blob_sha": "481b138077557baf219a508be1710ea5a81afe92",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
   "research_commit": "4e221829e37af88553e780488b27730cf167d6f8",
-  "research_files": [
+  "materialized_files": [
     {
-      "path": "src/poisoned_chalice/shadow_protocol.py",
+      "logical_path": "poisoned_chalice/shadow_protocol.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_protocol.py",
       "git_blob_sha": "1c47b80696050aa2e5e7c62384617df61ecb80da",
       "max_bytes": 131072
     },
     {
-      "path": "src/poisoned_chalice/shadow_training.py",
+      "logical_path": "poisoned_chalice/shadow_training.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_training.py",
       "git_blob_sha": "2fe3cf2079659ae10e1ebe0d5973f3ce96c26a03",
       "max_bytes": 131072
     },
     {
-      "path": "scripts/train_shadow_model.py",
-      "git_blob_sha": "8afc9d4126c8d39ce8ba6f7ab11a5c95b0d07d2b",
-      "max_bytes": 65536
-    },
-    {
-      "path": "configs/shadow_tpu_pilot_v1.json",
+      "logical_path": "shadow_tpu_pilot_v1.json",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v1/shadow_tpu_pilot_v1.json",
       "git_blob_sha": "6c95af7488e506642e07a89301cb2db08571ba94",
       "max_bytes": 32768
     }
@@ -44,7 +42,7 @@
     "max_pages": 2
   },
   "side_effects": [
-    "read four public files from one pinned research commit",
+    "consume three exact source snapshots already materialized in the approved bridge commit",
     "create one private Kaggle TPU Notebook version and start exactly one TPU run"
   ],
   "automatic_compute_retries": 0,
@@ -62,7 +60,8 @@
     "hidden_stage1_validation_labels_used": false,
     "public_leaderboard_tuning_used": false,
     "pretrained_weights_used": false,
-    "competition_submission_created": false
+    "competition_submission_created": false,
+    "protected_job_private_repository_access": false
   },
   "pilot_contract": {
     "synthetic_training_rows": 128,
