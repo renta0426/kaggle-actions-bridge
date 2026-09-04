@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "request_id": "20260905-poisoned-chalice-shadow-gold-v1-001",
+  "parent_request_id": "20260904-poisoned-chalice-shadow-gpu-t4x2-pilot-v2-002",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/shadow-gold-architecture-transfer-v1",
+  "launcher_path": "scripts/poisoned_chalice_shadow_gold_v1.py",
+  "launcher_blob_sha": "4365d199641d4310aec4c8dbf198c20b2347f15b",
+  "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "research_commit": "bc0661fa0307b3e27b31f2ab4c83e90e74647390",
+  "materialized_files": [
+    {
+      "logical_path": "poisoned_chalice/controlled_transfer.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/controlled_transfer.py",
+      "git_blob_sha": "09b04c10d934654044817bb9b36fd7358a2aa942",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_gold_corpus.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_corpus.py",
+      "git_blob_sha": "241e3481f7dc56f5fc7495436f3cfc33274a0823",
+      "max_bytes": 32768
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_gold_kaggle.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_kaggle.py",
+      "git_blob_sha": "e68eb320605a943bb7d46b0e9ce51bb06142ffef",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_gold_transfer.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_transfer.py",
+      "git_blob_sha": "1ee969fe852f8a18d00a5c0249f4a8a90d61338a",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_protocol.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_protocol.py",
+      "git_blob_sha": "1c47b80696050aa2e5e7c62384617df61ecb80da",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_scoring.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_scoring.py",
+      "git_blob_sha": "6bc2b55bec2a32cbb3b0cfe870e426f80260730d",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_training.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training.py",
+      "git_blob_sha": "2fe3cf2079659ae10e1ebe0d5973f3ce96c26a03",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_training_dual_gpu.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training_dual_gpu.py",
+      "git_blob_sha": "c75a5963fa930916024cb16b4fbf562ba4afa818",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "poisoned_chalice/stage2_api.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/stage2_api.py",
+      "git_blob_sha": "16578d3e01b6471e5bfb2b04cebb99e1b3126c7c",
+      "max_bytes": 65536
+    },
+    {
+      "logical_path": "shadow_gold_architecture_transfer_v1.json",
+      "bridge_path": "materialized/poisoned-chalice-shadow-gold-v1/shadow_gold_architecture_transfer_v1.json",
+      "git_blob_sha": "ef62a70a8ec80e0e5a50d4fa6f5189128480722f",
+      "max_bytes": 32768
+    }
+  ],
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 2,
+    "min_remaining_quota_hours": 1.0
+  },
+  "side_effects": [
+    "consume ten exact public bridge snapshots",
+    "create one NEW private Kaggle T4 x2 Notebook at renta0426/shadow-gold-architecture-transfer-v1 and start exactly one run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission": false,
+  "select_as_final": false,
+  "runner_local_public_material_retention_days": 0,
+  "persistent_outputs": [
+    "gold_attack.json",
+    "gold_metrics.json",
+    "gold_predictions.jsonl",
+    "gold_runtime_manifest.json"
+  ],
+  "clean_room": {
+    "gold_controlled_synthetic_only": true,
+    "competition_train_rows_used": 0,
+    "hidden_stage1_validation_labels_used": false,
+    "smollm2_labels_used": false,
+    "public_leaderboard_tuning_used": false,
+    "pretrained_weights_used": false,
+    "evaluation_labels_passed_to_gpu_children": false,
+    "competition_submission_created": false,
+    "protected_job_private_repository_access": false
+  },
+  "prerequisite": {
+    "experiment": "shadow-gpu-t4x2-pilot-v1",
+    "status": "pass",
+    "evidence": "user-reported completed Kaggle scriptVersionId 347256184; both isolated T4 children passed finite-loss and zero-difference checkpoint reload gates"
+  },
+  "benchmark_contract": {
+    "role": "gold_controlled_benchmark",
+    "candidate_rows": 10240,
+    "training_corpus_rows": 5120,
+    "evaluation_rows": 5120,
+    "evaluation_rows_per_language_per_class": 512,
+    "exposure_repeats": 4,
+    "training_sequences": 20480,
+    "global_batch_size": 64,
+    "optimizer_steps_per_architecture": 320,
+    "architecture_gpu_assignment": {"left": 0, "right": 1},
+    "per_architecture_world_size": 1,
+    "distributed_training": false,
+    "ddp_used": false,
+    "nccl_used": false,
+    "checkpoint_reload_atol": 1e-05,
+    "shadow_a_development_fit_only": true,
+    "frozen_attack_applied_unchanged_to_shadow_b": true,
+    "stage2_v3_selection_allowed": false,
+    "external_model_holdout_consumed": false
+  }
+}
