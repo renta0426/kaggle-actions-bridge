@@ -157,6 +157,7 @@ def _has_pair(command: tuple[str, ...], left: str, right: str) -> bool:
 
 def validate_static(launcher: Path) -> None:
     source = launcher.read_text(encoding="utf-8")
+    tree = ast.parse(source)
     commands = _literal_commands(source)
     if sum(_has_pair(command, "kernels", "push") for command in commands) != 1:
         raise RuntimeError("launcher must contain exactly one kernels push")
@@ -166,13 +167,16 @@ def validate_static(launcher: Path) -> None:
     ):
         if any(_has_pair(command, *pair) for command in commands):
             raise RuntimeError(f"launcher gained forbidden write: {' '.join(pair)}")
-    for marker in (
-        "RESEARCH_REPO_READ_TOKEN",
-        "api.github.com/repos/renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-        "raw.githubusercontent.com/renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-    ):
-        if marker.casefold() in source.casefold():
-            raise RuntimeError(f"launcher gained forbidden private-repo access: {marker}")
+    forbidden_network_roots = {"urllib", "requests", "httpx", "aiohttp"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots = {alias.name.split(".", 1)[0] for alias in node.names}
+            if roots & forbidden_network_roots:
+                raise RuntimeError(f"launcher gained network import: {sorted(roots & forbidden_network_roots)}")
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".", 1)[0]
+            if root in forbidden_network_roots:
+                raise RuntimeError(f"launcher gained network import: {root}")
 
 
 def load_snapshots(root: Path) -> dict[str, bytes]:
