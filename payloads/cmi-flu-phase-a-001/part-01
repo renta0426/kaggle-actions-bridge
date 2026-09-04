@@ -1,0 +1,237 @@
+        raise DataContractError("HAI Phase A panel has zero OOF overlap")
+    working["pre_hai"] = np.exp2(working["log2_pre_hai"].to_numpy(dtype=float))
+    grouped = (
+        working.groupby(
+            ["study_group", "participant_id"], dropna=False, observed=True
+        )
+        .agg(
+            target=("post_hai", geometric_mean),
+            anchor=("pre_hai", geometric_mean),
+            b21_prediction=("post_prediction", geometric_mean),
+            panel_size=("virus_strain", "nunique"),
+        )
+        .reset_index()
+    )
+    grouped["b1_prediction"] = grouped.groupby(
+        "study_group", dropna=False, observed=True
+    )["anchor"].transform(lambda values: percentile_rank(values.to_numpy(dtype=float)))
+    return grouped[
+        ["study_group", "target", "b1_prediction", "b21_prediction"]
+    ], {
+        "requested_strains": len(panel),
+        "available_strains": int(working["virus_strain"].nunique()),
+        "participants": int(grouped["participant_id"].nunique()),
+        "studies": int(grouped["study_group"].nunique()),
+        "panel_size_min": int(grouped["panel_size"].min()),
+        "panel_size_max": int(grouped["panel_size"].max()),
+    }
+
+
+def _challenge_agreement(
+    b1: pd.DataFrame,
+    b21: pd.DataFrame,
+) -> Mapping[str, Any]:
+    left = b1[["participant_id", "prediction"]].rename(
+        columns={"prediction": "b1_prediction"}
+    )
+    right = b21[["participant_id", "prediction"]].rename(
+        columns={"prediction": "b21_prediction"}
+    )
+    aligned = left.merge(right, on="participant_id", how="inner", validate="one_to_one")
+    if len(aligned) != 40:
+        raise DataContractError(
+            f"challenge prediction agreement expected 40 participants; found {len(aligned)}"
+        )
+    aligned["b1_rank"] = percentile_rank(aligned["b1_prediction"].to_numpy(dtype=float))
+    aligned["b21_rank"] = percentile_rank(aligned["b21_prediction"].to_numpy(dtype=float))
+    return {
+        "rows": int(len(aligned)),
+        "rank_spearman": _metric_dict(aligned["b1_rank"], aligned["b21_rank"]),
+        "mean_absolute_percentile_rank_difference": float(
+            np.mean(np.abs(aligned["b1_rank"] - aligned["b21_rank"]))
+        ),
+        "max_absolute_percentile_rank_difference": float(
+            np.max(np.abs(aligned["b1_rank"] - aligned["b21_rank"]))
+        ),
+    }
+
+
+def _finite_metric(comparison: Mapping[str, Any], model: str) -> float | None:
+    metric = comparison[model]["within_group_rank_spearman"]
+    value = metric.get("value")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if np.isfinite(number) else None
+
+
+def run_phase_a_anchor_comparison(config: Any, inputs: InputBundle) -> Mapping[str, Any]:
+    """Run the first post-B2.1 experiment on Competition Data.
+
+    B1 and B2.1 are compared on the same task cohorts.  B2.1 remains frozen:
+    this function reuses the locked robust_v1 candidate grids and does not tune
+    anything from Public leaderboard outcomes.
+    """
+
+    selection_policy = str(
+        config.section("selection", required=False).get("policy", "legacy")
+    )
+    flow = config.section("flow")
+    if selection_policy != "robust_v1":
+        raise DataContractError("Phase A requires the locked B2.1 robust_v1 policy")
+    if str(flow.get("task_12_mode")) != "broad" or str(flow.get("task_13_mode")) != "broad":
+        raise DataContractError("Phase A requires the B2.1 broad flow contract")
+
+    datasets = build_b02_datasets(config, inputs)
+    splits = {
+        task: default_splits_for_task(datasets[task], random_state=config.random_state)
+        for task in ("Task1.1", "Task1.2", "Task1.3")
+    }
+    compact_results = {
+        "Task1.1": run_compact_task(
+            datasets["Task1.1"],
+            specs=config.model_specs("task_11"),
+            splits=splits["Task1.1"],
+            random_state=config.random_state,
+            selection_policy="robust_v1",
+        ),
+        "Task1.2": run_compact_task(
+            datasets["Task1.2"],
+            specs=config.model_specs("task_12"),
+            splits=splits["Task1.2"],
+            random_state=config.random_state,
+            selection_policy="robust_v1",
+        ),
+        "Task1.3": run_compact_task(
+            datasets["Task1.3"],
+            specs=config.model_specs("task_13"),
+            splits=splits["Task1.3"],
+            random_state=config.random_state,
+            selection_policy="robust_v1",
+        ),
+    }
+    hai_specs = config.model_specs("hai")
+    hai_results = run_hai_compact_for_panels(
+        datasets["HAI_D28"],
+        specs=hai_specs,
+        selection_panels={
+            "Task2.1": inputs.vaccine_strains,
+            "Task2.2": inputs.challenge_strains,
+        },
+        selection_policy="robust_v1",
+    )
+    hai_results.update(
+        run_hai_compact_for_panels(
+            datasets["HAI_D365"],
+            specs=hai_specs,
+            selection_panels={"Task2.3": inputs.challenge_strains},
+            selection_policy="robust_v1",
+        )
+    )
+
+    task11_b1 = _task11_b1_frame(
+        datasets["Task1.1"], inputs.tables["public_cytokine"], splits["Task1.1"]
+    )
+    compact_b1 = {
+        "Task1.1": task11_b1,
+        "Task1.2": _flow_b1_frame(
+            datasets["Task1.2"], population="Classical_monocytes"
+        ),
+        "Task1.3": _flow_b1_frame(
+            datasets["Task1.3"], population="Antibody-secreting_cells_(ASC)"
+        ),
+    }
+
+    comparisons: dict[str, Any] = {}
+    for task in ("Task1.1", "Task1.2", "Task1.3"):
+        aligned = _align_compact_result(
+            datasets[task], compact_b1[task], compact_results[task]
+        )
+        comparisons[task] = {
+            **compare_aligned_predictions(aligned),
+            "b21_selected_model": compact_results[task].selected_spec.name,
+            "b21_repeat_metrics": compact_results[task].metrics.get("repeat_metrics", []),
+        }
+
+    hai_panels = {
+        "Task2.1": inputs.vaccine_strains,
+        "Task2.2": inputs.challenge_strains,
+        "Task2.3": inputs.challenge_strains,
+    }
+    for task, panel in hai_panels.items():
+        frame, coverage = _hai_panel_frame(hai_results[task], panel_strains=panel)
+        comparisons[task] = {
+            **compare_aligned_predictions(frame),
+            "b21_selected_model": hai_results[task].selected_spec.name,
+            "panel_proxy_coverage": coverage,
+        }
+
+    comparisons["Task1.4"] = {
+        "status": "not_evaluable",
+        "reason": "no public AIM labels; B1 and B2.1 both use the same Pre-vacc Conserved ordering",
+    }
+
+    b1_challenge, _ = build_b1_anchor_predictions(
+        public_cytokine=inputs.tables["public_cytokine"],
+        challenge_cytokine=inputs.tables["challenge_cytokine"],
+        challenge_flow=inputs.tables["challenge_flow"],
+        challenge_aim=inputs.tables["challenge_aim"],
+        challenge_serology=inputs.tables["challenge_serology"],
+        vaccine_strains=inputs.vaccine_strains,
+        challenge_strains=inputs.challenge_strains,
+        task_11_direction="auto",
+    )
+    b21_challenge: dict[str, pd.DataFrame] = {
+        task: result.challenge_predictions for task, result in compact_results.items()
+    }
+    b21_challenge["Task1.4"] = build_task_14_anchor(inputs.tables["challenge_aim"])[
+        ["participant_id", "anchor"]
+    ].rename(columns={"anchor": "prediction"})
+    for task, panel in hai_panels.items():
+        b21_challenge[task] = aggregate_hai_task_predictions(
+            hai_results[task].challenge_strain_predictions,
+            panel_strains=panel,
+            task=task,
+        )
+    challenge_agreement = {
+        task: _challenge_agreement(b1_challenge[task], b21_challenge[task])
+        for task in (
+            "Task1.1",
+            "Task1.2",
+            "Task1.3",
+            "Task1.4",
+            "Task2.1",
+            "Task2.2",
+            "Task2.3",
+        )
+    }
+
+    macro_tasks = ("Task1.1", "Task1.2", "Task1.3", "Task2.1", "Task2.2")
+    macro: dict[str, float | None] = {}
+    for model in ("b1", "b21", "fixed_equal_rank_blend"):
+        values = [_finite_metric(comparisons[task], model) for task in macro_tasks]
+        finite = [value for value in values if value is not None]
+        macro[model] = float(np.mean(finite)) if len(finite) == len(macro_tasks) else None
+
+    return {
+        "schema_version": 1,
+        "experiment": "phase_a_b1_vs_b21_same_contract",
+        "selection_policy": "robust_v1",
+        "flow_contract": "broad",
+        "public_supervised_proxy_tasks": list(macro_tasks),
+        "five_task_within_group_rank_macro": macro,
+        "task_comparisons": comparisons,
+        "challenge_prediction_agreement": challenge_agreement,
+        "selected_b21_models": {
+            **{task: result.selected_spec.name for task, result in compact_results.items()},
+            **{task: result.selected_spec.name for task, result in hai_results.items()},
+            "Task1.4": "raw_pre_vacc_conserved_anchor",
+        },
+        "notes": [
+            "The five-task macro is a historical proxy, not an expected Public or Private leaderboard score.",
+            "Task1.4 is excluded because no public supervised AIM labels exist.",
+            "The 50/50 rank blend is a fixed diagnostic and was not tuned on these outcomes or on the Public leaderboard.",
+            "No Kaggle submission is created or attempted by this experiment.",
+        ],
+    }
