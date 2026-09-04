@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-cmi-flu-rank-transfer-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-phase-a-rank-transfer-20260904-001",
+  "purpose": "run the pre-registered Phase A step-2 Task1.1/Task1.2 within-study target-rank and transductive baseline-feature-rank diagnostics; no competition submission",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "9e9922806209241121274f9242a6cf09bf140d75",
+  "rank_transfer_blob_sha": "d5e07cdd09d2eabdc935eb1733ec238e26ab4c17",
+  "bundle_builder_blob_sha": "bad454639d9e95331961272df4d0f13a0d2bcb87",
+  "phase_builder_blob_sha": "9afdb52abfadb8e634cdb9864581aff1dfe29726",
+  "b21_config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9",
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 180,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-04T04:31:00Z"
+}
