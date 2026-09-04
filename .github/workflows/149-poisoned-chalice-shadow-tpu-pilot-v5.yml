@@ -1,0 +1,317 @@
+name: Poisoned Chalice XLA-no-grad shadow TPU pilot v5
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-shadow-tpu-pilot-v5.json
+      - scripts/poisoned_chalice_shadow_tpu_pilot_v7.py
+      - materialized/poisoned-chalice-shadow-tpu-pilot-v5/**
+      - .github/workflows/149-poisoned-chalice-shadow-tpu-pilot-v5.yml
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-shadow-tpu-pilot-v5.json
+      - scripts/poisoned_chalice_shadow_tpu_pilot_v7.py
+      - materialized/poisoned-chalice-shadow-tpu-pilot-v5/**
+      - .github/workflows/149-poisoned-chalice-shadow-tpu-pilot-v5.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-shadow-tpu-pilot-v5.json
+  LAUNCHER_PATH: scripts/poisoned_chalice_shadow_tpu_pilot_v7.py
+  WRAPPER_V6_PATH: scripts/poisoned_chalice_shadow_tpu_pilot_v6.py
+  LAUNCHER_V5_PATH: scripts/poisoned_chalice_shadow_tpu_pilot_v5.py
+  LAUNCHER_V4_PATH: scripts/poisoned_chalice_shadow_tpu_pilot_v4.py
+  LAUNCHER_V3_PATH: scripts/poisoned_chalice_shadow_tpu_pilot_v3.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL: renta0426/shadow-tpu-pilot-v5
+  TARGET_COMPETITION: poisoned-chalice-icse27
+
+jobs:
+  validate:
+    name: Validate XLA-no-grad shadow TPU pilot v5 without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate exact bundle and generated Notebook
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import hashlib, json, pathlib, ssl, sys, time, urllib.request
+          sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          files = {
+              "requests/poisoned-chalice-shadow-tpu-pilot-v5.json": 32768,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v7.py": 262144,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v6.py": 65536,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v5.py": 262144,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v4.py": 262144,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v3.py": 262144,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_protocol.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_training.py": 131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v2/poisoned_chalice/shadow_xla_compat.py": 32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v3/poisoned_chalice/shadow_training_spawn.py": 32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v4/poisoned_chalice/shadow_kaggle_tpu_env.py": 32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v4/shadow_tpu_pilot_v4.json": 32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v5/poisoned_chalice/shadow_xla_inference_compat.py": 32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v5/shadow_tpu_pilot_v5.json": 32768,
+          }
+          context = ssl.create_default_context()
+          def fetch(path, maximum):
+              url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+              last = None
+              for attempt in range(3):
+                  try:
+                      req = urllib.request.Request(url, headers={"User-Agent":"kaggle-actions-bridge/1"})
+                      with urllib.request.urlopen(req, timeout=30, context=context) as response:
+                          data = response.read(maximum + 1)
+                      if len(data) > maximum: raise SystemExit(f"file too large: {path}")
+                      return data
+                  except Exception as exc:
+                      last = exc
+                      if attempt < 2: time.sleep(attempt + 1)
+              raise SystemExit(f"read-only bridge fetch failed: {path}: {last}")
+          for path, maximum in files.items():
+              data = fetch(path, maximum)
+              dst = root / path; dst.parent.mkdir(parents=True, exist_ok=True); dst.write_bytes(data)
+          request = json.loads((root / "requests/poisoned-chalice-shadow-tpu-pilot-v5.json").read_text())
+          exact = {
+              "request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-v5-001",
+              "parent_request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-v4-001",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_run",
+              "target": "renta0426/shadow-tpu-pilot-v5",
+              "launcher_path": "scripts/poisoned_chalice_shadow_tpu_pilot_v7.py",
+              "research_commit": "9af6ea4c5e974533a410a1dc3a10d99fc107f981",
+              "automatic_compute_retries": 0,
+              "enable_internet": False,
+              "competition_submission": False,
+          }
+          for key, value in exact.items():
+              if request.get(key) != value: raise SystemExit(f"request contract changed: {key}")
+          if len(request.get("materialized_files", [])) != 8: raise SystemExit("snapshot count changed")
+          contract = request.get("pilot_contract") or {}
+          if contract.get("repair_from") != "shadow-tpu-pilot-v4": raise SystemExit("repair parent changed")
+          if contract.get("xla_inference_layer") != "shadow-xla-no-grad-forward-v1": raise SystemExit("XLA inference repair changed")
+          if contract.get("xla_fixed_forward_context") != "torch.no_grad": raise SystemExit("XLA fixed-forward context changed")
+          if contract.get("optimizer_step_context_changed") is not False: raise SystemExit("optimizer context changed")
+          if contract.get("stage2_v3_selection_allowed") is not False: raise SystemExit("scientific guard changed")
+          if request.get("clean_room", {}).get("protected_job_private_repository_access") is not False: raise SystemExit("private repo boundary changed")
+          for path_key, blob_key in (
+              ("launcher_path","launcher_blob_sha"),("wrapper_v6_path","wrapper_v6_blob_sha"),
+              ("launcher_v5_path","launcher_v5_blob_sha"),("launcher_v4_path","launcher_v4_blob_sha"),
+              ("launcher_v3_path","launcher_v3_blob_sha"),
+          ):
+              data = (root / request[path_key]).read_bytes(); blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != request[blob_key]: raise SystemExit(f"launcher blob mismatch: {path_key}")
+          for item in request["materialized_files"]:
+              data = (root / item["bridge_path"]).read_bytes(); blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+              if blob != item["git_blob_sha"] or len(data) > int(item["max_bytes"]): raise SystemExit(f"snapshot mismatch: {item['bridge_path']}")
+          PY
+          python3 "${workdir}/${LAUNCHER_PATH}" --static --launcher "${workdir}/${LAUNCHER_PATH}"
+          python3 "${workdir}/${LAUNCHER_PATH}" \
+            --materialize --snapshot-root "${workdir}" \
+            --wrapper-v6 "${workdir}/${WRAPPER_V6_PATH}" \
+            --launcher-v5 "${workdir}/${LAUNCHER_V5_PATH}" \
+            --launcher-v4 "${workdir}/${LAUNCHER_V4_PATH}" \
+            --launcher-v3 "${workdir}/${LAUNCHER_V3_PATH}" \
+            --kernel-dir "${workdir}/kernel"
+          python3 - "${workdir}/kernel" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          notebook = json.loads((root / "shadow-tpu-pilot-v5.ipynb").read_text())
+          code = "".join(notebook["cells"][1]["source"])
+          compile(code, "shadow-tpu-pilot-v5.ipynb", "exec")
+          assert "shadow-xla-no-grad-forward-v1" in code
+          assert "install_shadow_xla_inference_compat" in code
+          assert "torch.no_grad" in code
+          print("SHADOW_TPU_V5_NOTEBOOK_COMPILE PASS xla_no_grad=1")
+          PY
+
+  launch:
+    name: Launch exactly one XLA-no-grad shadow TPU pilot v5
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    concurrency:
+      group: kaggle-resource-tpu-global
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/149-poisoned-chalice-shadow-tpu-pilot-v5.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" && -z "${RESEARCH_REPO_READ_TOKEN-}" ]]
+          echo "SHADOW_TPU_V5_PROTECTED_BOUNDARY PASS private_repo_access=0"
+
+      - name: Materialize approved public bundle and Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; kernel_dir="${workdir}/kernel"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"; echo "KERNEL_DIR=${kernel_dir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import json, pathlib, re, ssl, sys, time, urllib.request
+          sha, root_value = sys.argv[1:]; root = pathlib.Path(root_value)
+          request_path = "requests/poisoned-chalice-shadow-tpu-pilot-v5.json"
+          fixed = {
+              request_path:32768,"scripts/poisoned_chalice_shadow_tpu_pilot_v7.py":262144,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v6.py":65536,"scripts/poisoned_chalice_shadow_tpu_pilot_v5.py":262144,
+              "scripts/poisoned_chalice_shadow_tpu_pilot_v4.py":262144,"scripts/poisoned_chalice_shadow_tpu_pilot_v3.py":262144,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_protocol.py":131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_training.py":131072,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v2/poisoned_chalice/shadow_xla_compat.py":32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v3/poisoned_chalice/shadow_training_spawn.py":32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v4/poisoned_chalice/shadow_kaggle_tpu_env.py":32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v4/shadow_tpu_pilot_v4.json":32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v5/poisoned_chalice/shadow_xla_inference_compat.py":32768,
+              "materialized/poisoned-chalice-shadow-tpu-pilot-v5/shadow_tpu_pilot_v5.json":32768,
+              "requirements/kaggle-2.2.4.lock":65536,
+          }
+          ctx=ssl.create_default_context()
+          for path,maximum in fixed.items():
+              url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"; last=None
+              for attempt in range(3):
+                  try:
+                      req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                      with urllib.request.urlopen(req,timeout=30,context=ctx) as response:data=response.read(maximum+1)
+                      if len(data)>maximum:raise SystemExit(f"file too large: {path}")
+                      break
+                  except Exception as exc:
+                      last=exc
+                      if attempt==2:raise SystemExit(f"read-only fetch failed: {path}: {last}")
+                      time.sleep(attempt+1)
+              dst=root/path;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_bytes(data)
+          lock=(root/"requirements/kaggle-2.2.4.lock").read_text(); pattern=re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$"); lines=[x.strip() for x in lock.splitlines() if x.strip() and not x.lstrip().startswith("#")]
+          if len(lines)!=33 or not all(pattern.fullmatch(x) for x in lines):raise SystemExit("Kaggle CLI lock validation failed")
+          PY
+          python3 "${workdir}/${LAUNCHER_PATH}" --static --launcher "${workdir}/${LAUNCHER_PATH}"
+          python3 "${workdir}/${LAUNCHER_PATH}" \
+            --materialize --snapshot-root "${workdir}" \
+            --wrapper-v6 "${workdir}/${WRAPPER_V6_PATH}" \
+            --launcher-v5 "${workdir}/${LAUNCHER_V5_PATH}" \
+            --launcher-v4 "${workdir}/${LAUNCHER_V4_PATH}" \
+            --launcher-v3 "${workdir}/${LAUNCHER_V3_PATH}" \
+            --kernel-dir "${kernel_dir}"
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/${LOCK_PATH}" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "SHADOW_TPU_V5_CLIENT PASS private_repo_access=0"
+
+      - name: Confirm current Kaggle policy pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl,time,urllib.request
+          ctx=ssl.create_default_context()
+          for url in ("https://www.kaggle.com/terms","https://www.kaggle.com/aup","https://www.kaggle.com/community-guidelines","https://www.kaggle.com/docs/api","https://www.kaggle.com/docs/notebooks"):
+              last=None
+              for attempt in range(3):
+                  try:
+                      req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                      with urllib.request.urlopen(req,timeout=30,context=ctx) as r:
+                          if r.status!=200 or not r.read(65536):raise RuntimeError("empty response")
+                      break
+                  except Exception as exc:
+                      last=exc
+                      if attempt==2:raise SystemExit(f"official Kaggle page unavailable: {url}: {last}")
+                      time.sleep(attempt+1)
+          print("SHADOW_TPU_V5_POLICY PASS")
+          PY
+
+      - name: Live preflight and launch once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" && -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          import os,re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api=KaggleApi(); api.authenticate(); target=os.environ["TARGET_KERNEL"]
+          pages=api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []; content={}
+          for page in pages:
+              data=page.to_dict() if hasattr(page,"to_dict") else dict(page); name=str(data.get("name") or "").strip().lower()
+              if name:content[name]=str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content or not any("data" in n for n in content):raise SystemExit("live competition pages unavailable")
+          plain=re.sub(r"\s+"," ",re.sub(r"<[^>]+>"," ",content["evaluation"].replace(r"\%","%"))).casefold()
+          if not all(t in plain for t in ("auc","novelty","1%","false-positive")):raise SystemExit("evaluation contract changed")
+          if "tpu is prohibited" in re.sub(r"\s+"," ",re.sub(r"<[^>]+>"," ",content["rules"])).casefold():raise SystemExit("TPU prohibited")
+          visible=api.kernels_list(user="renta0426",search="shadow-tpu-pilot-v5",page_size=20) or []
+          if any(str(getattr(i,"ref",""))==target for i in visible):raise SystemExit("target already exists")
+          quota=api.quota_view(); tpu=getattr(quota,"tpu_quota",None); used=getattr(tpu,"time_used",None); total=getattr(tpu,"total_time_allowed",None)
+          if used is None or total is None:raise SystemExit("TPU quota unavailable")
+          remaining=max(0.0,(total-used).total_seconds()/3600.0)
+          if remaining<1.0:raise SystemExit(f"insufficient TPU quota: {remaining:.2f}h")
+          recent=(api.kernels_list(user="renta0426",sort_by="dateRun",page_size=25) or [])[:25]; active=[]; unknown=0
+          for item in recent:
+              ref=str(getattr(item,"ref","") or "")
+              if not ref:continue
+              try:status=str(getattr(api.kernels_status(ref),"status","")).upper()
+              except Exception:unknown+=1;continue
+              if any(t in status for t in ("RUNNING","QUEUED","PENDING")):active.append(ref)
+          if active or unknown:raise SystemExit(f"conservative admission refused: active={len(active)} unknown={unknown}")
+          print(f"SHADOW_TPU_V5_LIVE_PREFLIGHT PASS quota={remaining:.2f} active=0 unknown=0")
+          PY
+          "${WORKDIR}/kaggle-venv/bin/python" "${WORKDIR}/${LAUNCHER_PATH}" --execute --kaggle-bin "${WORKDIR}/kaggle-venv/bin/kaggle" --kernel-dir "${KERNEL_DIR}"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "SHADOW_TPU_V5_CLEANUP PASS retention_days=0"
