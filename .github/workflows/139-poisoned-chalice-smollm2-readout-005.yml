@@ -1,0 +1,285 @@
+name: Poisoned Chalice SmolLM2 aggregate readout 005
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-smollm2-readout-005.json
+      - scripts/poisoned_chalice_smollm2_readout_v1.py
+      - .github/workflows/139-poisoned-chalice-smollm2-readout-005.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-smollm2-readout-005.json
+      - scripts/poisoned_chalice_smollm2_readout_v1.py
+      - .github/workflows/139-poisoned-chalice-smollm2-readout-005.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-readonly-poisoned-chalice-smollm2-readout-005
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-smollm2-readout-005.json
+  SCRIPT_PATH: scripts/poisoned_chalice_smollm2_readout_v1.py
+  SCRIPT_BLOB_SHA: 12111e194c65f15ba7a181438796adadb98c312c
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_OWNER: renta0426
+  TARGET_SLUG: smollm2-transfer-v1
+  TARGET_KERNEL: renta0426/smollm2-transfer-v1
+  EXPECTED_ROWS: "2000"
+  LABEL_URL: https://raw.githubusercontent.com/Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026/413f56040e5b4805bcf15ed794dec56bc4e16b41/data/7b_train_test/eval_results.parquet
+  LABEL_SHA256: 6e8559279e8ebd94ec8c25561c91d38c454a4e109ea0813b07864ff6a66d4068
+
+jobs:
+  validate:
+    name: Validate secret-free SmolLM2 aggregate readout 005
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${source_sha}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+          echo 'SMOLLM2_READOUT_005_SECRET_FREE_BOUNDARY PASS kaggle_calls=0 side_effects=0'
+
+      - name: Validate immutable request and evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${WORKDIR}/repo"
+          [[ "$(git -C "${repo}" hash-object "${SCRIPT_PATH}")" == "${SCRIPT_BLOB_SHA}" ]]
+          python3 -W error::SyntaxWarning -m py_compile "${repo}/${SCRIPT_PATH}"
+          python3 - "${repo}/${REQUEST_PATH}" <<'PY'
+          import json, sys
+          p = sys.argv[1]
+          request = json.load(open(p, encoding='utf-8'))
+          assert request['schema_version'] == 1
+          assert request['request_id'] == '20260904-poisoned-chalice-smollm2-readout-005'
+          assert request['operation'] == 'kernel_output_aggregate_evaluation'
+          assert request['target_kernel'] == 'renta0426/smollm2-transfer-v1'
+          assert request['kernel_version'] == 1
+          assert request['expected_rows'] == 2000
+          assert request['side_effects'] == []
+          assert request['publish_private_outputs'] is False
+          assert request['publish_only_aggregate_metrics'] is True
+          assert request['clean_room']['target_label_tuning'] is False
+          assert request['clean_room']['target_labels_joined_after_prediction'] is True
+          assert request['evaluation_contract']['stratified_bootstrap_replicates'] == 1000
+          assert request['evaluation_contract']['detection_overlap_at_fpr'] == 0.01
+          print('SMOLLM2_READOUT_005_STATIC PASS rows=2000 aggregate_only=true bootstrap=1000')
+          PY
+
+      - name: Cleanup validation material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+
+  readout:
+    name: Read SmolLM2 output and emit aggregate metrics once
+    needs: validate
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected read-only boundary and fetch exact main commit
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/139-poisoned-chalice-smollm2-readout-005.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${EVENT_SHA}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+          [[ "$(git -C "${workdir}/repo" hash-object "${SCRIPT_PATH}")" == "${SCRIPT_BLOB_SHA}" ]]
+          echo 'PROTECTED_SMOLLM2_READOUT_005_BOUNDARY PASS side_effects=0 publish_private_outputs=false'
+
+      - name: Prepare locked Kaggle client and evaluation environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${WORKDIR}/repo"
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps --only-binary=:all: \
+            --require-hashes -r "${repo}/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          python3 -m venv "${WORKDIR}/eval-venv"
+          "${WORKDIR}/eval-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
+            numpy==2.3.2 pandas==2.3.2 pyarrow==21.0.0 scikit-learn==1.7.1 >/dev/null
+          "${WORKDIR}/eval-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/eval-venv/bin/python" - <<'PY'
+          import numpy, pandas, pyarrow, sklearn
+          print('SMOLLM2_READOUT_005_EVAL_ENV PASS', numpy.__version__, pandas.__version__, pyarrow.__version__, sklearn.__version__)
+          PY
+
+      - name: Read exact private Kaggle outputs once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          mkdir -p "${WORKDIR}/readout"
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import json, os, pathlib
+          from urllib.parse import urlparse
+          import requests
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest, ApiListKernelSessionOutputRequest
+
+          api = KaggleApi(); api.authenticate()
+          target = os.environ['TARGET_KERNEL']
+          discovered = api.kernels_list(user=os.environ['TARGET_OWNER'], search=os.environ['TARGET_SLUG'], page_size=10) or []
+          refs = [str(getattr(item, 'ref', '')) for item in discovered]
+          if refs.count(target) != 1:
+              raise SystemExit(f'exact SmolLM2 kernel discoverability mismatch count={refs.count(target)}')
+          status = str(getattr(api.kernels_status(target), 'status', '')).upper()
+          if any(token in status for token in ('RUNNING', 'QUEUED', 'PENDING')):
+              raise SystemExit(f'SmolLM2 kernel is not terminal: {status}')
+
+          with api.build_kaggle_client() as client:
+              meta_req = ApiGetKernelRequest(); meta_req.user_name = os.environ['TARGET_OWNER']; meta_req.kernel_slug = os.environ['TARGET_SLUG']
+              metadata = client.kernels.kernels_api_client.get_kernel(meta_req).metadata
+              if str(metadata.ref) != target or not bool(metadata.is_private):
+                  raise SystemExit('SmolLM2 private kernel identity mismatch')
+              current = int(getattr(metadata, 'current_version_number', 0) or 0)
+              if current < 1:
+                  raise SystemExit('SmolLM2 kernel has no completed version')
+              out_req = ApiListKernelSessionOutputRequest()
+              out_req.user_name = os.environ['TARGET_OWNER']
+              out_req.kernel_slug = os.environ['TARGET_SLUG']
+              out_req.version_label = '1'
+              out_req.page_size = 1000
+              output = client.kernels.kernels_api_client.list_kernel_session_output(out_req)
+
+          files = list(getattr(output, 'files', None) or [])
+          allow = {'run_manifest.json': 131072, 'sample_features.parquet': 8_388_608}
+          found = {name: [] for name in allow}
+          for item in files:
+              raw = str(getattr(item, 'file_name', '') or '').replace('\\', '/')
+              name = pathlib.PurePosixPath(raw).name
+              if name in found:
+                  found[name].append((raw, str(getattr(item, 'url', '') or '')))
+          selected = {}
+          for name, candidates in found.items():
+              preferred = [x for x in candidates if x[0].endswith(f'/smollm2_transfer_v1/{name}')]
+              pool = preferred or candidates
+              if len(pool) != 1:
+                  raise SystemExit(f'allowlisted output missing/ambiguous: {name} candidates={len(candidates)}')
+              selected[name] = pool[0][1]
+
+          session = requests.Session(); session.trust_env = False
+          root = pathlib.Path(os.environ['WORKDIR']) / 'readout'
+          for name, url in selected.items():
+              parsed = urlparse(url); host = (parsed.hostname or '').casefold()
+              host_ok = host == 'storage.googleapis.com' or host.endswith('.storage.googleapis.com') or host.endswith('.googleusercontent.com') or host.endswith('.kaggleusercontent.com')
+              if parsed.scheme != 'https' or not host_ok:
+                  raise SystemExit(f'unexpected signed output host for {name}')
+              response = session.get(url, timeout=90, allow_redirects=False)
+              if response.status_code != 200 or len(response.content) > allow[name]:
+                  raise SystemExit(f'output download failed for {name}: status={response.status_code} bytes={len(response.content)}')
+              (root / name).write_bytes(response.content)
+          print(f'SMOLLM2_READOUT_005_KAGGLE_OUTPUT PASS status={status} version=1 files=2')
+          PY
+          unset KAGGLE_API_TOKEN
+
+      - name: Fetch pinned public membership labels after prediction output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, os, pathlib, ssl, urllib.request
+          url = os.environ['LABEL_URL']
+          req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=90, context=ssl.create_default_context()) as response:
+              data = response.read(64_000_001)
+          if len(data) > 64_000_000:
+              raise SystemExit('label artifact exceeds byte budget')
+          digest = hashlib.sha256(data).hexdigest()
+          if digest != os.environ['LABEL_SHA256']:
+              raise SystemExit(f'label artifact SHA256 mismatch: {digest}')
+          path = pathlib.Path(os.environ['WORKDIR']) / 'readout' / 'labels.parquet'
+          path.write_bytes(data)
+          print(f'SMOLLM2_READOUT_005_LABEL_SOURCE PASS sha256={digest} bytes={len(data)}')
+          PY
+
+      - name: Evaluate aggregate transfer performance
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${WORKDIR}/repo"
+          "${WORKDIR}/eval-venv/bin/python" "${repo}/${SCRIPT_PATH}" \
+            --features "${WORKDIR}/readout/sample_features.parquet" \
+            --manifest "${WORKDIR}/readout/run_manifest.json" \
+            --labels "${WORKDIR}/readout/labels.parquet" \
+            --request "${repo}/${REQUEST_PATH}"
+
+      - name: Cleanup all downloaded row-level material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'SMOLLM2_READOUT_005_CLEANUP PASS row_level_retention_days=0 artifacts_uploaded=0'
