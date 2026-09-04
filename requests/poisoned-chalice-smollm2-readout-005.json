@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-poisoned-chalice-smollm2-readout-005",
+  "operation": "kernel_output_aggregate_evaluation",
+  "competition": "poisoned-chalice-icse27",
+  "target_kernel": "renta0426/smollm2-transfer-v1",
+  "kernel_version": 1,
+  "expected_launch_request_id": "20260904-poisoned-chalice-smollm2-transfer-v1-004",
+  "launch_bridge_commit": "b9e98422d1819614a73dd2999fb3339d5b9054c2",
+  "target_model_id": "HuggingFaceTB/SmolLM2-1.7B",
+  "target_model_revision": "effd688a12921b4cc83e3312b6feb579f70f9c71",
+  "expected_prediction_manifest_sha256": "8d74549603dbe3ac19ea54eb32aa69152a041ae198f1fad504d06f4fad22684c",
+  "expected_rows": 2000,
+  "allowed_outputs": [
+    "run_manifest.json",
+    "sample_features.parquet"
+  ],
+  "label_source": {
+    "repository": "Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026",
+    "commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+    "path": "data/7b_train_test/eval_results.parquet",
+    "sha256": "6e8559279e8ebd94ec8c25561c91d38c454a4e109ea0813b07864ff6a66d4068"
+  },
+  "evaluation_contract": {
+    "overall_predictors": [
+      "membership_score_v1",
+      "membership_score_v2",
+      "loss_multiwindow",
+      "standard_minkpp",
+      "local_64",
+      "neg_mean_log_rank",
+      "minkpp_length_residual",
+      "logrank_length_residual"
+    ],
+    "metrics": [
+      "auc",
+      "pauc_01",
+      "tpr_at_0.001_fpr",
+      "tpr_at_0.005_fpr",
+      "tpr_at_0.01_fpr",
+      "tpr_at_0.02_fpr"
+    ],
+    "language_stratified": true,
+    "length_quintiles": true,
+    "score_length_spearman": true,
+    "score_pair_spearman": true,
+    "detection_overlap_at_fpr": 0.01,
+    "stratified_bootstrap_replicates": 1000,
+    "stratified_bootstrap_seed": 20260904,
+    "mellum_comparison_reference": "frozen_existing_research_record"
+  },
+  "clean_room": {
+    "target_labels_embedded_in_gpu_notebook": false,
+    "target_labels_joined_after_prediction": true,
+    "target_labels_used_for_training_or_normalization": false,
+    "target_label_tuning": false,
+    "previous_model_scores_used": false,
+    "public_leaderboard_tuning_used": false
+  },
+  "api_budget": {
+    "max_calls": 12,
+    "max_pages": 1,
+    "poll_attempts": 1
+  },
+  "side_effects": [],
+  "publish_private_outputs": false,
+  "publish_only_aggregate_metrics": true
+}
