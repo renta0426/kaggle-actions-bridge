@@ -20,6 +20,12 @@ B21_BASE_REQUEST_ID = "20260903-cmi-flu-b21-001"
 TARGET_COMPETITION = "cmi-flu-first-prediction-challenge"
 TARGET_KERNEL = "renta0426/cmi-flu-phase-a-anchor-residual-20260904-001"
 TARGET_STAGE = "phase_a_anchor_residual_task11_task12"
+EXPECTED_KERNEL_VERSION = 1
+ALLOWED_OUTPUT_PATHS = [
+    "cmi-flu-anchor-residual/bridge-result.json",
+    "cmi-flu-anchor-residual/metrics.json",
+    "cmi-flu-anchor-residual/summary.md",
+]
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -57,6 +63,8 @@ def main() -> int:
         "rank_transfer_base_request_id",
         "rank_transfer_blob_sha",
         "b21_base_request_id",
+        "expected_kernel_version",
+        "allowed_output_paths",
         "resource",
         "api_budget",
         "side_effects",
@@ -72,7 +80,7 @@ def main() -> int:
     if (
         request["competition"] != TARGET_COMPETITION
         or request["target"] != TARGET_KERNEL
-        or request["operation"] != "kernel_run"
+        or request["operation"] != "kernel_run_and_current_output_read"
     ):
         raise SystemExit("target/operation mismatch")
     if (
@@ -89,6 +97,10 @@ def main() -> int:
         raise SystemExit("rank-transfer dependency provenance mismatch")
     if request["b21_base_request_id"] != B21_BASE_REQUEST_ID:
         raise SystemExit("B2.1 lineage mismatch")
+    if request["expected_kernel_version"] != EXPECTED_KERNEL_VERSION:
+        raise SystemExit("expected kernel version mismatch")
+    if request["allowed_output_paths"] != ALLOWED_OUTPUT_PATHS:
+        raise SystemExit("allowed output path contract mismatch")
     if (
         request["competition_submission_attempted"] is not False
         or request["automatic_compute_retries"] != 0
@@ -103,13 +115,14 @@ def main() -> int:
     }:
         raise SystemExit("resource contract mismatch")
     if request["api_budget"] != {
-        "max_calls": 20,
+        "max_calls": 30,
         "poll_interval_seconds": 900,
         "max_pages": 2,
     }:
         raise SystemExit("API budget mismatch")
     if request["side_effects"] != [
-        "create one private Notebook version and start one CPU run"
+        "create one private Notebook version and start one CPU run",
+        "after successful completion read only current version 1 aggregate outputs bridge-result.json metrics.json summary.md",
     ]:
         raise SystemExit("side-effect contract mismatch")
 
@@ -128,6 +141,7 @@ def main() -> int:
     work = output.parent
     rank_runtime = work / "rank-runtime.py"
     anchor_v1 = work / "anchor-v1.py"
+    anchor_v2 = work / "anchor-v2.py"
     run(
         sys.executable,
         str(root / "scripts/cmi_flu_rank_transfer_prepare_v3.py"),
@@ -154,12 +168,21 @@ def main() -> int:
         "--source",
         str(anchor_v1),
         "--output",
+        str(anchor_v2),
+    )
+    run(
+        sys.executable,
+        str(root / "scripts/cmi_flu_anchor_residual_patch_v3.py"),
+        "--source",
+        str(anchor_v2),
+        "--output",
         str(output),
     )
 
     for path in (
         root / "scripts/cmi_flu_anchor_residual_patch.py",
         root / "scripts/cmi_flu_anchor_residual_patch_v2.py",
+        root / "scripts/cmi_flu_anchor_residual_patch_v3.py",
         output,
     ):
         py_compile.compile(str(path), doraise=True)
@@ -180,10 +203,13 @@ def main() -> int:
         'if str(config.section("selection").get("policy", "")) != "robust_v1":',
         'weights != (0.25, 0.5, 1.0)',
         '"competition_submission_attempted": False',
+        "shutil.rmtree(runtime_root, ignore_errors=True)",
     )
     missing = [token for token in required if token not in text]
     if missing:
         raise SystemExit(f"generated runtime missing tokens: {missing}")
+    if text.count("shutil.rmtree(runtime_root, ignore_errors=True)") != 2:
+        raise SystemExit("runtime scratch cleanup must cover both success and failure paths")
     forbidden = (
         'TARGET_STAGE = "phase_a_rank_transfer_task11_task12"',
         "kaggle competitions submit",
@@ -219,7 +245,8 @@ def main() -> int:
     print(
         "CMI_FLU_ANCHOR_RESIDUAL_001_PREPARE PASS "
         f"science_commit={SCIENCE_COMMIT} anchor_blob={ANCHOR_RESIDUAL_BLOB} "
-        f"rank_blob={RANK_TRANSFER_BLOB} loader_compat=legacy_b02_then_promote_b021"
+        f"rank_blob={RANK_TRANSFER_BLOB} loader_compat=legacy_b02_then_promote_b021 "
+        "output_hygiene=final_files_only expected_version=1"
     )
     return 0
 
