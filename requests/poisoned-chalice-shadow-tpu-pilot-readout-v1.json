@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-readout-v1-001",
+  "parent_request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_status_output",
+  "target": "renta0426/shadow-tpu-pilot-v1",
+  "expected_kernel_version": 1,
+  "output_allowlist": [
+    "shadow_tpu_pilot_manifest.json"
+  ],
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1,
+    "max_matches": 20
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "protected_job_private_repository_access": false
+}
