@@ -43,7 +43,10 @@
     "language_stratified": true,
     "length_quintiles": true,
     "score_length_spearman": true,
+    "score_pair_spearman": true,
     "detection_overlap_at_fpr": 0.01,
+    "stratified_bootstrap_replicates": 1000,
+    "stratified_bootstrap_seed": 20260904,
     "mellum_comparison_reference": "frozen_existing_research_record"
   },
   "clean_room": {
