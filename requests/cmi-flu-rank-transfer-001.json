@@ -8,9 +8,9 @@
   "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
   "science_source_commit": "9e9922806209241121274f9242a6cf09bf140d75",
   "rank_transfer_blob_sha": "d5e07cdd09d2eabdc935eb1733ec238e26ab4c17",
-  "bundle_builder_blob_sha": "bad454639d9e95331961272df4d0f13a0d2bcb87",
-  "phase_builder_blob_sha": "9afdb52abfadb8e634cdb9864581aff1dfe29726",
-  "b21_config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9",
+  "runtime_base_request_id": "20260903-cmi-flu-b21-001",
+  "runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "runtime_base_payload_sha256": "7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db",
   "resource": {
     "accelerator": "cpu",
     "expected_runtime_minutes": 60,
