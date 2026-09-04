@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-cmi-flu-hai-transfer-002",
+  "parent_request_id": "20260904-cmi-flu-hai-transfer-001",
+  "failed_workflow_run_id": 33871307603,
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-phase-a-hai-strain-transfer-20260904-002",
+  "purpose": "Repair only the frozen-B2.1 runtime API boundary for the already pre-registered Phase A HAI strain/domain-transfer diagnostic; scientific conditions, organizer references, model families, robust_v1 selection, stress tests, promotion rules, and science source remain unchanged from request 001.",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "d1ebf13dc0dc7e5d5a2798b29c288265cbf56618",
+  "science_source_path": "src/cmi_flu/hai_transfer.py",
+  "science_transport": "agent_relay_exact_blob_base64_parts",
+  "hai_transfer_blob_sha": "b671d8bf7f10bebbd65aca2a5bad42e267ee78d5",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "hai_b21_compatibility_blob_sha": "e2973831077ed8893ab1673c9633eb42df7b26de",
+  "organizer_reference_folder": "https://drive.google.com/drive/folders/1D1kwYPO0tGAJOGlRVNwObT__CxIHH3cP?usp=share_link",
+  "sequence_reference_sha256": "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887",
+  "vaccine_reference_sha256": "8f6c7116f37f29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35",
+  "expected_kernel_version": 1,
+  "allowed_output_paths": [
+    "cmi-flu-hai-transfer-002/bridge-result.json",
+    "cmi-flu-hai-transfer-002/metrics.json",
+    "cmi-flu-hai-transfer-002/summary.md"
+  ],
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 210,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 24,
+    "initial_poll_schedule_seconds": [30, 60, 120, 300],
+    "steady_poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "download only the two locked public organizer reference files in GitHub Actions and verify their SHA-256 values",
+    "create one new private Notebook and start one CPU run",
+    "after successful completion read only current version 1 aggregate outputs bridge-result.json metrics.json summary.md"
+  ],
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-04T12:09:06Z"
+}
