@@ -19,16 +19,36 @@ GitHub-hosted runnerからKaggleを**限定的・監査可能・人間承認付�
 - 参加済みCompetitionの指定ファイルdownload
 - Competition Discussion一覧とthread/commentの取得
 - 所有するprivate Notebookのlatest versionのpull
+- exact target/revision/resourceを固定したprivate Notebook push/run
+- resource class別のCPU/GPU/TPU admissionとpre-write再確認
+- current versionがapproved versionと一致する場合のprivate Notebook output read
+- output read後のrunner-local aggregate evaluationと無条件cleanup
 
-private Notebookの`scriptVersionId`を指定したhistorical version取得は、latest pullとは別機能です。現時点ではNVIDIAのarchive経路とKaggle内部API経路で成功していないため、production capabilityとして扱いません。要求された識別子を無視してlatestへ黙って置換することも禁止します。
+private Notebookの`scriptVersionId`を指定したhistorical version取得は、latest/current pullとは別機能です。現時点ではNVIDIAのarchive経路とKaggle内部API経路で成功していないため、production capabilityとして扱いません。要求されたversionを無視してlatestへ黙って置換することも禁止します。
 
-Notebook push/run、Competition submission、Model操作、削除、公開範囲変更は、個別の検証と承認フローが完成するまで汎用操作として有効化しません。
+current version outputについては、metadataで`current_version_number == expected_version`を確認した場合に限り、`scripts/kaggle_current_output_read.py`のcurrent-only contractを使用できます。official `kaggle kernels output` はsaved working directory全体を取得するため、Notebook側のoutput hygieneとセットで運用します。
 
-現在の保護Environment名は、既存設定に合わせて次の文字列です。
+Notebook push/run、Competition submission、Model操作、削除、公開範囲変更は、個別の検証と承認フローを持つrequestだけで使用します。汎用operationとしては有効化しません。
+
+現在の保護Environment名は、既存設定に合わせて次の文字列です。**綴りを推測して修正しないでください。**
 
 ```text
 kaggle-readonry
 ```
+
+## 既知failureから確定した運用ルール
+
+2026-09-04までの実runで、private-repository materialization、GPU admission、private Notebook output取得に複数の失敗経路がありました。再発防止の詳細は [`docs/OPERATIONAL_LESSONS.md`](docs/OPERATIONAL_LESSONS.md) に固定しています。
+
+特に次は新規workflowの必須条件です。
+
+- protected Kaggle jobをprivate research repositoryの実行時readに依存させない。可能ならpinned public sourceからSecret露出前に再構築する
+- resource-consuming runはrequested accelerator class内でadmissionし、unknown resourceはfail closed、write直前に再確認する
+- admission blockerのprivate refをpublic logへ出さず、必要ならSHA-256 identityだけを出す
+- `/kaggle/working`をscratch spaceにしない。clone、source checkout、intermediate cacheは`/tmp`へ置き、successful completion時はdeclared final outputsだけを残す
+- historical-version outputは未対応。current versionとapproved versionが完全一致する場合だけcurrent-output readを行う
+- `kaggle kernels output`のstdout/stderrをpublic logへstreamしない。download file listを含むためcaptureする
+- failure後はroot cause、write有無、resource消費有無を確定し、1つのrepairだけを入れてfresh approvalを取る。blind retryしない
 
 ## ルールの優先順位
 
@@ -163,6 +183,7 @@ Environment approvalは、**そのcommit、そのmanifest、その1回のrun**�
 - 同一resource classがmanifest上限に達している場合、またはactive runのresource classを確認できない場合は、writeせずdeferする
 - defer時に自動pollingや自動再実行は行わず、再実行にはfresh Environment approvalを要求する
 - 起動前にKaggle側のactive session/runを再確認し、resource class別件数だけを非機密metadataとして記録する
+- blocker identityが診断に必要な場合はprivate refではなくhashを記録する
 - 1 requestからKaggle runを開始するAPI callは1回だけにする
 - timeout、network error、5xxで結果が不明な場合、再送前にKaggle側で作成済みか確認する
 
@@ -172,10 +193,12 @@ Kaggleまたは対象Competitionがより厳しい同時実行上限を示す場
 
 - CPUで足りる処理にGPU/TPUを割り当てない
 - accelerator type、expected runtime、hard timeout、Internet設定をmanifestで固定する
+- exact logits/ranksなどbackend fidelityが科学条件に含まれる場合、CUDA実験をTPU/XLAへ黙って置換しない
 - hard timeoutはCompetition/platformの上限以下とし、上限ぎりぎりを意図的な通常運用にしない
 - `enable_internet`はCompetitionの提出条件に従う
 - 無限学習、無限探索、無期限待機、外部job worker化を禁止する
 - progressがない、入力が欠ける、output pathが想定外、quota情報が矛盾する場合は早期終了する
+- Git clone、temporary source/data/cacheは`/tmp`へ置き、`/kaggle/working`にはdeclared final outputsだけを残す
 - 失敗後にparameterを変えて自動再実行しない
 - 完了後は不要なactive sessionが残っていないことを確認する
 
@@ -196,6 +219,10 @@ GitHub Actionsは長時間Notebookを監視し続けません。原則として�
 ### 7. Downloadとdata handling
 
 - 先にfile listとsizeを確認し、必要なnamed fileだけを取得する
+- private Notebook current outputは、approved expected versionとcurrent versionが一致する場合だけ読む
+- historical-version outputをlatest/currentへ黙って置換しない
+- official CLIのcurrent-output fallbackを使う場合、stdout/stderrをcaptureし、broad file listをpublic logへ出さない
+- current-output fallbackはallowlist、per-file/total byte limit、unexpected-file rejection、unconditional cleanupを持つ
 - full Competition datasetの反復downloadを避ける
 - 大容量dataをGitHub Actions経由で往復させず、可能ならKaggle Notebook内で直接使用する
 - public Actions logへresponse body、Notebook source、Discussion本文、Competition dataを出さない
@@ -235,15 +262,18 @@ run logへ残してよいのは、request ID、対象の公開識別子、operat
 - 未承認または同一resource classの上限を超えるactive run、duplicate run、quota急減
 - HTTP 429、ban/suspension警告、abuse警告
 - 予期しない外向き通信
-- token、cookie、XSRF、private contentのlog出力
+- credential、cookie、session情報、private contentのlog出力
 - manifest外のDataset/Model/Notebook/submission作成
 - cleanup失敗
 
-停止後は、実行中runのcancel、GitHub Actionsの無効化、Kaggle tokenの失効、Environment Secret削除、run/audit確認の順で対応します。詳細は[Incident Response](docs/INCIDENT_RESPONSE.md)を参照してください。
+失敗後は、exact failing step、write有無、resource消費有無、failure class、prior run/request、root causeを記録します。原因が異なる限り別repairとして扱い、blind rerunしません。詳細は [`docs/OPERATIONAL_LESSONS.md`](docs/OPERATIONAL_LESSONS.md) を参照してください。
+
+停止後は、実行中runのcancel、GitHub Actionsの無効化、Kaggle credentialの失効、Environment Secret削除、run/audit確認の順で対応します。詳細は[Incident Response](docs/INCIDENT_RESPONSE.md)を参照してください。
 
 ## 標準実行フロー
 
 ```text
+0. OPERATIONAL_LESSONSで既知failureを確認
 1. 対象Competitionと操作を確定
 2. 最新Rules/AUP/Guidelinesを取得
 3. resource・API・side effectをmanifest化
@@ -274,6 +304,7 @@ upstreamの手順は「どう操作するか」を定義し、このREADMEは「
 - GitHub PAT、SSH秘密鍵、deploy key、クラウド長期資格情報を登録しない
 - `permissions: {}`を既定とする
 - Kaggle tokenは承認付きEnvironment Secretとしてのみ保持する
+- protected Kaggle jobをprivate research repositoryのruntime accessへ依存させない
 - 外部PR、fork、Issue、comment、`pull_request_target`、`workflow_run`からSecret付きjobを起動しない
 - 外部Actionは原則不使用とし、必要時は完全なcommit SHAへ固定して動的依存まで監査する
 - dependencyはversionとSHA-256を固定する
@@ -302,6 +333,7 @@ Kaggle
 
 - [Bootstrap result](docs/BOOTSTRAP_RESULT.md)
 - [Operations](docs/OPERATIONS.md)
+- [Operational lessons](docs/OPERATIONAL_LESSONS.md)
 - [Incident response](docs/INCIDENT_RESPONSE.md)
 - [Security policy](SECURITY.md)
 - [Threat model](THREAT_MODEL.md)
