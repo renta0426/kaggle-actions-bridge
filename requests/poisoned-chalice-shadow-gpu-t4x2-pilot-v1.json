@@ -43,7 +43,7 @@
     "expected_visible_gpu_count": 2,
     "expected_runtime_minutes": 15,
     "hard_timeout_minutes": 60,
-    "max_active_runs": 1,
+    "max_active_runs": 2,
     "min_remaining_quota_hours": 1.0
   },
   "side_effects": [
