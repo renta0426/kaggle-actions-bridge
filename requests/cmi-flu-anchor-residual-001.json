@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-cmi-flu-anchor-residual-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run",
+  "target": "renta0426/cmi-flu-phase-a-anchor-residual-20260904-001",
+  "purpose": "run the pre-registered Phase A step-3 Task1.1/Task1.2 same-readout anchor plus fixed shrinkage residual diagnostics under the frozen B2.1 robust validation contract; no competition submission",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "23ab4ff53d65eeb8b8e5582f5442081f245f03b3",
+  "science_transport": "agent_relay_exact_blob",
+  "anchor_residual_blob_sha": "9a7814ecdf70e0b38b2740ade21e9db588869379",
+  "rank_transfer_base_request_id": "20260904-cmi-flu-rank-transfer-003",
+  "rank_transfer_blob_sha": "d5e07cdd09d2eabdc935eb1733ec238e26ab4c17",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 180,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run"
+  ],
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-04T07:56:31Z"
+}
