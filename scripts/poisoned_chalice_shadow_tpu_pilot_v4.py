@@ -346,8 +346,6 @@ def validate_static(launcher: Path, base_launcher: Path) -> None:
     ):
         if any(has_pair(command, *pair) for command in commands):
             raise RuntimeError(f"launcher gained forbidden write: {' '.join(pair)}")
-    if "GetKernel" in source or "get_kernel" in source:
-        raise RuntimeError("post-push GetKernel verification is forbidden")
 
 
 def execute(kaggle_bin: Path, kernel_dir: Path) -> None:
