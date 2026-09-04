@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-v3-001",
+  "parent_request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-v2-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/shadow-tpu-pilot-v3",
+  "launcher_path": "scripts/poisoned_chalice_shadow_tpu_pilot_v4.py",
+  "launcher_blob_sha": "2abbd5f40399c33a1338baeaa6028484f5a1aea9",
+  "base_launcher_path": "scripts/poisoned_chalice_shadow_tpu_pilot_v3.py",
+  "base_launcher_blob_sha": "272f5e39eeb9695e1551bdcc5bffff5a2ef6c28a",
+  "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "research_commit": "e5c98015d455b2a81cce155d7ac502971565806f",
+  "materialized_files": [
+    {
+      "logical_path": "poisoned_chalice/shadow_protocol.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_protocol.py",
+      "git_blob_sha": "1c47b80696050aa2e5e7c62384617df61ecb80da",
+      "max_bytes": 131072
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_training.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v1/poisoned_chalice/shadow_training.py",
+      "git_blob_sha": "2fe3cf2079659ae10e1ebe0d5973f3ce96c26a03",
+      "max_bytes": 131072
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_xla_compat.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v2/poisoned_chalice/shadow_xla_compat.py",
+      "git_blob_sha": "896606c8a3ae2a353a3a8619da9c66df1e2e918b",
+      "max_bytes": 32768
+    },
+    {
+      "logical_path": "poisoned_chalice/shadow_training_spawn.py",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v3/poisoned_chalice/shadow_training_spawn.py",
+      "git_blob_sha": "86ecba35b15b2971f61a970677732afbc6ffd6a1",
+      "max_bytes": 32768
+    },
+    {
+      "logical_path": "shadow_tpu_pilot_v3.json",
+      "bridge_path": "materialized/poisoned-chalice-shadow-tpu-pilot-v3/shadow_tpu_pilot_v3.json",
+      "git_blob_sha": "2ce9c2ace85788acd0b3367d091f1d6cf3c65efc",
+      "max_bytes": 32768
+    }
+  ],
+  "resource": {
+    "accelerator": "tpu",
+    "machine_shape": "Tpu1VmV38",
+    "expected_runtime_minutes": 20,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 1,
+    "min_remaining_quota_hours": 1.0
+  },
+  "api_budget": {
+    "max_calls": 50,
+    "max_recent_kernels_inspected": 25,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "consume five exact source snapshots already materialized in the approved bridge commit",
+    "create one private Kaggle TPU Notebook version at renta0426/shadow-tpu-pilot-v3 and start exactly one TPU run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission": false,
+  "select_as_final": false,
+  "runner_local_public_material_retention_days": 0,
+  "clean_room": {
+    "synthetic_training_only": true,
+    "competition_train_rows_used": 0,
+    "evaluation_inputs_embedded": false,
+    "evaluation_labels_embedded": false,
+    "smollm2_labels_used": false,
+    "previous_model_scores_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "public_leaderboard_tuning_used": false,
+    "pretrained_weights_used": false,
+    "competition_submission_created": false,
+    "protected_job_private_repository_access": false
+  },
+  "pilot_contract": {
+    "repair_from": "shadow-tpu-pilot-v2",
+    "compatibility_layer": "shadow-xla-compat-v1",
+    "spawn_layer": "shadow-xla-spawn-safe-v1",
+    "synthetic_training_rows": 128,
+    "max_sequence_tokens": 256,
+    "seed": 2027,
+    "global_batch_size": 64,
+    "architecture_slots": [
+      "left",
+      "right"
+    ],
+    "max_steps_per_architecture": 2,
+    "expected_world_size": 8,
+    "persistent_outputs": [
+      "shadow_tpu_pilot_manifest.json"
+    ],
+    "persist_checkpoints": false,
+    "persist_training_protocol": false,
+    "stage2_v3_selection_allowed": false
+  }
+}
