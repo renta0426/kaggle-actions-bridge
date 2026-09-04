@@ -1,0 +1,335 @@
+name: CMI-Flu Phase A B1 vs B2.1 CPU launch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/126-cmi-flu-phase-a-launch.yml
+      - requests/cmi-flu-phase-a-launch-v1.json
+      - scripts/cmi_flu_phase_a_patch.py
+      - payloads/cmi-flu-phase-a-001/**
+  pull_request:
+    paths:
+      - .github/workflows/126-cmi-flu-phase-a-launch.yml
+      - requests/cmi-flu-phase-a-launch-v1.json
+      - scripts/cmi_flu_phase_a_patch.py
+      - payloads/cmi-flu-phase-a-001/**
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-phase-a-launch-v1.json
+  PHASE_PATCHER_PATH: scripts/cmi_flu_phase_a_patch.py
+  PHASE_PARTS_DIR: payloads/cmi-flu-phase-a-001
+  B21_REQUEST_PATH: requests/cmi-flu-b21-launch-v1.json
+  BASE_REQUEST_PATH: requests/cmi-flu-b2-launch-v4.json
+  BASE_PATCHER_PATH: scripts/cmi_flu_b2_patch_v4.py
+  B21_PATCHER_PATH: scripts/cmi_flu_b21_patch.py
+  B21_ADAPTER_PATH: scripts/cmi_flu_b21_runtime_adapter.py
+  BASE_PAYLOAD_DIR: payloads/cmi-flu-b2-broad-004
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_KERNEL: renta0426/cmi-flu-phase-a-b1-vs-b21-20260904-001
+  TARGET_SLUG: cmi-flu-phase-a-b1-vs-b21-20260904-001
+  EXPECTED_BASE_SHA256: 7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db
+  EXPECTED_BASE_SIZE: "93363"
+  EXPECTED_PHASE_A_BLOB: bd9351a2857bc0964309ca117f60c766354066a0
+  EXPECTED_PHASE_A_SOURCE_COMMIT: 0282262e049683135ec01a56f71b44a46356b194
+  EXPECTED_B21_ADAPTER_BLOB: de71dea0e335bdcd79325c0de926bf8848d0979f
+
+jobs:
+  validate:
+    name: Validate immutable Phase A request 001
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge commit and Phase A script
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib, io, json, os, pathlib, ssl, sys, tarfile, urllib.request
+
+          root = pathlib.Path(sys.argv[1])
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+          with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000:
+              raise SystemExit("bridge commit archive exceeds byte budget")
+          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+              members = [m for m in tf.getmembers() if m.isfile()]
+              prefixes = {m.name.split('/', 1)[0] for m in members}
+              if len(prefixes) != 1:
+                  raise SystemExit("unexpected commit archive layout")
+              prefix = next(iter(prefixes))
+              wanted = {
+                  os.environ['REQUEST_PATH'], os.environ['PHASE_PATCHER_PATH'],
+                  f"{os.environ['PHASE_PARTS_DIR']}/part-00", f"{os.environ['PHASE_PARTS_DIR']}/part-01",
+                  os.environ['B21_REQUEST_PATH'], os.environ['BASE_REQUEST_PATH'],
+                  os.environ['BASE_PATCHER_PATH'], os.environ['B21_PATCHER_PATH'], os.environ['B21_ADAPTER_PATH'],
+                  os.environ['LOCK_PATH'],
+                  *[f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}" for i in range(20)],
+              }
+              extracted = {}
+              for path in wanted:
+                  member = tf.getmember(f"{prefix}/{path}")
+                  data = tf.extractfile(member).read()
+                  extracted[path] = data
+                  target = root / path
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(data)
+          request = json.loads(extracted[os.environ['REQUEST_PATH']])
+          if request.get('request_id') != '20260904-cmi-flu-phase-a-001' or request.get('target') != os.environ['TARGET_KERNEL']:
+              raise SystemExit('Phase A request identity mismatch')
+          if request.get('competition') != os.environ['TARGET_COMPETITION'] or request.get('operation') != 'kernel_run':
+              raise SystemExit('Phase A competition/operation mismatch')
+          if request.get('science_source_commit') != os.environ['EXPECTED_PHASE_A_SOURCE_COMMIT']:
+              raise SystemExit('Phase A science provenance mismatch')
+          if request.get('phase_a_source_blob_sha') != os.environ['EXPECTED_PHASE_A_BLOB']:
+              raise SystemExit('Phase A source blob manifest mismatch')
+          if request.get('b21_runtime_adapter_blob_sha') != os.environ['EXPECTED_B21_ADAPTER_BLOB']:
+              raise SystemExit('B2.1 adapter manifest mismatch')
+          if request.get('competition_submission_attempted') is not False or request.get('automatic_compute_retries') != 0 or request.get('enable_internet') is not False:
+              raise SystemExit('Phase A safety contract mismatch')
+          if request.get('resource') != {'accelerator':'cpu','expected_runtime_minutes':120,'hard_timeout_minutes':240,'max_active_runs':1}:
+              raise SystemExit('Phase A resource contract mismatch')
+          adapter = extracted[os.environ['B21_ADAPTER_PATH']]
+          blob = hashlib.sha1(b'blob ' + str(len(adapter)).encode() + b'\0' + adapter).hexdigest()
+          if blob != os.environ['EXPECTED_B21_ADAPTER_BLOB']:
+              raise SystemExit('B2.1 adapter blob mismatch')
+          source = b''.join(extracted[f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}"] for i in range(20))
+          if len(source) != int(os.environ['EXPECTED_BASE_SIZE']) or hashlib.sha256(source).hexdigest() != os.environ['EXPECTED_BASE_SHA256']:
+              raise SystemExit('B2 004 base payload mismatch')
+          (root / 'base-source.py').write_bytes(source)
+          PY
+          python3 "${workdir}/${BASE_PATCHER_PATH}" --source "${workdir}/base-source.py" --request "${workdir}/${BASE_REQUEST_PATH}" --output "${workdir}/base004.py"
+          python3 "${workdir}/${B21_PATCHER_PATH}" --source "${workdir}/base004.py" --adapter "${workdir}/${B21_ADAPTER_PATH}" --request "${workdir}/${B21_REQUEST_PATH}" --output "${workdir}/b21.py"
+          python3 "${workdir}/${PHASE_PATCHER_PATH}" --source "${workdir}/b21.py" --parts-dir "${workdir}/${PHASE_PARTS_DIR}" --request "${workdir}/${REQUEST_PATH}" --output "${workdir}/script.py"
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/${PHASE_PATCHER_PATH}" "${workdir}/script.py"
+          python3 "${workdir}/script.py" --self-test
+          grep -F 'TARGET_STAGE = "phase_a_b1_vs_b21_same_contract"' "${workdir}/script.py" >/dev/null
+          grep -F "PHASE_A_SOURCE_BLOB_SHA = \"${EXPECTED_PHASE_A_BLOB}\"" "${workdir}/script.py" >/dev/null
+          echo 'CMI_FLU_PHASE_A_001_VALIDATE PASS'
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl, urllib.request
+          for url in ('https://www.kaggle.com/terms','https://www.kaggle.com/aup','https://www.kaggle.com/community-guidelines','https://www.kaggle.com/docs/api'):
+              req = urllib.request.Request(url, headers={'User-Agent':'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f'official Kaggle page unavailable: {url}')
+          print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
+          PY
+
+  launch:
+    name: Admit or launch exactly one Phase A CPU run 001
+    needs: validate
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/126-cmi-flu-phase-a-launch.yml@refs/heads/main" ]]
+          echo 'PROTECTED_CMI_FLU_PHASE_A_001_BOUNDARY PASS'
+
+      - name: Prepare locked Kaggle CLI and exact Phase A script
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib, io, os, pathlib, re, ssl, sys, tarfile, urllib.request
+          root = pathlib.Path(sys.argv[1])
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req = urllib.request.Request(url, headers={'User-Agent':'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000: raise SystemExit('commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tf:
+              files = [m for m in tf.getmembers() if m.isfile()]
+              prefix = files[0].name.split('/',1)[0]
+              wanted = {
+                  os.environ['REQUEST_PATH'], os.environ['PHASE_PATCHER_PATH'],
+                  f"{os.environ['PHASE_PARTS_DIR']}/part-00", f"{os.environ['PHASE_PARTS_DIR']}/part-01",
+                  os.environ['B21_REQUEST_PATH'], os.environ['BASE_REQUEST_PATH'], os.environ['BASE_PATCHER_PATH'],
+                  os.environ['B21_PATCHER_PATH'], os.environ['B21_ADAPTER_PATH'], os.environ['LOCK_PATH'],
+                  *[f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}" for i in range(20)],
+              }
+              for path in wanted:
+                  data = tf.extractfile(tf.getmember(f'{prefix}/{path}')).read()
+                  target = root/path; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(data)
+          source = b''.join((root/f"{os.environ['BASE_PAYLOAD_DIR']}/part-{i:02d}").read_bytes() for i in range(20))
+          if len(source) != int(os.environ['EXPECTED_BASE_SIZE']) or hashlib.sha256(source).hexdigest() != os.environ['EXPECTED_BASE_SHA256']:
+              raise SystemExit('B2 004 base payload mismatch')
+          (root/'base-source.py').write_bytes(source)
+          lock = (root/os.environ['LOCK_PATH']).read_text(encoding='utf-8')
+          pattern = re.compile(r'^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$')
+          lines = [x.strip() for x in lock.splitlines() if x.strip() and not x.lstrip().startswith('#')]
+          if len(lines) != 33 or not all(pattern.fullmatch(x) for x in lines) or not any(x.startswith('kaggle==2.2.4 ') for x in lines):
+              raise SystemExit('Kaggle CLI lock validation failed')
+          PY
+          python3 "${workdir}/${BASE_PATCHER_PATH}" --source "${workdir}/base-source.py" --request "${workdir}/${BASE_REQUEST_PATH}" --output "${workdir}/base004.py"
+          python3 "${workdir}/${B21_PATCHER_PATH}" --source "${workdir}/base004.py" --adapter "${workdir}/${B21_ADAPTER_PATH}" --request "${workdir}/${B21_REQUEST_PATH}" --output "${workdir}/b21.py"
+          python3 "${workdir}/${PHASE_PATCHER_PATH}" --source "${workdir}/b21.py" --parts-dir "${workdir}/${PHASE_PARTS_DIR}" --request "${workdir}/${REQUEST_PATH}" --output "${workdir}/script.py"
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/script.py"
+          python3 "${workdir}/script.py" --self-test
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Fetch live Competition rules and determine CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os, re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []
+          content={}
+          for page in pages:
+              d=page.to_dict() if hasattr(page,'to_dict') else dict(page)
+              name=str(d.get('name') or '').strip().lower()
+              if name: content[name]=str(d.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in k for k in content):
+              raise SystemExit('live Competition pages unavailable')
+          plain=lambda s: re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',s)).casefold()
+          rules=plain(content['rules']); evaluation=plain(content['evaluation']); data=' '.join(plain(content[k]) for k in content if 'data' in k)
+          if not all(x in rules for x in ('data security','external data and tools')):
+              raise SystemExit('live rules differ from required data/tool guardrails')
+          if not all(x in evaluation for x in ('mean spearman correlation','40 donors','-99')):
+              raise SystemExit('live evaluation differs from guardrails')
+          if 'sample_submission_part1.csv' not in data or 'investigations_260821.tsv' not in data:
+              raise SystemExit('live data description differs')
+          existing=api.kernels_list(user='renta0426',search=os.environ['TARGET_SLUG'],page_size=5) or []
+          if os.environ['TARGET_KERNEL'] in {str(getattr(x,'ref','')) for x in existing}:
+              raise SystemExit('target kernel already exists; duplicate refused')
+          active_refs=[]
+          for item in (api.kernels_list(user='renta0426',sort_by='dateRun',page_size=15) or [])[:15]:
+              ref=str(getattr(item,'ref',''))
+              if not ref: continue
+              try: status=str(getattr(api.kernels_status(ref),'status','')).upper()
+              except Exception: continue
+              if any(t in status for t in ('RUNNING','QUEUED','PENDING')): active_refs.append(ref)
+          active={'cpu':[],'gpu':[],'tpu':[],'unknown':[]}
+          if len(active_refs)>5: active['unknown'].extend(active_refs)
+          else:
+              with api.build_kaggle_client() as client:
+                  for ref in active_refs:
+                      resource='unknown'
+                      try:
+                          owner,slug=ref.split('/',1); req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+                          meta=client.kernels.kernels_api_client.get_kernel(req).metadata
+                          resource='tpu' if bool(getattr(meta,'enable_tpu',False)) else ('gpu' if bool(getattr(meta,'enable_gpu',False)) else 'cpu')
+                      except Exception: pass
+                      active[resource].append(ref)
+          can=len(active['cpu'])+len(active['unknown'])<1
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+              f.write(f"can_launch={'true' if can else 'false'}\n")
+          print(f"PHASE_A_ADMISSION requested=cpu active_cpu={len(active['cpu'])} active_gpu={len(active['gpu'])} active_tpu={len(active['tpu'])} active_unknown={len(active['unknown'])} can_launch={can}")
+          PY
+
+      - name: Record deferred admission
+        if: steps.admission.outputs.can_launch != 'true'
+        run: echo 'Phase A request deferred before Kaggle write; fresh approval required on manual redispatch.'
+
+      - name: Push one private CPU Phase A run
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kernel_dir="${WORKDIR}/kernel"; mkdir -p "${kernel_dir}"; cp "${WORKDIR}/script.py" "${kernel_dir}/script.py"
+          python3 - "${kernel_dir}" <<'PY'
+          import json,os,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          metadata={
+              "id":os.environ['TARGET_KERNEL'],
+              "title":"CMI Flu Phase A B1 vs B2.1 20260904 001",
+              "code_file":"script.py",
+              "language":"python",
+              "kernel_type":"script",
+              "is_private":True,
+              "enable_gpu":False,
+              "enable_tpu":False,
+              "enable_internet":False,
+              "machine_shape":"",
+              "dataset_sources":[],
+              "competition_sources":[os.environ['TARGET_COMPETITION']],
+              "kernel_sources":[],
+              "model_sources":[]
+          }
+          (root/'kernel-metadata.json').write_text(json.dumps(metadata,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 14400 >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?; set -e; rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then echo 'ERROR: Phase A kernel push failed; response suppressed; no retry'; exit 1; fi
+          echo "CMI_FLU_PHASE_A_LAUNCH PASS request_id=20260904-cmi-flu-phase-a-001 target=${TARGET_KERNEL} accelerator=cpu internet=false submission=false automatic_compute_retries=0"
+
+      - name: Cleanup runner-local content
+        if: always()
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'Runner-local Phase A content removed'
