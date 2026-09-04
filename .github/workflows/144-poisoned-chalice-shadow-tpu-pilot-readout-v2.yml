@@ -1,0 +1,243 @@
+name: Poisoned Chalice shadow TPU pilot direct readout v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-shadow-tpu-pilot-readout-v2.json
+      - .github/workflows/144-poisoned-chalice-shadow-tpu-pilot-readout-v2.yml
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-shadow-tpu-pilot-readout-v2.json
+      - .github/workflows/144-poisoned-chalice-shadow-tpu-pilot-readout-v2.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-shadow-tpu-pilot-readout-v2.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL: renta0426/shadow-tpu-pilot-v1
+  MANIFEST_NAME: shadow_tpu_pilot_manifest.json
+
+jobs:
+  validate:
+    name: Validate direct read-only shadow TPU readout v2
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Enforce secret-free exact request
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          python3 - "${source_sha}" <<'PY'
+          import json, ssl, sys, urllib.request
+          sha = sys.argv[1]
+          url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/requests/poisoned-chalice-shadow-tpu-pilot-readout-v2.json"
+          req = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+          with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+              data = response.read(16385)
+          if len(data) > 16384:
+              raise SystemExit("readout request exceeds byte budget")
+          request = json.loads(data)
+          expected = {
+              "schema_version": 1,
+              "request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-readout-v2-001",
+              "parent_request_id": "20260904-poisoned-chalice-shadow-tpu-pilot-v1-001",
+              "competition": "poisoned-chalice-icse27",
+              "operation": "kernel_status_output",
+              "target": "renta0426/shadow-tpu-pilot-v1",
+              "expected_kernel_version": 1,
+              "output_allowlist": ["shadow_tpu_pilot_manifest.json"],
+              "api_budget": {"max_calls": 4, "max_pages": 1},
+              "side_effects": [],
+              "automatic_compute_retries": 0,
+              "protected_job_private_repository_access": False,
+              "forbidden_operations": [
+                  "kernels push", "competitions submit", "datasets create", "datasets version",
+                  "models create", "kernels cancel", "kernels delete"
+              ],
+          }
+          if request != expected:
+              raise SystemExit("direct readout request differs from exact contract")
+          print("SHADOW_TPU_READOUT_V2_REQUEST PASS side_effects=none private_repo_access=0")
+          PY
+
+  readout:
+    name: Directly read failed shadow TPU pilot without side effects
+    needs: validate
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/144-poisoned-chalice-shadow-tpu-pilot-readout-v2.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" ]]
+          echo "SHADOW_TPU_READOUT_V2_BOUNDARY PASS side_effects=none private_repo_access=0"
+
+      - name: Prepare SHA-locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib, re, ssl, sys, urllib.request
+          sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          url = f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/requirements/kaggle-2.2.4.lock"
+          req = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+          with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+              data = response.read(65537)
+          if len(data) > 65536:
+              raise SystemExit("Kaggle lock exceeds byte budget")
+          path = root / "requirements/kaggle-2.2.4.lock"
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_bytes(data)
+          lines = [line.strip() for line in data.decode().splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          pattern = re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          if len(lines) != 33 or not all(pattern.fullmatch(line) for line in lines):
+              raise SystemExit("Kaggle CLI lock validation failed")
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "SHADOW_TPU_READOUT_V2_CLIENT PASS"
+
+      - name: Read target status directly
+        id: status
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          import os
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api = KaggleApi(); api.authenticate()
+          target = os.environ["TARGET_KERNEL"]
+          try:
+              obj = api.kernels_status(target)
+              status = str(getattr(obj, "status", "") or "UNKNOWN").upper()
+          except Exception as exc:
+              status = "UNAVAILABLE"
+              print(f"SHADOW_TPU_READOUT_V2_STATUS_WARNING type={type(exc).__name__}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"status={status}\n")
+          print(f"SHADOW_TPU_READOUT_V2_STATUS status={status}")
+          PY
+
+      - name: Download only pilot manifest from existing run
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          out="${WORKDIR}/output"
+          mkdir -p "${out}"
+          "${WORKDIR}/venv/bin/kaggle" kernels output "${TARGET_KERNEL}" \
+            -p "${out}" -q -o --page-size 20 \
+            --file-pattern '^shadow_tpu_pilot_manifest\.json$'
+          "${WORKDIR}/venv/bin/python" - "${out}" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          files = [p for p in root.rglob("*") if p.is_file()]
+          if len(files) != 1 or files[0].name != "shadow_tpu_pilot_manifest.json":
+              raise SystemExit(f"output allowlist violated: {[p.name for p in files]}")
+          data = json.loads(files[0].read_text(encoding="utf-8"))
+          expected = {
+              "schema_version": 1,
+              "experiment_id": "shadow-tpu-pilot-v1",
+              "research_commit": "4e221829e37af88553e780488b27730cf167d6f8",
+              "backend": "xla",
+              "machine_shape": "Tpu1VmV38",
+              "expected_world_size": 8,
+              "synthetic_training_rows": 128,
+              "max_sequence_tokens": 256,
+              "global_batch_size": 64,
+              "max_steps_per_architecture": 2,
+              "evaluation_inputs_read": False,
+              "evaluation_labels_read": False,
+              "smollm2_labels_used": False,
+              "competition_train_rows_used": 0,
+              "stage2_v3_selection_allowed": False,
+              "automatic_compute_retries": 0,
+              "protected_job_private_repository_access": False,
+              "persistent_outputs": ["shadow_tpu_pilot_manifest.json"],
+          }
+          for key, value in expected.items():
+              if data.get(key) != value:
+                  raise SystemExit(f"manifest contract mismatch: {key}")
+          print("SHADOW_TPU_READOUT_V2_MANIFEST_BEGIN")
+          print(json.dumps(data, sort_keys=True, separators=(",", ":")))
+          print("SHADOW_TPU_READOUT_V2_MANIFEST_END")
+          PY
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "SHADOW_TPU_READOUT_V2_CLEANUP PASS retention_days=0"
