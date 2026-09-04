@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "experiment_id": "shadow-gpu-t4x2-pilot-v1",
+  "phase": "P4-stage2-transfer",
+  "purpose": "GPU compatibility replacement for the terminated TPU pilot line; this pilot validates faithful execution of the frozen controlled-shadow protocol and must not be used to select Stage2-v3.",
+  "transition_from": "shadow-tpu-pilot-v6",
+  "transition_reason": "Both TPU architecture slots completed training but violated the frozen checkpoint reload logit tolerance by large margins; further TPU-specific compatibility work was terminated according to the predeclared fallback rule.",
+  "data": {
+    "kind": "synthetic_compatibility_only",
+    "evaluation_inputs_used": false,
+    "evaluation_labels_used": false,
+    "competition_train_rows_used": 0,
+    "synthetic_training_rows": 128,
+    "synthetic_languages": ["Python-like", "Rust-like"],
+    "membership_labels_exact_for_emitted_training_corpus": true
+  },
+  "protocol": {
+    "protocol_version": "controlled-shadow-protocol-v1",
+    "tokenizer": "lossless_utf8_bytes",
+    "max_sequence_tokens": 256,
+    "seed": 2027,
+    "global_batch_size": 64,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.1,
+    "warmup_fraction": 0.05,
+    "gradient_clip_norm": 1.0,
+    "architecture_slots": ["left", "right"],
+    "architecture_pair": ["shadow-gpt2-byte-5m", "shadow-llama-byte-5m"]
+  },
+  "runtime": {
+    "backend": "cuda",
+    "accelerator": "gpu",
+    "kaggle_machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_gpu_name_contains": "T4",
+    "assignment": {
+      "left": 0,
+      "right": 1
+    },
+    "per_architecture_world_size": 1,
+    "distributed_training": false,
+    "ddp_used": false,
+    "nccl_used": false,
+    "run_architectures_concurrently": true,
+    "max_steps_per_architecture": 2,
+    "checkpoint_reload_atol": 1e-05,
+    "parameter_sync_atol": 1e-05,
+    "save_optimizer_state": true,
+    "automatic_compute_retries": 0,
+    "notebook_internet": false
+  },
+  "acceptance_gates": {
+    "both_architectures_complete": true,
+    "backend_must_equal": "cuda",
+    "per_architecture_world_size_must_equal": 1,
+    "completed_steps_per_architecture": 2,
+    "finite_loss_required": true,
+    "checkpoint_reload_required": true,
+    "checkpoint_reload_max_absolute_logit_difference": 1e-05,
+    "exactly_two_visible_gpu_devices_required": true,
+    "t4_device_name_required": true,
+    "distinct_physical_gpu_assignment_required": true,
+    "random_initialisation_required": true,
+    "pretrained_weights_forbidden": true,
+    "evaluation_inputs_read_forbidden": true,
+    "evaluation_labels_read_forbidden": true
+  },
+  "outputs": {
+    "persistent_files": ["shadow_gpu_pilot_manifest.json"],
+    "persist_checkpoints": false,
+    "persist_training_corpus": false,
+    "persist_synthetic_protocol": false
+  },
+  "interpretation": {
+    "on_pass": "Authorize preparation of the full controlled architecture-only dual-shadow benchmark on the same GPU execution design. This pilot provides no evidence for or against any membership attack and cannot tune Stage2-v3.",
+    "on_fail": "Do not retry automatically. Diagnose the single concrete CUDA or orchestration failure before any further compute run.",
+    "smollm2_consumed_test_labels_used": false,
+    "stage2_v3_selection_allowed": false
+  }
+}
