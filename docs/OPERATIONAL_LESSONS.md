@@ -54,6 +54,14 @@ The same HAI request failed in Kaggle after roughly two minutes, but its GitHub 
 
 Rule: long-running Kaggle watches should use a small bounded startup schedule for early queue/startup failures, then back off to the approved steady interval. The total deadline and API-call budget remain hard limits; adaptive polling must not become high-frequency monitoring, keep-alive behavior, or an automatic retry mechanism.
 
+## Kernel metadata identity and push diagnostics
+
+CMI-Flu HAI transfer request `20260904-cmi-flu-hai-transfer-002` failed in `kaggle kernels push` before the status monitor started. Its metadata used id slug `cmi-flu-phase-a-hai-strain-transfer-20260904-002` but title `CMI Flu Phase A HAI Strain Transfer Repair 20260904 002`, whose documented title-derived slug includes `-repair-`. The CLI returned non-zero almost immediately. Because stdout/stderr were deleted before any bounded diagnostic was emitted, the exact server error text was lost.
+
+Rule: for a new Kaggle kernel, derive the expected slug locally from the approved title and require exact equality with both `TARGET_SLUG` and the slug portion of `TARGET_KERNEL` before the one allowed write. A title/slug mismatch is a pre-write validation failure, not something to discover by probing Kaggle.
+
+Rule: a failed write must not dump raw CLI stdout/stderr into public logs, but it also must not discard all diagnosis. Capture raw output privately for the duration of the step, emit only an allowlisted error category plus return code, byte counts, and SHA-256 digests, then delete the raw files unconditionally. If a write returns non-zero and post-write state was not read back, classify the result as ambiguous-write even when compute execution appears not to have started; any repair uses a fresh slug and fresh approval.
+
 ## Accelerator fidelity
 
 Accelerator choice is part of the scientific contract. A CUDA logits/rank experiment must not be moved to TPU merely to save GPU quota unless numerical equivalence has been established separately. CPU-only aggregation/readout work must not reserve an accelerator.
@@ -66,6 +74,7 @@ Public logs should contain only bounded operational metadata such as request IDs
 
 - [ ] Preflight and reconstruction can run before protected execution.
 - [ ] Exact target and version semantics are explicit.
+- [ ] New-kernel title, slug, and target id are locally proven consistent before write.
 - [ ] Frozen extension call sites are checked against the actual runtime namespace/signatures.
 - [ ] Compute resource class is fixed and admission is checked immediately before write.
 - [ ] There is at most one bounded write call and no automatic compute retry.
@@ -73,6 +82,6 @@ Public logs should contain only bounded operational metadata such as request IDs
 - [ ] Polling has a finite call budget/deadline and detects short startup failures without a long first sleep.
 - [ ] Transient Notebook material stays outside `/kaggle/working`.
 - [ ] Final outputs are allowlisted and size-bounded.
-- [ ] Verbose CLI/API diagnostics are captured and sanitized.
+- [ ] Verbose CLI/API diagnostics are captured and sanitized rather than streamed or silently discarded.
 - [ ] Cleanup is unconditional.
 - [ ] Failures emit enough non-sensitive metadata to avoid another blind probe.
