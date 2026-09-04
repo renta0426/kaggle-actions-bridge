@@ -62,6 +62,16 @@ Rule: for a new Kaggle kernel, derive the expected slug locally from the approve
 
 Rule: a failed write must not dump raw CLI stdout/stderr into public logs, but it also must not discard all diagnosis. Capture raw output privately for the duration of the step, emit only an allowlisted error category plus return code, byte counts, and SHA-256 digests, then delete the raw files unconditionally. If a write returns non-zero and post-write state was not read back, classify the result as ambiguous-write even when compute execution appears not to have started; any repair uses a fresh slug and fresh approval.
 
+## Locked external-reference schema
+
+CMI-Flu HAI transfer request `20260904-cmi-flu-hai-transfer-003` consumed a CPU Notebook run and failed only after reaching the HAI science entry point. The locked organizer `strain_sequences.csv` had the expected SHA-256, byte size, and 352 data rows, but its literal header was `Virus, Sequence, Status_of_sequence`; the extension expected internal canonical names `virus_strain, sequence, sequence_status`. Checksum validation alone therefore proved file identity but not parser compatibility.
+
+A credential-free GitHub-hosted diagnostic inspected only bounded schema metadata for the exact locked public reference. It did not emit sequence contents. That established the raw header, row width, non-empty counts, and file identity before repair 004 was defined.
+
+Rule: for small external references that influence a resource-consuming experiment, preflight must validate not only file checksum but also the exact structural contract the parser depends on: header names/order where meaningful, row count or bounded shape where pre-registered, required-field non-emptiness, and any delimiter/width assumptions. If raw organizer names differ from internal canonical names, normalize them through an explicit provenance-recorded mapping before the scientific entry point. Do not infer or silently fuzzy-match schema after compute starts.
+
+Rule: schema diagnostics for sequence or other potentially large biological fields should publish only structural metadata such as column names, counts, string-length ranges, and checksums. Do not log sequence values or participant-level data merely to debug a parser contract.
+
 ## Accelerator fidelity
 
 Accelerator choice is part of the scientific contract. A CUDA logits/rank experiment must not be moved to TPU merely to save GPU quota unless numerical equivalence has been established separately. CPU-only aggregation/readout work must not reserve an accelerator.
@@ -76,6 +86,7 @@ Public logs should contain only bounded operational metadata such as request IDs
 - [ ] Exact target and version semantics are explicit.
 - [ ] New-kernel title, slug, and target id are locally proven consistent before write.
 - [ ] Frozen extension call sites are checked against the actual runtime namespace/signatures.
+- [ ] Locked external references are validated for both checksum and the exact parser schema contract before compute.
 - [ ] Compute resource class is fixed and admission is checked immediately before write.
 - [ ] There is at most one bounded write call and no automatic compute retry.
 - [ ] Current-versus-historical output semantics are explicit.
