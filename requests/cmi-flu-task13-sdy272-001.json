@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "request_id": "20260904-cmi-flu-task13-sdy272-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-phase-a-task13-sdy272-20260904-001",
+  "purpose": "Run the pre-registered Phase A Task1.3 SDY272 ASC gate-harmonization diagnostic under the frozen B2.1 robust_v1 broad-flow contract and read only aggregate outputs.",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "baae9fb40329057a316935d0d1285adc64c948b0",
+  "science_source_path": "src/cmi_flu/task13_harmonization.py",
+  "science_transport": "pinned_public_github_blob",
+  "task13_harmonization_blob_sha": "0f1e728fe2e5ea0f3713c1442c3beeba21b8d347",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "expected_kernel_version": 1,
+  "allowed_output_paths": [
+    "cmi-flu-task13-sdy272/bridge-result.json",
+    "cmi-flu-task13-sdy272/metrics.json",
+    "cmi-flu-task13-sdy272/summary.md"
+  ],
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 180,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 30,
+    "poll_interval_seconds": 900,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private Notebook version and start one CPU run",
+    "after successful completion read only current version 1 aggregate outputs bridge-result.json metrics.json summary.md"
+  ],
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-04T08:40:16Z"
+}
