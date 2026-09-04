@@ -1,0 +1,305 @@
+name: CMI-Flu anchor-residual detailed aggregate readout
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/143-cmi-flu-anchor-residual-detailed-readout.yml"
+      - "requests/cmi-flu-anchor-residual-detailed-readout-001.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/143-cmi-flu-anchor-residual-detailed-readout.yml"
+      - "requests/cmi-flu-anchor-residual-detailed-readout-001.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cmi-flu-anchor-residual-detailed-readout-001
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET_KERNEL: renta0426/cmi-flu-phase-a-anchor-residual-20260904-001
+  EXPECTED_KERNEL_VERSION: "1"
+  REQUEST_PATH: requests/cmi-flu-anchor-residual-detailed-readout-001.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate immutable detailed-readout request 001
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Materialize exact workflow commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/repo" <<'PY'
+          from __future__ import annotations
+          import io, os, pathlib, ssl, sys, tarfile, urllib.request
+          target = pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000:
+              raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tf:
+              members = tf.getmembers()
+              prefixes = {m.name.split('/', 1)[0] for m in members if m.name}
+              if len(prefixes) != 1:
+                  raise SystemExit('unexpected commit archive layout')
+              prefix = next(iter(prefixes)) + '/'
+              for member in members:
+                  if not member.isfile():
+                      continue
+                  rel = pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts:
+                      raise SystemExit('unsafe archive path')
+                  data = tf.extractfile(member).read()
+                  out = target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True, exist_ok=True)
+                  out.write_bytes(data)
+          PY
+      - name: Validate request and readout script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/repo/${REQUEST_PATH}" <<'PY'
+          import json, pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          request = json.loads(path.read_text(encoding='utf-8'))
+          expected_keys = {
+              'schema_version','request_id','competition','operation','target',
+              'expected_kernel_version','purpose','source_request_id',
+              'science_source_commit','anchor_residual_blob_sha',
+              'expected_output_sha256','allowed_output_files','api_budget',
+              'side_effects','competition_submission_attempted',
+              'automatic_compute_retries','rules_checked_at_utc',
+          }
+          if set(request) != expected_keys:
+              raise SystemExit(f'manifest fields mismatch: {sorted(set(request) ^ expected_keys)}')
+          expected_hashes = {
+              'bridge-result.json': '20d052725855c06f76d3143b136116fb1a293e2226a924f755ee98eb2bc3ff3a',
+              'metrics.json': '791f8acd137179a320cdf3a1ec218d159bad5539f74861c6ca92101c2c8f82ee',
+              'summary.md': '4c4818572d2af8a666ca2067589596a1cfab826c4889d61226c9f70b7728b140',
+          }
+          assert request['schema_version'] == 1
+          assert request['request_id'] == '20260904-cmi-flu-anchor-residual-readout-001'
+          assert request['competition'] == 'cmi-flu-first-prediction-challenge'
+          assert request['operation'] == 'current_kernel_output_read'
+          assert request['target'] == 'renta0426/cmi-flu-phase-a-anchor-residual-20260904-001'
+          assert request['expected_kernel_version'] == 1
+          assert request['source_request_id'] == '20260904-cmi-flu-anchor-residual-001'
+          assert request['science_source_commit'] == '23ab4ff53d65eeb8b8e5582f5442081f245f03b3'
+          assert request['anchor_residual_blob_sha'] == '9a7814ecdf70e0b38b2740ade21e9db588869379'
+          assert request['expected_output_sha256'] == expected_hashes
+          assert request['allowed_output_files'] == {
+              'bridge-result.json': 5242880,
+              'metrics.json': 5242880,
+              'summary.md': 1048576,
+          }
+          assert request['api_budget'] == {'max_calls': 8, 'max_pages': 1}
+          assert request['side_effects'] == []
+          assert request['competition_submission_attempted'] is False
+          assert request['automatic_compute_retries'] == 0
+          print('CMI_FLU_ANCHOR_RESIDUAL_DETAILED_READOUT_001_VALIDATE PASS')
+          PY
+          python3 -m py_compile "${WORKDIR}/repo/scripts/kaggle_current_output_read.py"
+      - name: Remove validation materialization
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+
+  readout:
+    name: Read frozen anchor-residual aggregates 001
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: kaggle-readonry
+    steps:
+      - name: Enforce protected identity boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.repository_id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/143-cmi-flu-anchor-residual-detailed-readout.yml@refs/heads/main" ]]
+          echo 'PROTECTED_CMI_FLU_ANCHOR_RESIDUAL_DETAILED_READOUT_001_BOUNDARY PASS'
+      - name: Materialize exact bridge commit and locked Kaggle CLI
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/repo" <<'PY'
+          from __future__ import annotations
+          import io, os, pathlib, ssl, sys, tarfile, urllib.request
+          target = pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000:
+              raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tf:
+              members = tf.getmembers()
+              prefixes = {m.name.split('/', 1)[0] for m in members if m.name}
+              if len(prefixes) != 1:
+                  raise SystemExit('unexpected commit archive layout')
+              prefix = next(iter(prefixes)) + '/'
+              for member in members:
+                  if not member.isfile():
+                      continue
+                  rel = pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts:
+                      raise SystemExit('unsafe archive path')
+                  data = tf.extractfile(member).read()
+                  out = target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True, exist_ok=True)
+                  out.write_bytes(data)
+          PY
+          python3 - "${workdir}/repo/${LOCK_PATH}" <<'PY'
+          import pathlib, re, sys
+          lock = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          pattern = re.compile(r'^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$')
+          lines = [x.strip() for x in lock.splitlines() if x.strip() and not x.lstrip().startswith('#')]
+          if len(lines) != 33 or not all(pattern.fullmatch(x) for x in lines) or not any(x.startswith('kaggle==2.2.4 ') for x in lines):
+              raise SystemExit('Kaggle CLI lock validation failed')
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/repo/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+      - name: Read only frozen current-version aggregate outputs
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          output_dir="${WORKDIR}/safe-output"
+          "${WORKDIR}/venv/bin/python" "${WORKDIR}/repo/scripts/kaggle_current_output_read.py" \
+            --kernel "${TARGET_KERNEL}" \
+            --expected-version "${EXPECTED_KERNEL_VERSION}" \
+            --allow-file bridge-result.json:5242880 \
+            --allow-file metrics.json:5242880 \
+            --allow-file summary.md:1048576 \
+            --output-dir "${output_dir}"
+      - name: Verify provenance and emit detailed aggregate diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - "${WORKDIR}/safe-output" <<'PY'
+          from __future__ import annotations
+          import hashlib, json, math, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          files = sorted(path.name for path in root.iterdir() if path.is_file())
+          if files != ['bridge-result.json', 'metrics.json', 'summary.md']:
+              raise SystemExit('safe-output file set mismatch')
+          raw = {name: (root / name).read_text(encoding='utf-8') for name in files}
+          banned = ('participant_id', 'subject_group', 'row_index', 'oof_predictions', 'challenge_predictions')
+          for name, text in raw.items():
+              hits = [token for token in banned if token in text]
+              if hits:
+                  raise SystemExit(f'aggregate-output privacy contract failed for {name}: banned_count={len(hits)}')
+          expected_hashes = {
+              'bridge-result.json': '20d052725855c06f76d3143b136116fb1a293e2226a924f755ee98eb2bc3ff3a',
+              'metrics.json': '791f8acd137179a320cdf3a1ec218d159bad5539f74861c6ca92101c2c8f82ee',
+              'summary.md': '4c4818572d2af8a666ca2067589596a1cfab826c4889d61226c9f70b7728b140',
+          }
+          for name, expected in expected_hashes.items():
+              observed = hashlib.sha256(raw[name].encode('utf-8')).hexdigest()
+              if observed != expected:
+                  raise SystemExit(f'{name} checksum mismatch')
+          bridge = json.loads(raw['bridge-result.json'])
+          metrics = json.loads(raw['metrics.json'])
+          if bridge.get('request_id') != '20260904-cmi-flu-anchor-residual-001':
+              raise SystemExit('source request mismatch')
+          if bridge.get('source_commit') != '23ab4ff53d65eeb8b8e5582f5442081f245f03b3':
+              raise SystemExit('science source mismatch')
+          if bridge.get('anchor_residual_source_blob_sha') != '9a7814ecdf70e0b38b2740ade21e9db588869379':
+              raise SystemExit('anchor source mismatch')
+          if bridge.get('competition_submission_attempted') is not False:
+              raise SystemExit('unexpected submission flag')
+          if metrics.get('run_id') != '20260904-cmi-flu-anchor-residual-001':
+              raise SystemExit('metrics run id mismatch')
+          if metrics.get('experiment') != 'phase_a_anchor_residual_task11_task12':
+              raise SystemExit('metrics experiment mismatch')
+          if metrics.get('selection_policy') != 'robust_anchor_residual_v1':
+              raise SystemExit('selection policy mismatch')
+          tasks = metrics.get('tasks')
+          if not isinstance(tasks, dict) or set(tasks) != {'Task1.1', 'Task1.2'}:
+              raise SystemExit('task set mismatch')
+          def finite(value):
+              return value is not None and math.isfinite(float(value))
+          def value(metric):
+              result = metric.get('value') if isinstance(metric, dict) else None
+              if not finite(result):
+                  raise SystemExit('non-finite aggregate metric')
+              return float(result)
+          def block(task, label, item):
+              summary = item.get('fold_summary') or {}
+              mean = summary.get('spearman_mean')
+              median = summary.get('spearman_median')
+              minimum = summary.get('spearman_min')
+              if not all(finite(x) for x in (mean, median, minimum)):
+                  raise SystemExit(f'{task} {label} has incomplete held-study summary')
+              within = value(item['within_group_rank_spearman'])
+              pooled = value(item['pooled_spearman'])
+              rmse = value(item['rank_rmse'])
+              print(
+                  f"{task} {label} held_mean={float(mean):.9f} held_median={float(median):.9f} "
+                  f"held_min={float(minimum):.9f} within={within:.9f} pooled={pooled:.9f} rank_rmse={rmse:.9f}"
+              )
+              return within
+          print('CMI_FLU_ANCHOR_RESIDUAL_DETAILED_READOUT_001_RESULT PASS aggregate_only=true read_only=true submission=false')
+          for task in ('Task1.1', 'Task1.2'):
+              item = tasks[task]
+              b1 = block(task, 'b1', item['b1_reference'])
+              b21 = block(task, 'raw_b21', item['raw_b21_reference'])
+              selected_item = item['selected']
+              selected = block(task, 'selected', selected_item)
+              model = str(selected_item['model'])
+              lam = float(selected_item['lambda'])
+              if lam not in (0.0, 0.25, 0.5, 1.0):
+                  raise SystemExit(f'{task} lambda outside locked family')
+              agree_b1 = value(selected_item['challenge_agreement_vs_b1']['rank_spearman'])
+              agree_b21 = value(selected_item['challenge_agreement_vs_raw_b21']['rank_spearman'])
+              print(
+                  f"{task} selection model={model} lambda={lam:.2f} "
+                  f"delta_vs_b1_within={selected-b1:.9f} delta_vs_b21_within={selected-b21:.9f} "
+                  f"challenge_agree_b1={agree_b1:.9f} challenge_agree_b21={agree_b21:.9f}"
+              )
+          PY
+      - name: Remove runner-local readout content
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'Runner-local anchor-residual detailed readout content removed'
