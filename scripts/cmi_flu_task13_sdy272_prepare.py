@@ -6,16 +6,16 @@ import hashlib
 import json
 import pathlib
 import py_compile
-import ssl
 import subprocess
 import sys
-import urllib.request
 from typing import Any
 
 REQUEST_ID = "20260904-cmi-flu-task13-sdy272-001"
 SCIENCE_REPOSITORY = "renta0426/CMI-Flu-Invited-Prediction-Challenge"
 SCIENCE_COMMIT = "baae9fb40329057a316935d0d1285adc64c948b0"
 SCIENCE_PATH = "src/cmi_flu/task13_harmonization.py"
+SCIENCE_TRANSPORT = "agent_relay_exact_blob"
+PAYLOAD_PATH = "payloads/cmi-flu-task13-sdy272-001/task13_harmonization.py"
 TASK13_BLOB = "0f1e728fe2e5ea0f3713c1442c3beeba21b8d347"
 B21_ADAPTER_BLOB = "de71dea0e335bdcd79325c0de926bf8848d0979f"
 BASE_SHA256 = "7894a9232e7372950f70a36d35de41bcc8bda90ec4d0320187e82c3b8c76f2db"
@@ -41,25 +41,13 @@ def run(*args: str) -> None:
     subprocess.run(args, check=True)
 
 
-def fetch_science_source() -> bytes:
-    url = (
-        "https://raw.githubusercontent.com/"
-        f"{SCIENCE_REPOSITORY}/{SCIENCE_COMMIT}/{SCIENCE_PATH}"
-    )
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "kaggle-actions-bridge/1"},
-    )
-    with urllib.request.urlopen(
-        request,
-        timeout=45,
-        context=ssl.create_default_context(),
-    ) as response:
-        data = response.read(65537)
-    if len(data) > 65536:
-        raise SystemExit("Task1.3 science source exceeds byte budget")
+def load_relayed_science_source(root: pathlib.Path) -> bytes:
+    path = root / PAYLOAD_PATH
+    data = path.read_bytes()
+    if len(data) <= 0 or len(data) > 65536:
+        raise SystemExit("Task1.3 science source byte budget mismatch")
     if git_blob_sha(data) != TASK13_BLOB:
-        raise SystemExit("pinned Task1.3 science source blob mismatch")
+        raise SystemExit("agent-relayed Task1.3 science source blob mismatch")
     compile(data.decode("utf-8"), SCIENCE_PATH, "exec")
     return data
 
@@ -113,7 +101,7 @@ def main() -> int:
         request["science_repository"] != SCIENCE_REPOSITORY
         or request["science_source_commit"] != SCIENCE_COMMIT
         or request["science_source_path"] != SCIENCE_PATH
-        or request["science_transport"] != "pinned_public_github_blob"
+        or request["science_transport"] != SCIENCE_TRANSPORT
     ):
         raise SystemExit("science provenance/transport mismatch")
     if request["task13_harmonization_blob_sha"] != TASK13_BLOB:
@@ -151,7 +139,7 @@ def main() -> int:
     ]:
         raise SystemExit("side-effect contract mismatch")
 
-    task13_data = fetch_science_source()
+    task13_data = load_relayed_science_source(root)
     task13_path = output.parent / "task13_harmonization.py"
     task13_path.write_bytes(task13_data)
 
@@ -266,7 +254,7 @@ def main() -> int:
     print(
         "CMI_FLU_TASK13_SDY272_001_PREPARE PASS "
         f"science_commit={SCIENCE_COMMIT} task13_blob={TASK13_BLOB} "
-        f"b21_adapter_blob={B21_ADAPTER_BLOB} expected_version=1"
+        f"b21_adapter_blob={B21_ADAPTER_BLOB} transport={SCIENCE_TRANSPORT} expected_version=1"
     )
     return 0
 
