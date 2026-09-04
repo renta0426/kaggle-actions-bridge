@@ -7,7 +7,6 @@ import json
 import os
 import pathlib
 import py_compile
-import re
 import subprocess
 import sys
 from typing import Any
@@ -121,8 +120,37 @@ def main() -> int:
     helper = namespace.get("json_safe")
     if not callable(helper):
         raise SystemExit("json_safe missing after module load")
-    import numpy as np
-    probe = helper({"nan": float("nan"), "integer": np.int64(7), "values": (np.float64(1.5),)})
+
+    # The GitHub validation image intentionally does not install NumPy.  Model
+    # NumPy dependencies live only in Kaggle.  Provide a minimal fake module so
+    # this secret-free preflight still exercises the serializer's np.generic
+    # branch without adding network/package installation to validation.
+    import types
+
+    class FakeNumpyScalar:
+        def __init__(self, value: Any) -> None:
+            self._value = value
+
+        def item(self) -> Any:
+            return self._value
+
+    fake_numpy = types.ModuleType("numpy")
+    fake_numpy.generic = FakeNumpyScalar  # type: ignore[attr-defined]
+    previous_numpy = sys.modules.get("numpy")
+    sys.modules["numpy"] = fake_numpy
+    try:
+        probe = helper(
+            {
+                "nan": float("nan"),
+                "integer": FakeNumpyScalar(7),
+                "values": (FakeNumpyScalar(1.5),),
+            }
+        )
+    finally:
+        if previous_numpy is None:
+            sys.modules.pop("numpy", None)
+        else:
+            sys.modules["numpy"] = previous_numpy
     if probe != {"nan": None, "integer": 7, "values": [1.5]}:
         raise SystemExit(f"json_safe smoke mismatch: {probe!r}")
 
