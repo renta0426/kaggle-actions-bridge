@@ -8,7 +8,7 @@
   "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
   "science_source_commit": "baae9fb40329057a316935d0d1285adc64c948b0",
   "science_source_path": "src/cmi_flu/task13_harmonization.py",
-  "science_transport": "pinned_public_github_blob",
+  "science_transport": "agent_relay_exact_blob",
   "task13_harmonization_blob_sha": "0f1e728fe2e5ea0f3713c1442c3beeba21b8d347",
   "b21_base_request_id": "20260903-cmi-flu-b21-001",
   "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
