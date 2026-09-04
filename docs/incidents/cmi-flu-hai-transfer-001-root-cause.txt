@@ -1,0 +1,7 @@
+request=20260904-cmi-flu-hai-transfer-001
+workflow_run=33871307603
+classification=resource-consumed
+kaggle_failure_seconds=104
+exception=TypeError: run_hai_compact_for_panels() got an unexpected keyword argument 'selection_policy'
+repair_request=20260904-cmi-flu-hai-transfer-002
+automatic_compute_retry=false
