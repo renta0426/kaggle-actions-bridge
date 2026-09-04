@@ -40,6 +40,20 @@ Distinct SmolLM2 failures had distinct causes: unavailable private-repo material
 
 Rule: after a failure, identify the exact step and whether a write/resource consumption occurred; classify it as pre-write, ambiguous-write, resource-consumed, or read-only; record the prior run; change only the mechanism required by the established cause; validate without credentials first; then require a fresh approval. Never stack speculative repairs or blindly rerun an ambiguous write.
 
+## Frozen runtime API surface
+
+CMI-Flu HAI transfer request `20260904-cmi-flu-hai-transfer-001` consumed one CPU Notebook run and failed inside the scientific entry point because the new HAI extension imported `run_hai_compact_for_panels` from the frozen package's `cmi_flu.evaluation` namespace and passed `selection_policy=...`, while the frozen B2 API did not expose that keyword. The B2.1 robust implementation existed only as a runtime-adapter replacement in the `cmi_flu.runner` namespace. Compilation and the previous static self-test did not exercise that cross-namespace call boundary.
+
+Rule: an extension layered on a frozen runtime must validate the exact callable namespace and signature it will import at execution time, not merely a current-source API or a compile-only contract. If the approved behavior is supplied by a runtime adapter, expose it to the extension through an explicit, provenance-locked compatibility shim. Never obtain compatibility by silently falling back from an approved robust selector to the older legacy selector.
+
+The same HAI extension also expects per-fold panel-proxy aggregates from `evaluate_hai_spec`, which are absent from the older frozen result object. A compatibility shim may reconstruct only those deterministic aggregate fields from the frozen enriched OOF result using the pre-registered split and panel definitions; the underlying model fitting, labels, panel membership, and selection rule must remain unchanged.
+
+## Polling responsiveness
+
+The same HAI request failed in Kaggle after roughly two minutes, but its GitHub Actions monitor performed an immediate status read while the run was queued and then slept for 900 seconds. The next read detected the already-terminal error about fifteen minutes later. The monitor was bounded rather than infinite, but its first polling interval made short failures look stuck and unnecessarily occupied the workflow runner.
+
+Rule: long-running Kaggle watches should use a small bounded startup schedule for early queue/startup failures, then back off to the approved steady interval. The total deadline and API-call budget remain hard limits; adaptive polling must not become high-frequency monitoring, keep-alive behavior, or an automatic retry mechanism.
+
 ## Accelerator fidelity
 
 Accelerator choice is part of the scientific contract. A CUDA logits/rank experiment must not be moved to TPU merely to save GPU quota unless numerical equivalence has been established separately. CPU-only aggregation/readout work must not reserve an accelerator.
@@ -52,9 +66,11 @@ Public logs should contain only bounded operational metadata such as request IDs
 
 - [ ] Preflight and reconstruction can run before protected execution.
 - [ ] Exact target and version semantics are explicit.
+- [ ] Frozen extension call sites are checked against the actual runtime namespace/signatures.
 - [ ] Compute resource class is fixed and admission is checked immediately before write.
 - [ ] There is at most one bounded write call and no automatic compute retry.
 - [ ] Current-versus-historical output semantics are explicit.
+- [ ] Polling has a finite call budget/deadline and detects short startup failures without a long first sleep.
 - [ ] Transient Notebook material stays outside `/kaggle/working`.
 - [ ] Final outputs are allowlisted and size-bounded.
 - [ ] Verbose CLI/API diagnostics are captured and sanitized.
