@@ -1,4 +1,4 @@
-name: CMI-Flu Phase A anchor-residual CPU launch
+name: CMI-Flu Phase A anchor-residual CPU run and readout
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
       - payloads/cmi-flu-anchor-residual-001/anchor_residual.py
       - scripts/cmi_flu_anchor_residual_patch.py
       - scripts/cmi_flu_anchor_residual_patch_v2.py
+      - scripts/cmi_flu_anchor_residual_patch_v3.py
       - scripts/cmi_flu_anchor_residual_prepare.py
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - payloads/cmi-flu-anchor-residual-001/anchor_residual.py
       - scripts/cmi_flu_anchor_residual_patch.py
       - scripts/cmi_flu_anchor_residual_patch_v2.py
+      - scripts/cmi_flu_anchor_residual_patch_v3.py
       - scripts/cmi_flu_anchor_residual_prepare.py
   workflow_dispatch:
 
@@ -34,6 +36,7 @@ env:
   TARGET_COMPETITION: cmi-flu-first-prediction-challenge
   TARGET_KERNEL: renta0426/cmi-flu-phase-a-anchor-residual-20260904-001
   TARGET_SLUG: cmi-flu-phase-a-anchor-residual-20260904-001
+  EXPECTED_KERNEL_VERSION: "1"
   LOCK_PATH: requirements/kaggle-2.2.4.lock
 
 jobs:
@@ -95,6 +98,7 @@ jobs:
           grep -F 'RANK_TRANSFER_BLOB = "d5e07cdd09d2eabdc935eb1733ec238e26ab4c17"' "${workdir}/repo/scripts/cmi_flu_anchor_residual_prepare.py" >/dev/null
           grep -F 'TARGET_STAGE = "phase_a_anchor_residual_task11_task12"' "${workdir}/script.py" >/dev/null
           grep -F 'object.__setattr__(config, "baseline", "b021_taskwise_robust")' "${workdir}/script.py" >/dev/null
+          grep -F 'shutil.rmtree(runtime_root, ignore_errors=True)' "${workdir}/script.py" >/dev/null
           grep -F 'CMI_FLU_ANCHOR_RESIDUAL_COMPLETE' "${workdir}/script.py" >/dev/null
           echo 'CMI_FLU_ANCHOR_RESIDUAL_001_VALIDATE PASS'
 
@@ -118,7 +122,7 @@ jobs:
           PY
 
   launch:
-    name: Admit and launch at most one anchor-residual CPU run 001
+    name: Run and read exactly one anchor-residual CPU request 001
     needs: validate
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
@@ -128,7 +132,7 @@ jobs:
       github.actor_id == '71638068'
     environment: kaggle-readonry
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 220
     steps:
       - name: Enforce protected execution boundary
         shell: bash
@@ -202,7 +206,8 @@ jobs:
           "${workdir}/venv/bin/python" -m pip check >/dev/null
           "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
 
-      - name: Recheck live rules, CPU admission, then push exactly one private run
+      - name: Recheck live rules and CPU admission
+        id: admission
         shell: bash
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
@@ -247,7 +252,7 @@ jobs:
               raise SystemExit('target kernel already exists; duplicate refused')
 
           active_refs = []
-          for item in (api.kernels_list(user='renta0426', sort_by='dateRun', page_size=10) or [])[:10]:
+          for item in (api.kernels_list(user='renta0426', sort_by='dateRun', page_size=5) or [])[:5]:
               ref = str(getattr(item, 'ref', ''))
               if not ref:
                   continue
@@ -259,23 +264,20 @@ jobs:
               if any(token in status for token in ('RUNNING', 'QUEUED', 'PENDING')):
                   active_refs.append((ref, None))
           active = {'cpu': 0, 'gpu': 0, 'tpu': 0, 'unknown': 0}
-          if len(active_refs) > 5:
-              active['unknown'] = len(active_refs)
-          else:
-              with api.build_kaggle_client() as client:
-                  for ref, forced in active_refs:
-                      if forced == 'unknown':
-                          active['unknown'] += 1
-                          continue
+          with api.build_kaggle_client() as client:
+              for ref, forced in active_refs:
+                  if forced == 'unknown':
+                      active['unknown'] += 1
+                      continue
+                  resource = 'unknown'
+                  try:
+                      owner, slug = ref.split('/', 1)
+                      request = ApiGetKernelRequest(); request.user_name = owner; request.kernel_slug = slug
+                      meta = client.kernels.kernels_api_client.get_kernel(request).metadata
+                      resource = 'tpu' if bool(getattr(meta, 'enable_tpu', False)) else ('gpu' if bool(getattr(meta, 'enable_gpu', False)) else 'cpu')
+                  except Exception:
                       resource = 'unknown'
-                      try:
-                          owner, slug = ref.split('/', 1)
-                          request = ApiGetKernelRequest(); request.user_name = owner; request.kernel_slug = slug
-                          meta = client.kernels.kernels_api_client.get_kernel(request).metadata
-                          resource = 'tpu' if bool(getattr(meta, 'enable_tpu', False)) else ('gpu' if bool(getattr(meta, 'enable_gpu', False)) else 'cpu')
-                      except Exception:
-                          resource = 'unknown'
-                      active[resource] += 1
+                  active[resource] += 1
           can_launch = active['cpu'] + active['unknown'] < 1
           decision_path.write_text('launch\n' if can_launch else 'defer\n', encoding='utf-8')
           print(
@@ -284,13 +286,23 @@ jobs:
               f"active_tpu={active['tpu']} active_unknown={active['unknown']} can_launch={can_launch}"
           )
           PY
-
-          decision="$(cat "${WORKDIR}/admission.txt")"
-          if [[ "${decision}" != "launch" ]]; then
-            echo 'Anchor-residual 001 deferred before Kaggle write; no resource was started and fresh approval is required for redispatch.'
-            exit 0
+          if [[ "$(cat "${WORKDIR}/admission.txt")" == "launch" ]]; then
+            echo 'can_launch=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'can_launch=false' >> "${GITHUB_OUTPUT}"
           fi
 
+      - name: Record deferred admission
+        if: steps.admission.outputs.can_launch != 'true'
+        run: echo 'Anchor-residual 001 deferred before Kaggle write; no resource was started and fresh approval is required for redispatch.'
+
+      - name: Push exactly one private CPU run
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
           kernel_dir="${WORKDIR}/kernel"
           mkdir -p "${kernel_dir}"
           cp "${WORKDIR}/script.py" "${kernel_dir}/script.py"
@@ -326,7 +338,148 @@ jobs:
             echo 'ERROR: anchor-residual 001 kernel push failed; response suppressed; no retry'
             exit 1
           fi
-          echo "CMI_FLU_ANCHOR_RESIDUAL_001_LAUNCH PASS request_id=20260904-cmi-flu-anchor-residual-001 target=${TARGET_KERNEL} accelerator=cpu internet=false submission=false automatic_compute_retries=0"
+          echo "CMI_FLU_ANCHOR_RESIDUAL_001_LAUNCH PASS request_id=20260904-cmi-flu-anchor-residual-001 accelerator=cpu internet=false submission=false automatic_compute_retries=0"
+
+      - name: Wait boundedly for exact current version to finish
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os, time
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          target = os.environ['TARGET_KERNEL']
+          expected_version = int(os.environ['EXPECTED_KERNEL_VERSION'])
+          api = KaggleApi(); api.authenticate()
+          terminal = None
+          for attempt in range(1, 13):
+              status = str(getattr(api.kernels_status(target), 'status', '')).upper()
+              print(f"ANCHOR_RESIDUAL_001_STATUS attempt={attempt}/12 status={status or 'UNKNOWN'}")
+              if status and not any(token in status for token in ('RUNNING', 'QUEUED', 'PENDING')):
+                  terminal = status
+                  break
+              if attempt < 12:
+                  time.sleep(900)
+          if terminal is None:
+              raise SystemExit('anchor-residual 001 did not reach terminal status inside bounded 180-minute watch')
+          if any(token in terminal for token in ('ERROR', 'FAIL', 'CANCEL')):
+              raise SystemExit(f'anchor-residual 001 terminal failure status={terminal}')
+          owner, slug = target.split('/', 1)
+          with api.build_kaggle_client() as client:
+              request = ApiGetKernelRequest(); request.user_name = owner; request.kernel_slug = slug
+              meta = client.kernels.kernels_api_client.get_kernel(request).metadata
+          if str(getattr(meta, 'ref', '')) != target:
+              raise SystemExit('terminal kernel identity mismatch')
+          if not bool(getattr(meta, 'is_private', False)):
+              raise SystemExit('terminal kernel is not private')
+          observed_version = int(getattr(meta, 'current_version_number', 0) or 0)
+          if observed_version != expected_version:
+              raise SystemExit(f'current version mismatch observed={observed_version} expected={expected_version}')
+          print(f"ANCHOR_RESIDUAL_001_TERMINAL PASS status={terminal} version={observed_version}")
+          PY
+
+      - name: Read only exact aggregate outputs from current version 1
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          PATH: ${{ env.WORKDIR }}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          output_dir="${WORKDIR}/safe-output"
+          "${WORKDIR}/venv/bin/python" "${WORKDIR}/repo/scripts/kaggle_current_output_read.py" \
+            --kernel "${TARGET_KERNEL}" \
+            --expected-version "${EXPECTED_KERNEL_VERSION}" \
+            --allow-file bridge-result.json:5242880 \
+            --allow-file metrics.json:5242880 \
+            --allow-file summary.md:1048576 \
+            --output-dir "${output_dir}"
+
+      - name: Validate and render aggregate-only result
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - "${WORKDIR}/safe-output" <<'PY'
+          from __future__ import annotations
+          import hashlib, json, math, pathlib, sys
+
+          root = pathlib.Path(sys.argv[1])
+          files = sorted(path.name for path in root.iterdir() if path.is_file())
+          if files != ['bridge-result.json', 'metrics.json', 'summary.md']:
+              raise SystemExit('safe-output file set mismatch')
+          texts = {name: (root / name).read_text(encoding='utf-8') for name in files}
+          banned = ('participant_id', 'subject_group', 'row_index', 'oof_predictions', 'challenge_predictions')
+          for name, text in texts.items():
+              hits = [token for token in banned if token in text]
+              if hits:
+                  raise SystemExit(f'aggregate-output privacy contract failed for {name}: banned_count={len(hits)}')
+
+          bridge = json.loads(texts['bridge-result.json'])
+          metrics = json.loads(texts['metrics.json'])
+          if bridge.get('request_id') != '20260904-cmi-flu-anchor-residual-001':
+              raise SystemExit('bridge request id mismatch')
+          if bridge.get('source_commit') != '23ab4ff53d65eeb8b8e5582f5442081f245f03b3':
+              raise SystemExit('bridge science source mismatch')
+          if bridge.get('kernel_stage') != 'phase_a_anchor_residual_task11_task12':
+              raise SystemExit('bridge stage mismatch')
+          if bridge.get('anchor_residual_source_blob_sha') != '9a7814ecdf70e0b38b2740ade21e9db588869379':
+              raise SystemExit('bridge anchor source mismatch')
+          if bridge.get('rank_transfer_source_blob_sha') != 'd5e07cdd09d2eabdc935eb1733ec238e26ab4c17':
+              raise SystemExit('bridge rank dependency mismatch')
+          if bridge.get('competition_submission_attempted') is not False:
+              raise SystemExit('unexpected Competition submission flag')
+          if metrics.get('run_id') != '20260904-cmi-flu-anchor-residual-001':
+              raise SystemExit('metrics run id mismatch')
+          if metrics.get('experiment') != 'phase_a_anchor_residual_task11_task12':
+              raise SystemExit('metrics experiment mismatch')
+          if metrics.get('selection_policy') != 'robust_anchor_residual_v1':
+              raise SystemExit('metrics selection policy mismatch')
+          if metrics.get('shrinkage_weights') != [0.0, 0.25, 0.5, 1.0]:
+              raise SystemExit('metrics shrinkage contract mismatch')
+          digest = hashlib.sha256(texts['metrics.json'].encode('utf-8')).hexdigest()
+          if bridge.get('metrics_sha256') != digest:
+              raise SystemExit('metrics checksum mismatch')
+          tasks = metrics.get('tasks')
+          if not isinstance(tasks, dict) or set(tasks) != {'Task1.1', 'Task1.2'}:
+              raise SystemExit('task set mismatch')
+
+          def finite(value):
+              return value is not None and math.isfinite(float(value))
+
+          print('CMI_FLU_ANCHOR_RESIDUAL_001_RESULT PASS aggregate_only=true submission=false')
+          for task in ('Task1.1', 'Task1.2'):
+              item = tasks[task]
+              selected = item['selected']
+              values = {
+                  'b1': item['b1_reference']['within_group_rank_spearman']['value'],
+                  'raw_b21': item['raw_b21_reference']['within_group_rank_spearman']['value'],
+                  'selected': selected['within_group_rank_spearman']['value'],
+                  'rank_rmse': selected['rank_rmse']['value'],
+                  'agree_b1': selected['challenge_agreement_vs_b1']['rank_spearman']['value'],
+                  'agree_b21': selected['challenge_agreement_vs_raw_b21']['rank_spearman']['value'],
+              }
+              if not all(finite(value) for value in values.values()):
+                  raise SystemExit(f'{task} has non-finite aggregate metric')
+              selected_lambda = float(selected['lambda'])
+              if selected_lambda not in (0.0, 0.25, 0.5, 1.0):
+                  raise SystemExit(f'{task} selected lambda outside locked family')
+              model = str(selected['model'])
+              if not model or len(model) > 80 or not all(ch.isalnum() or ch in '._-' for ch in model):
+                  raise SystemExit(f'{task} selected model label is unsafe')
+              print(
+                  f"{task} selected_model={model} lambda={selected_lambda} "
+                  f"b1_within={float(values['b1']):.9f} raw_b21_within={float(values['raw_b21']):.9f} "
+                  f"selected_within={float(values['selected']):.9f} rank_rmse={float(values['rank_rmse']):.9f} "
+                  f"challenge_agree_b1={float(values['agree_b1']):.9f} "
+                  f"challenge_agree_b21={float(values['agree_b21']):.9f}"
+              )
+          PY
 
       - name: Cleanup runner-local content
         if: always()
