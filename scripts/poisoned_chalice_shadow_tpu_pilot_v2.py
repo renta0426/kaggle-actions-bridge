@@ -248,7 +248,7 @@ def sha256_file(path):
 def synthetic_content(index):
     if index % 2 == 0:
         return f'def pilot_function_{{index:03d}}(value):\\n    shifted = value + {{index + 11}}\\n    return shifted * {{index % 17 + 1}}\\n'
-    return f'fn pilot_function_{{index:03d}}(value: i64) -> i64 {{{{\\n    let shifted = value + {{index + 11}};\\n    shifted * {{index % 17 + 1}}\\n}}\\n'
+    return f'fn pilot_function_{{index:03d}}(value: i64) -> i64 {{{{\\n    let shifted = value + {{index + 11}};\\n    shifted * {{index % 17 + 1}}\\n}}}}\\n'
 
 protocol_dir = scratch / 'protocol'
 protocol_dir.mkdir()
