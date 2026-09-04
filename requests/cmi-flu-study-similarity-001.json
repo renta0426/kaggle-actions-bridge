@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "request_id": "20260905-cmi-flu-study-similarity-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-phase-a-study-similarity-20260905-001",
+  "purpose": "Execute the pre-registered Phase A step-6 X-only pseudo-challenge study-similarity weighting diagnostic for Task1.1 and Task1.2 under the frozen B2.1 model contract; compare pooled B2.1, uniform source-study experts, and fixed X-similarity weighting without Public LB selection or Competition submission.",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "f47ee36ce8933895b522de0ec402c75c7fe517a7",
+  "science_source_path": "src/cmi_flu/study_similarity.py",
+  "science_transport": "agent_relay_exact_blob",
+  "study_similarity_blob_sha": "27351df3d9187899c4bce2ff1a24b06efc160185",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "expected_kernel_version": 1,
+  "allowed_output_paths": [
+    "cmi-flu-study-similarity-001/bridge-result.json",
+    "cmi-flu-study-similarity-001/metrics.json",
+    "cmi-flu-study-similarity-001/summary.md"
+  ],
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 120,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 18,
+    "initial_poll_schedule_seconds": [30, 60, 120, 300],
+    "steady_poll_interval_seconds": 600,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one new private Notebook and start one CPU run",
+    "after successful completion read only current version 1 aggregate outputs bridge-result.json metrics.json summary.md"
+  ],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-04T22:39:50Z"
+}
