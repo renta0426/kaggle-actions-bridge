@@ -6,10 +6,12 @@ on:
     paths:
       - .github/workflows/129-cmi-flu-rank-transfer-launch.yml
       - requests/cmi-flu-rank-transfer-001.json
+      - scripts/cmi_flu_rank_transfer_materialize.py
   pull_request:
     paths:
       - .github/workflows/129-cmi-flu-rank-transfer-launch.yml
       - requests/cmi-flu-rank-transfer-001.json
+      - scripts/cmi_flu_rank_transfer_materialize.py
   workflow_dispatch:
 
 permissions:
@@ -24,17 +26,12 @@ env:
   EXPECTED_REPOSITORY_ID: "1354356687"
   EXPECTED_ACTOR: renta0426
   EXPECTED_ACTOR_ID: "71638068"
-  REQUEST_PATH: requests/cmi-flu-rank-transfer-001.json
+  MATERIALIZER_PATH: scripts/cmi_flu_rank_transfer_materialize.py
+  EXPECTED_MATERIALIZER_BLOB: f71d6b9f36df9dc41fa0237632a5cc94621b78b9
   LOCK_PATH: requirements/kaggle-2.2.4.lock
   TARGET_COMPETITION: cmi-flu-first-prediction-challenge
   TARGET_KERNEL: renta0426/cmi-flu-phase-a-rank-transfer-20260904-001
   TARGET_SLUG: cmi-flu-phase-a-rank-transfer-20260904-001
-  SCIENCE_REPOSITORY: renta0426/CMI-Flu-Invited-Prediction-Challenge
-  SCIENCE_SOURCE_COMMIT: 9e9922806209241121274f9242a6cf09bf140d75
-  EXPECTED_RANK_TRANSFER_BLOB: d5e07cdd09d2eabdc935eb1733ec238e26ab4c17
-  EXPECTED_BUNDLE_BUILDER_BLOB: bad454639d9e95331961272df4d0f13a0d2bcb87
-  EXPECTED_PHASE_BUILDER_BLOB: 9afdb52abfadb8e634cdb9864581aff1dfe29726
-  EXPECTED_B21_CONFIG_BLOB: 170d3211e2795c0730e481056c7bb068accf97c9
 
 jobs:
   validate:
@@ -50,7 +47,7 @@ jobs:
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
 
-      - name: Materialize exact bridge and science blobs
+      - name: Bootstrap exact bounded materializer
         shell: bash
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
@@ -58,89 +55,23 @@ jobs:
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
-          python3 - "${workdir}" <<'PY'
-          from __future__ import annotations
-          import base64,json,os,pathlib,ssl,sys,urllib.parse,urllib.request
-          root=pathlib.Path(sys.argv[1]); token=os.environ['GITHUB_READ_TOKEN']
-          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'kaggle-actions-bridge/1'}
-          ctx=ssl.create_default_context()
-          def get_json(url:str):
-              req=urllib.request.Request(url,headers=headers)
-              with urllib.request.urlopen(req,timeout=45,context=ctx) as response:
-                  return json.loads(response.read())
-          def contents(repo:str,path:str,ref:str)->bytes:
-              quoted=urllib.parse.quote(path,safe='/')
-              payload=get_json(f'https://api.github.com/repos/{repo}/contents/{quoted}?ref={ref}')
-              if payload.get('encoding')!='base64': raise SystemExit(f'non-base64 content: {repo}/{path}')
-              return base64.b64decode(payload['content'])
-          bridge=root/'bridge'; science=root/'science'; bridge.mkdir(); science.mkdir()
-          for path in (os.environ['REQUEST_PATH'],os.environ['LOCK_PATH']):
-              data=contents(os.environ['EXPECTED_REPOSITORY'],path,os.environ['EVENT_SHA'])
-              out=bridge/path; out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
-          commit=get_json(f"https://api.github.com/repos/{os.environ['SCIENCE_REPOSITORY']}/commits/{os.environ['SCIENCE_SOURCE_COMMIT']}")
-          if commit.get('sha')!=os.environ['SCIENCE_SOURCE_COMMIT']: raise SystemExit('science commit identity mismatch')
-          tree_sha=commit['commit']['tree']['sha']
-          tree=get_json(f"https://api.github.com/repos/{os.environ['SCIENCE_REPOSITORY']}/git/trees/{tree_sha}?recursive=1")
-          if tree.get('truncated'): raise SystemExit('science tree unexpectedly truncated')
-          wanted=[]
-          extras={'configs/baseline_b021_robust.yaml','scripts/build_phase_a_kaggle_bundle.py','scripts/build_rank_transfer_kaggle_bundle.py'}
-          for item in tree.get('tree',[]):
-              path=str(item.get('path') or '')
-              if item.get('type')!='blob': continue
-              if (path.startswith('src/cmi_flu/') and path.endswith('.py')) or path in extras:
-                  wanted.append((path,str(item['sha']),int(item.get('size') or 0)))
-          if not 10 <= len(wanted) <= 80: raise SystemExit(f'unexpected science snapshot file count: {len(wanted)}')
-          if sum(size for _,_,size in wanted)>2_000_000: raise SystemExit('science snapshot exceeds byte budget')
-          for path,sha,size in wanted:
-              blob=get_json(f"https://api.github.com/repos/{os.environ['SCIENCE_REPOSITORY']}/git/blobs/{sha}")
-              if blob.get('encoding')!='base64': raise SystemExit(f'non-base64 blob: {path}')
-              data=base64.b64decode(blob['content'])
-              if len(data)!=size: raise SystemExit(f'blob size mismatch: {path}')
-              out=science/path; out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
-          print(f"SCIENCE_SNAPSHOT files={len(wanted)} bytes={sum(size for _,_,size in wanted)}")
+          python3 - "${workdir}/materializer.py" <<'PY'
+          import base64,hashlib,json,os,pathlib,ssl,sys,urllib.parse,urllib.request
+          path=pathlib.Path(sys.argv[1]); quoted=urllib.parse.quote(os.environ['MATERIALIZER_PATH'],safe='/')
+          url=f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/contents/{quoted}?ref={os.environ['EVENT_SHA']}"
+          headers={'Authorization':f"Bearer {os.environ['GITHUB_READ_TOKEN']}",'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'kaggle-actions-bridge/1'}
+          with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=45,context=ssl.create_default_context()) as response:
+              payload=json.loads(response.read())
+          if payload.get('encoding')!='base64': raise SystemExit('materializer encoding mismatch')
+          data=base64.b64decode(payload['content'])
+          blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          if blob!=os.environ['EXPECTED_MATERIALIZER_BLOB']: raise SystemExit(f'materializer blob mismatch: {blob}')
+          path.write_bytes(data)
           PY
-
-      - name: Verify immutable contract and build runner twice
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - "${WORKDIR}" <<'PY'
-          import hashlib,json,os,pathlib,sys
-          root=pathlib.Path(sys.argv[1]); bridge=root/'bridge'; science=root/'science'
-          request=json.loads((bridge/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
-          allowed={'schema_version','request_id','competition','operation','target','purpose','science_repository','science_source_commit','rank_transfer_blob_sha','bundle_builder_blob_sha','phase_builder_blob_sha','b21_config_blob_sha','resource','api_budget','side_effects','competition_submission_attempted','automatic_compute_retries','enable_internet','rules_checked_at_utc'}
-          if set(request)!=allowed: raise SystemExit(f'manifest fields mismatch: {sorted(set(request)^allowed)}')
-          if request['schema_version']!=1 or request['request_id']!='20260904-cmi-flu-rank-transfer-001': raise SystemExit('request identity mismatch')
-          if request['competition']!=os.environ['TARGET_COMPETITION'] or request['target']!=os.environ['TARGET_KERNEL'] or request['operation']!='kernel_run': raise SystemExit('request target mismatch')
-          if request['science_repository']!=os.environ['SCIENCE_REPOSITORY'] or request['science_source_commit']!=os.environ['SCIENCE_SOURCE_COMMIT']: raise SystemExit('science provenance mismatch')
-          if request['resource']!={'accelerator':'cpu','expected_runtime_minutes':60,'hard_timeout_minutes':180,'max_active_runs':1}: raise SystemExit('resource contract mismatch')
-          if request['api_budget']!={'max_calls':20,'poll_interval_seconds':900,'max_pages':2}: raise SystemExit('API budget mismatch')
-          if request['competition_submission_attempted'] is not False or request['automatic_compute_retries']!=0 or request['enable_internet'] is not False: raise SystemExit('safety contract mismatch')
-          def blob(path):
-              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
-          checks={'src/cmi_flu/rank_transfer.py':('rank_transfer_blob_sha',os.environ['EXPECTED_RANK_TRANSFER_BLOB']),'scripts/build_rank_transfer_kaggle_bundle.py':('bundle_builder_blob_sha',os.environ['EXPECTED_BUNDLE_BUILDER_BLOB']),'scripts/build_phase_a_kaggle_bundle.py':('phase_builder_blob_sha',os.environ['EXPECTED_PHASE_BUILDER_BLOB']),'configs/baseline_b021_robust.yaml':('b21_config_blob_sha',os.environ['EXPECTED_B21_CONFIG_BLOB'])}
-          for rel,(manifest_key,expected) in checks.items():
-              found=blob(science/rel)
-              if found!=expected or request[manifest_key]!=expected: raise SystemExit(f'science blob mismatch: {rel} {found}')
-          PY
-          science="${WORKDIR}/science"
-          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/a.py"
-          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/b.py"
-          cmp "${WORKDIR}/a.py" "${WORKDIR}/b.py"
-          python3 - "${WORKDIR}/a.py" <<'PY'
-          import hashlib,pathlib,re,sys
-          path=pathlib.Path(sys.argv[1]); text=path.read_text(encoding='utf-8'); old='REQUEST_ID = "__REQUEST_ID__"'; new='REQUEST_ID = "20260904-cmi-flu-rank-transfer-001"'
-          if text.count(old)!=1: raise SystemExit('request placeholder mismatch')
-          text=text.replace(old,new,1); compile(text,str(path),'exec'); path.write_text(text,encoding='utf-8')
-          package=re.search(r'^PACKAGE_ZIP_SHA256 = "([0-9a-f]{64})"$',text,re.M)
-          if package is None: raise SystemExit('package SHA missing')
-          print(f"RANK_TRANSFER_RUNNER script_sha256={hashlib.sha256(text.encode()).hexdigest()} package_sha256={package.group(1)}")
-          PY
-          python3 -W error::SyntaxWarning -m py_compile "${WORKDIR}/a.py"
-          python3 "${WORKDIR}/a.py" --self-test
-          grep -F '"kernel_stage": "phase_a_rank_transfer_task11_task12"' "${WORKDIR}/a.py" >/dev/null
-          grep -F 'cmi_flu/rank_transfer.py' "${WORKDIR}/a.py" >/dev/null
-          grep -F 'CMI_FLU_RANK_TRANSFER_COMPLETE' "${WORKDIR}/a.py" >/dev/null
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/materializer.py"
+          GITHUB_READ_TOKEN="${GITHUB_READ_TOKEN}" python3 "${workdir}/materializer.py" --bridge-ref "${EVENT_SHA}" --output-root "${workdir}/materialized"
+          [[ -f "${workdir}/materialized/runner-a.py" ]]
+          [[ -f "${workdir}/materialized/bridge/${LOCK_PATH}" ]]
           echo 'CMI_FLU_RANK_TRANSFER_001_VALIDATE PASS'
 
       - name: Confirm current public Kaggle policy pages are reachable
@@ -150,8 +81,8 @@ jobs:
           python3 - <<'PY'
           import ssl,urllib.request
           for url in ('https://www.kaggle.com/terms','https://www.kaggle.com/aup','https://www.kaggle.com/community-guidelines','https://www.kaggle.com/docs/api'):
-              req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
-              with urllib.request.urlopen(req,timeout=30,context=ssl.create_default_context()) as response:
+              request=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(request,timeout=30,context=ssl.create_default_context()) as response:
                   if response.status!=200 or not response.read(65536): raise SystemExit(f'official Kaggle page unavailable: {url}')
           print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
           PY
@@ -195,7 +126,7 @@ jobs:
           [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/129-cmi-flu-rank-transfer-launch.yml@refs/heads/main" ]]
           echo 'PROTECTED_CMI_FLU_RANK_TRANSFER_001_BOUNDARY PASS'
 
-      - name: Materialize exact approved blobs
+      - name: Materialize exact approved native runner
         shell: bash
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
@@ -203,62 +134,23 @@ jobs:
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
-          python3 - "${workdir}" <<'PY'
-          import base64,json,os,pathlib,ssl,sys,urllib.parse,urllib.request
-          root=pathlib.Path(sys.argv[1]); token=os.environ['GITHUB_READ_TOKEN']; headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'kaggle-actions-bridge/1'}; ctx=ssl.create_default_context()
-          def get_json(url):
-              with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=45,context=ctx) as response: return json.loads(response.read())
-          def contents(repo,path,ref):
-              payload=get_json(f"https://api.github.com/repos/{repo}/contents/{urllib.parse.quote(path,safe='/')}?ref={ref}")
-              if payload.get('encoding')!='base64': raise SystemExit(f'non-base64 content: {path}')
-              return base64.b64decode(payload['content'])
-          bridge=root/'bridge'; science=root/'science'; bridge.mkdir(); science.mkdir()
-          for path in (os.environ['REQUEST_PATH'],os.environ['LOCK_PATH']):
-              data=contents(os.environ['EXPECTED_REPOSITORY'],path,os.environ['EVENT_SHA']); out=bridge/path; out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
-          commit=get_json(f"https://api.github.com/repos/{os.environ['SCIENCE_REPOSITORY']}/commits/{os.environ['SCIENCE_SOURCE_COMMIT']}"); tree_sha=commit['commit']['tree']['sha']
-          tree=get_json(f"https://api.github.com/repos/{os.environ['SCIENCE_REPOSITORY']}/git/trees/{tree_sha}?recursive=1")
-          if tree.get('truncated'): raise SystemExit('science tree truncated')
-          extras={'configs/baseline_b021_robust.yaml','scripts/build_phase_a_kaggle_bundle.py','scripts/build_rank_transfer_kaggle_bundle.py'}; wanted=[]
-          for item in tree.get('tree',[]):
-              path=str(item.get('path') or '')
-              if item.get('type')=='blob' and ((path.startswith('src/cmi_flu/') and path.endswith('.py')) or path in extras): wanted.append((path,str(item['sha']),int(item.get('size') or 0)))
-          if not 10<=len(wanted)<=80 or sum(s for _,_,s in wanted)>2_000_000: raise SystemExit('science snapshot budget mismatch')
-          for path,sha,size in wanted:
-              blob=get_json(f"https://api.github.com/repos/{os.environ['SCIENCE_REPOSITORY']}/git/blobs/{sha}"); data=base64.b64decode(blob['content'])
-              if len(data)!=size: raise SystemExit(f'blob size mismatch: {path}')
-              out=science/path; out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
+          python3 - "${workdir}/materializer.py" <<'PY'
+          import base64,hashlib,json,os,pathlib,ssl,sys,urllib.parse,urllib.request
+          path=pathlib.Path(sys.argv[1]); quoted=urllib.parse.quote(os.environ['MATERIALIZER_PATH'],safe='/')
+          url=f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/contents/{quoted}?ref={os.environ['EVENT_SHA']}"
+          headers={'Authorization':f"Bearer {os.environ['GITHUB_READ_TOKEN']}",'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'kaggle-actions-bridge/1'}
+          with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=45,context=ssl.create_default_context()) as response:
+              payload=json.loads(response.read())
+          data=base64.b64decode(payload['content']); blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          if payload.get('encoding')!='base64' or blob!=os.environ['EXPECTED_MATERIALIZER_BLOB']: raise SystemExit('approved materializer mismatch')
+          path.write_bytes(data)
           PY
-          python3 - "${WORKDIR}" <<'PY'
-          import hashlib,json,os,pathlib,sys
-          root=pathlib.Path(sys.argv[1]); request=json.loads((root/'bridge'/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
-          if request['request_id']!='20260904-cmi-flu-rank-transfer-001' or request['target']!=os.environ['TARGET_KERNEL']: raise SystemExit('approved request mismatch')
-          def blob(path):
-              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
-          science=root/'science'; checks={'src/cmi_flu/rank_transfer.py':os.environ['EXPECTED_RANK_TRANSFER_BLOB'],'scripts/build_rank_transfer_kaggle_bundle.py':os.environ['EXPECTED_BUNDLE_BUILDER_BLOB'],'scripts/build_phase_a_kaggle_bundle.py':os.environ['EXPECTED_PHASE_BUILDER_BLOB'],'configs/baseline_b021_robust.yaml':os.environ['EXPECTED_B21_CONFIG_BLOB']}
-          for rel,expected in checks.items():
-              if blob(science/rel)!=expected: raise SystemExit(f'science blob mismatch: {rel}')
-          PY
-
-      - name: Prepare locked Kaggle CLI and exact native runner
-        shell: bash
-        run: |
-          set -euo pipefail
-          science="${WORKDIR}/science"; bridge="${WORKDIR}/bridge"
-          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/a.py"
-          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/b.py"
-          cmp "${WORKDIR}/a.py" "${WORKDIR}/b.py"
-          python3 - "${WORKDIR}/a.py" <<'PY'
-          import pathlib,sys
-          path=pathlib.Path(sys.argv[1]); text=path.read_text(encoding='utf-8'); old='REQUEST_ID = "__REQUEST_ID__"'; new='REQUEST_ID = "20260904-cmi-flu-rank-transfer-001"'
-          if text.count(old)!=1: raise SystemExit('request placeholder mismatch')
-          text=text.replace(old,new,1); compile(text,str(path),'exec'); path.write_text(text,encoding='utf-8')
-          PY
-          python3 -W error::SyntaxWarning -m py_compile "${WORKDIR}/a.py"
-          python3 "${WORKDIR}/a.py" --self-test
-          python3 -m venv "${WORKDIR}/venv"
-          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${bridge}/${LOCK_PATH}" >/dev/null
-          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
-          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          GITHUB_READ_TOKEN="${GITHUB_READ_TOKEN}" python3 "${workdir}/materializer.py" --bridge-ref "${EVENT_SHA}" --output-root "${workdir}/materialized"
+          cp "${workdir}/materialized/runner-a.py" "${workdir}/runner.py"
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/materialized/bridge/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
 
       - name: Fetch live Competition rules and determine CPU admission
         id: admission
@@ -275,15 +167,16 @@ jobs:
           from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
           api=KaggleApi(); api.authenticate(); pages=api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []; content={}
           for page in pages:
-              d=page.to_dict() if hasattr(page,'to_dict') else dict(page); name=str(d.get('name') or '').strip().lower()
-              if name: content[name]=str(d.get('content') or '')
-          if 'rules' not in content or 'evaluation' not in content or not any('data' in k for k in content): raise SystemExit('live Competition pages unavailable')
-          plain=lambda s: re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',s)).casefold(); rules=plain(content['rules']); evaluation=plain(content['evaluation']); data=' '.join(plain(content[k]) for k in content if 'data' in k)
-          if not all(x in rules for x in ('data security','external data and tools')): raise SystemExit('live rules differ from guardrails')
-          if not all(x in evaluation for x in ('mean spearman correlation','40 donors','-99')): raise SystemExit('live evaluation differs from guardrails')
+              data=page.to_dict() if hasattr(page,'to_dict') else dict(page); name=str(data.get('name') or '').strip().lower()
+              if name: content[name]=str(data.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in key for key in content): raise SystemExit('live Competition pages unavailable')
+          plain=lambda value: re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',value)).casefold()
+          rules=plain(content['rules']); evaluation=plain(content['evaluation']); data=' '.join(plain(content[key]) for key in content if 'data' in key)
+          if not all(token in rules for token in ('data security','external data and tools')): raise SystemExit('live rules differ from guardrails')
+          if not all(token in evaluation for token in ('mean spearman correlation','40 donors','-99')): raise SystemExit('live evaluation differs from guardrails')
           if 'sample_submission_part1.csv' not in data or 'investigations_260821.tsv' not in data: raise SystemExit('live data description differs from guardrails')
           existing=api.kernels_list(user='renta0426',search=os.environ['TARGET_SLUG'],page_size=5) or []
-          if os.environ['TARGET_KERNEL'] in {str(getattr(x,'ref','')) for x in existing}: raise SystemExit('target kernel already exists; duplicate refused')
+          if os.environ['TARGET_KERNEL'] in {str(getattr(item,'ref','')) for item in existing}: raise SystemExit('target kernel already exists; duplicate refused')
           active_refs=[]
           for item in (api.kernels_list(user='renta0426',sort_by='dateRun',page_size=15) or [])[:15]:
               ref=str(getattr(item,'ref',''))
@@ -298,13 +191,13 @@ jobs:
                   for ref in active_refs:
                       resource='unknown'
                       try:
-                          owner,slug=ref.split('/',1); req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug; meta=client.kernels.kernels_api_client.get_kernel(req).metadata
-                          resource='tpu' if bool(getattr(meta,'enable_tpu',False)) else ('gpu' if bool(getattr(meta,'enable_gpu',False)) else 'cpu')
+                          owner,slug=ref.split('/',1); request=ApiGetKernelRequest(); request.user_name=owner; request.kernel_slug=slug; metadata=client.kernels.kernels_api_client.get_kernel(request).metadata
+                          resource='tpu' if bool(getattr(metadata,'enable_tpu',False)) else ('gpu' if bool(getattr(metadata,'enable_gpu',False)) else 'cpu')
                       except Exception: pass
                       active[resource].append(ref)
-          can=len(active['cpu'])+len(active['unknown'])<1
-          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as handle: handle.write(f"can_launch={'true' if can else 'false'}\n")
-          print(f"RANK_TRANSFER_ADMISSION requested=cpu active_cpu={len(active['cpu'])} active_gpu={len(active['gpu'])} active_tpu={len(active['tpu'])} active_unknown={len(active['unknown'])} can_launch={can}")
+          can_launch=len(active['cpu'])+len(active['unknown'])<1
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as handle: handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
+          print(f"RANK_TRANSFER_ADMISSION requested=cpu active_cpu={len(active['cpu'])} active_gpu={len(active['gpu'])} active_tpu={len(active['tpu'])} active_unknown={len(active['unknown'])} can_launch={can_launch}")
           PY
 
       - name: Record deferred admission
@@ -318,7 +211,7 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
-          kernel_dir="${WORKDIR}/kernel"; mkdir -p "${kernel_dir}"; cp "${WORKDIR}/a.py" "${kernel_dir}/script.py"
+          kernel_dir="${WORKDIR}/kernel"; mkdir -p "${kernel_dir}"; cp "${WORKDIR}/runner.py" "${kernel_dir}/script.py"
           python3 - "${kernel_dir}" <<'PY'
           import json,os,pathlib,sys
           root=pathlib.Path(sys.argv[1]); metadata={"id":os.environ['TARGET_KERNEL'],"title":"CMI Flu Phase A Rank Transfer 20260904 001","code_file":"script.py","language":"python","kernel_type":"script","is_private":True,"enable_gpu":False,"enable_tpu":False,"enable_internet":False,"machine_shape":"","dataset_sources":[],"competition_sources":[os.environ['TARGET_COMPETITION']],"kernel_sources":[],"model_sources":[]}
