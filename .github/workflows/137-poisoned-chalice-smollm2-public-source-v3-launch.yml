@@ -2,8 +2,7 @@ name: Poisoned Chalice SmolLM2 public-source frozen launch 003
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - requests/poisoned-chalice-smollm2-transfer-v1-public-003.json
       - scripts/poisoned_chalice_smollm2_public_builder_v3.py
@@ -16,8 +15,7 @@ on:
       - scripts/poisoned_chalice_smollm2_public_launch_v3.py
       - .github/workflows/137-poisoned-chalice-smollm2-public-source-v3-launch.yml
 
-permissions:
-  contents: read
+permissions: {}
 
 env:
   EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
@@ -41,9 +39,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Enforce secret-free source boundary
+      - name: Materialize exact public bridge source at the event SHA
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EVENT_REPOSITORY: ${{ github.repository }}
           EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
           EVENT_ACTOR: ${{ github.actor }}
@@ -59,61 +60,65 @@ jobs:
           for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          echo "SOURCE_SHA=${source_sha}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${source_sha}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
           echo 'SMOLLM2_PUBLIC_V3_SECRET_FREE_BOUNDARY PASS private_repo_reads=0 kaggle_calls=0'
 
-      - name: Checkout exact event source without persisted credentials
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Verify immutable builder and launcher blobs
+      - name: Verify immutable request, builder, launcher, and official model revision
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git hash-object "${BUILDER_PATH}")" == "${BUILDER_BLOB_SHA}" ]]
-          [[ "$(git hash-object "${LAUNCHER_PATH}")" == "${LAUNCHER_BLOB_SHA}" ]]
-          python3 -m py_compile "${BUILDER_PATH}" "${LAUNCHER_PATH}"
-          python3 "${LAUNCHER_PATH}" \
+          repo="${WORKDIR}/repo"
+          [[ "$(git -C "${repo}" hash-object "${BUILDER_PATH}")" == "${BUILDER_BLOB_SHA}" ]]
+          [[ "$(git -C "${repo}" hash-object "${LAUNCHER_PATH}")" == "${LAUNCHER_BLOB_SHA}" ]]
+          python3 -m py_compile "${repo}/${BUILDER_PATH}" "${repo}/${LAUNCHER_PATH}"
+          python3 "${repo}/${LAUNCHER_PATH}" \
             --static \
-            --request "${REQUEST_PATH}" \
-            --launcher "${LAUNCHER_PATH}" \
-            --builder "${BUILDER_PATH}"
-
-      - name: Verify immutable official SmolLM2 revision without downloading weights
-        shell: bash
-        run: |
-          set -euo pipefail
+            --request "${repo}/${REQUEST_PATH}" \
+            --launcher "${repo}/${LAUNCHER_PATH}" \
+            --builder "${repo}/${BUILDER_PATH}"
           expected='effd688a12921b4cc83e3312b6feb579f70f9c71'
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "${tmp}"' EXIT
-          git init -q "${tmp}"
-          git -C "${tmp}" -c credential.helper= fetch -q --depth=1 \
+          model_repo="${WORKDIR}/model-revision"
+          git init -q "${model_repo}"
+          git -C "${model_repo}" -c credential.helper= fetch -q --depth=1 \
             https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B "${expected}"
-          [[ "$(git -C "${tmp}" rev-parse FETCH_HEAD)" == "${expected}" ]]
+          [[ "$(git -C "${model_repo}" rev-parse FETCH_HEAD)" == "${expected}" ]]
           echo "SMOLLM2_PUBLIC_V3_MODEL_REVISION PASS revision=${expected}"
 
-      - name: Install public reconstruction dependencies
+      - name: Reconstruct exact public cohort and validate label-free Notebook
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --no-input \
+          repo="${WORKDIR}/repo"
+          python3 -m venv "${WORKDIR}/build-venv"
+          "${WORKDIR}/build-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
             datasets==4.0.0 pandas==2.3.2 pyarrow==21.0.0 nbformat==5.10.4 numpy==2.3.2 >/dev/null
-          python3 -m pip check >/dev/null
+          "${WORKDIR}/build-venv/bin/python" -m pip check >/dev/null
+          out="${WORKDIR}/kernel"
+          "${WORKDIR}/build-venv/bin/python" "${repo}/${BUILDER_PATH}" --output-dir "${out}"
+          "${WORKDIR}/build-venv/bin/python" "${repo}/${LAUNCHER_PATH}" \
+            --validate-bundle \
+            --request "${repo}/${REQUEST_PATH}" \
+            --launcher "${repo}/${LAUNCHER_PATH}" \
+            --builder "${repo}/${BUILDER_PATH}" \
+            --bundle-root "${out}"
+          echo 'SMOLLM2_PUBLIC_V3_RECONSTRUCTION PASS rows=2000 labels_embedded=false private_repo_reads=0'
 
-      - name: Reconstruct the exact public cohort and build label-free Notebook
+      - name: Cleanup validation material
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          out="$(mktemp -d)/kernel"
-          python3 "${BUILDER_PATH}" --output-dir "${out}"
-          python3 "${LAUNCHER_PATH}" \
-            --validate-bundle \
-            --request "${REQUEST_PATH}" \
-            --launcher "${LAUNCHER_PATH}" \
-            --builder "${BUILDER_PATH}" \
-            --bundle-root "${out}"
-          rm -rf "$(dirname "${out}")"
-          echo 'SMOLLM2_PUBLIC_V3_RECONSTRUCTION PASS rows=2000 labels_embedded=false private_repo_reads=0'
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
 
   launch:
     name: Build public-source bundle and launch one frozen SmolLM2 T4 run
@@ -131,7 +136,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - name: Enforce protected execution boundary
+      - name: Enforce protected execution boundary and fetch exact main commit
         shell: bash
         env:
           EVENT_REPOSITORY: ${{ github.repository }}
@@ -162,7 +167,7 @@ jobs:
           git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
           echo 'PROTECTED_SMOLLM2_PUBLIC_V3_BOUNDARY PASS request=003 write_calls=1 retries=0'
 
-      - name: Prepare pinned sources and build dependencies without credentials
+      - name: Prepare isolated public builder and locked Kaggle clients
         shell: bash
         run: |
           set -euo pipefail
@@ -182,7 +187,7 @@ jobs:
           "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
           echo 'SMOLLM2_PUBLIC_V3_ISOLATED_CLIENTS PASS'
 
-      - name: Reconstruct public cohort and validate label-free bundle before Kaggle credentials
+      - name: Reconstruct and validate bundle before exposing Kaggle credential
         shell: bash
         run: |
           set -euo pipefail
@@ -207,16 +212,16 @@ jobs:
           import ssl, urllib.request
           context = ssl.create_default_context()
           for url in (
-              "https://www.kaggle.com/terms",
-              "https://www.kaggle.com/aup",
-              "https://www.kaggle.com/community-guidelines",
-              "https://www.kaggle.com/docs/api",
-              "https://www.kaggle.com/docs/notebooks",
+              'https://www.kaggle.com/terms',
+              'https://www.kaggle.com/aup',
+              'https://www.kaggle.com/community-guidelines',
+              'https://www.kaggle.com/docs/api',
+              'https://www.kaggle.com/docs/notebooks',
           ):
-              request = urllib.request.Request(url, headers={"User-Agent": "kaggle-actions-bridge/1"})
-              with urllib.request.urlopen(request, timeout=30, context=context) as response:
+              req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req, timeout=30, context=context) as response:
                   if response.status != 200 or not response.read(65536):
-                      raise SystemExit(f"official Kaggle page unavailable: {url}")
+                      raise SystemExit(f'official Kaggle page unavailable: {url}')
           print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
           PY
 
@@ -236,7 +241,7 @@ jobs:
             --bundle-root "${KERNEL_DIR}" \
             --kaggle-bin "${WORKDIR}/kaggle-venv/bin/kaggle"
 
-      - name: Cleanup runner-local generated bundle
+      - name: Cleanup runner-local generated material
         if: always()
         shell: bash
         run: |
