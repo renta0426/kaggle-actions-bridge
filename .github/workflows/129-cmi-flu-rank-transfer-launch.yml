@@ -1,0 +1,362 @@
+name: CMI-Flu Phase A rank transfer CPU launch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/129-cmi-flu-rank-transfer-launch.yml
+      - requests/cmi-flu-rank-transfer-001.json
+  pull_request:
+    paths:
+      - .github/workflows/129-cmi-flu-rank-transfer-launch.yml
+      - requests/cmi-flu-rank-transfer-001.json
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-rank-transfer-001.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_KERNEL: renta0426/cmi-flu-phase-a-rank-transfer-20260904-001
+  TARGET_SLUG: cmi-flu-phase-a-rank-transfer-20260904-001
+  SCIENCE_REPOSITORY: renta0426/CMI-Flu-Invited-Prediction-Challenge
+  SCIENCE_SOURCE_COMMIT: 9e9922806209241121274f9242a6cf09bf140d75
+  EXPECTED_RANK_TRANSFER_BLOB: d5e07cdd09d2eabdc935eb1733ec238e26ab4c17
+  EXPECTED_BUNDLE_BUILDER_BLOB: bad454639d9e95331961272df4d0f13a0d2bcb87
+  EXPECTED_PHASE_BUILDER_BLOB: 9afdb52abfadb8e634cdb9864581aff1dfe29726
+  EXPECTED_B21_CONFIG_BLOB: 170d3211e2795c0730e481056c7bb068accf97c9
+
+jobs:
+  validate:
+    name: Validate immutable rank-transfer request 001
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge request and science commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib, io, json, os, pathlib, ssl, sys, tarfile, urllib.request
+
+          root=pathlib.Path(sys.argv[1])
+
+          def download_repo(repository: str, sha: str, target: pathlib.Path, limit: int=25_000_000) -> None:
+              url=f"https://api.github.com/repos/{repository}/tarball/{sha}"
+              req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+                  archive=response.read(limit+1)
+              if len(archive)>limit: raise SystemExit(f'archive exceeds byte budget: {repository}')
+              with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tf:
+                  members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
+                  if len(prefixes)!=1: raise SystemExit(f'unexpected archive layout: {repository}')
+                  prefix=next(iter(prefixes))+'/'
+                  for member in members:
+                      if not member.isfile(): continue
+                      if not member.name.startswith(prefix): raise SystemExit('unexpected archive member')
+                      rel=pathlib.PurePosixPath(member.name[len(prefix):])
+                      if not rel.parts or '..' in rel.parts: raise SystemExit('unsafe archive path')
+                      data=tf.extractfile(member).read()
+                      out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
+
+          download_repo(os.environ['EXPECTED_REPOSITORY'],os.environ['EVENT_SHA'],root/'bridge')
+          download_repo(os.environ['SCIENCE_REPOSITORY'],os.environ['SCIENCE_SOURCE_COMMIT'],root/'science')
+
+          request=json.loads((root/'bridge'/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
+          allowed={
+              'schema_version','request_id','competition','operation','target','purpose',
+              'science_repository','science_source_commit','rank_transfer_blob_sha',
+              'bundle_builder_blob_sha','phase_builder_blob_sha','b21_config_blob_sha',
+              'resource','api_budget','side_effects','competition_submission_attempted',
+              'automatic_compute_retries','enable_internet','rules_checked_at_utc'
+          }
+          if set(request)!=allowed: raise SystemExit(f'manifest fields mismatch: {sorted(set(request)^allowed)}')
+          if request['schema_version']!=1 or request['request_id']!='20260904-cmi-flu-rank-transfer-001': raise SystemExit('request identity mismatch')
+          if request['competition']!=os.environ['TARGET_COMPETITION'] or request['target']!=os.environ['TARGET_KERNEL'] or request['operation']!='kernel_run': raise SystemExit('request target mismatch')
+          if request['science_repository']!=os.environ['SCIENCE_REPOSITORY'] or request['science_source_commit']!=os.environ['SCIENCE_SOURCE_COMMIT']: raise SystemExit('science provenance mismatch')
+          expected={
+              'rank_transfer_blob_sha':os.environ['EXPECTED_RANK_TRANSFER_BLOB'],
+              'bundle_builder_blob_sha':os.environ['EXPECTED_BUNDLE_BUILDER_BLOB'],
+              'phase_builder_blob_sha':os.environ['EXPECTED_PHASE_BUILDER_BLOB'],
+              'b21_config_blob_sha':os.environ['EXPECTED_B21_CONFIG_BLOB'],
+          }
+          if any(request[k]!=v for k,v in expected.items()): raise SystemExit('science blob manifest mismatch')
+          if request['resource']!={'accelerator':'cpu','expected_runtime_minutes':60,'hard_timeout_minutes':180,'max_active_runs':1}: raise SystemExit('resource contract mismatch')
+          if request['api_budget']!={'max_calls':20,'poll_interval_seconds':900,'max_pages':2}: raise SystemExit('API budget mismatch')
+          if request['competition_submission_attempted'] is not False or request['automatic_compute_retries']!=0 or request['enable_internet'] is not False: raise SystemExit('safety contract mismatch')
+
+          def blob(path: pathlib.Path) -> str:
+              data=path.read_bytes()
+              return hashlib.sha1(b'blob '+str(len(data)).encode('ascii')+b'\0'+data).hexdigest()
+          science=root/'science'
+          checks={
+              'src/cmi_flu/rank_transfer.py':os.environ['EXPECTED_RANK_TRANSFER_BLOB'],
+              'scripts/build_rank_transfer_kaggle_bundle.py':os.environ['EXPECTED_BUNDLE_BUILDER_BLOB'],
+              'scripts/build_phase_a_kaggle_bundle.py':os.environ['EXPECTED_PHASE_BUILDER_BLOB'],
+              'configs/baseline_b021_robust.yaml':os.environ['EXPECTED_B21_CONFIG_BLOB'],
+          }
+          for rel,expected_blob in checks.items():
+              found=blob(science/rel)
+              if found!=expected_blob: raise SystemExit(f'science blob mismatch: {rel} {found}')
+          PY
+
+      - name: Build exact native runner twice and self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          science="${WORKDIR}/science"
+          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/runner-a.py"
+          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/runner-b.py"
+          cmp "${WORKDIR}/runner-a.py" "${WORKDIR}/runner-b.py"
+          python3 - "${WORKDIR}/runner-a.py" <<'PY'
+          import pathlib,sys
+          path=pathlib.Path(sys.argv[1]); text=path.read_text(encoding='utf-8')
+          old='REQUEST_ID = "__REQUEST_ID__"'; new='REQUEST_ID = "20260904-cmi-flu-rank-transfer-001"'
+          if text.count(old)!=1: raise SystemExit('runner request-id placeholder mismatch')
+          text=text.replace(old,new,1); compile(text,str(path),'exec'); path.write_text(text,encoding='utf-8')
+          PY
+          python3 -W error::SyntaxWarning -m py_compile "${WORKDIR}/runner-a.py"
+          python3 "${WORKDIR}/runner-a.py" --self-test
+          grep -F 'REQUEST_ID = "20260904-cmi-flu-rank-transfer-001"' "${WORKDIR}/runner-a.py" >/dev/null
+          grep -F '"kernel_stage": "phase_a_rank_transfer_task11_task12"' "${WORKDIR}/runner-a.py" >/dev/null
+          grep -F 'cmi_flu/rank_transfer.py' "${WORKDIR}/runner-a.py" >/dev/null
+          grep -F 'CMI_FLU_RANK_TRANSFER_COMPLETE' "${WORKDIR}/runner-a.py" >/dev/null
+          python3 - "${WORKDIR}/runner-a.py" <<'PY'
+          import hashlib,pathlib,re,sys
+          data=pathlib.Path(sys.argv[1]).read_bytes(); text=data.decode('utf-8')
+          package=re.search(r'^PACKAGE_ZIP_SHA256 = "([0-9a-f]{64})"$',text,re.M)
+          if package is None: raise SystemExit('package SHA missing')
+          print(f"RANK_TRANSFER_RUNNER_VALIDATE script_sha256={hashlib.sha256(data).hexdigest()} package_sha256={package.group(1)}")
+          PY
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl,urllib.request
+          for url in ('https://www.kaggle.com/terms','https://www.kaggle.com/aup','https://www.kaggle.com/community-guidelines','https://www.kaggle.com/docs/api'):
+              req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req,timeout=30,context=ssl.create_default_context()) as response:
+                  if response.status!=200 or not response.read(65536): raise SystemExit(f'official Kaggle page unavailable: {url}')
+          print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
+          PY
+
+      - name: Cleanup validation content
+        if: always()
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+
+  launch:
+    name: Admit or launch exactly one rank-transfer CPU run 001
+    needs: validate
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/129-cmi-flu-rank-transfer-launch.yml@refs/heads/main" ]]
+          echo 'PROTECTED_CMI_FLU_RANK_TRANSFER_001_BOUNDARY PASS'
+
+      - name: Materialize exact approved bridge and science commits
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}" <<'PY'
+          from __future__ import annotations
+          import hashlib,io,json,os,pathlib,ssl,sys,tarfile,urllib.request
+          root=pathlib.Path(sys.argv[1])
+          def download(repository,sha,target,limit=25_000_000):
+              url=f"https://api.github.com/repos/{repository}/tarball/{sha}"; req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(limit+1)
+              if len(data)>limit: raise SystemExit(f'archive too large: {repository}')
+              with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+                  members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
+                  if len(prefixes)!=1: raise SystemExit('archive layout mismatch')
+                  prefix=next(iter(prefixes))+'/'
+                  for m in members:
+                      if not m.isfile(): continue
+                      rel=pathlib.PurePosixPath(m.name[len(prefix):])
+                      if '..' in rel.parts: raise SystemExit('unsafe archive path')
+                      out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          download(os.environ['EXPECTED_REPOSITORY'],os.environ['EVENT_SHA'],root/'bridge')
+          download(os.environ['SCIENCE_REPOSITORY'],os.environ['SCIENCE_SOURCE_COMMIT'],root/'science')
+          request=json.loads((root/'bridge'/os.environ['REQUEST_PATH']).read_text(encoding='utf-8'))
+          if request['request_id']!='20260904-cmi-flu-rank-transfer-001' or request['target']!=os.environ['TARGET_KERNEL']: raise SystemExit('approved request mismatch')
+          def blob(path):
+              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          science=root/'science'
+          checks={
+              'src/cmi_flu/rank_transfer.py':os.environ['EXPECTED_RANK_TRANSFER_BLOB'],
+              'scripts/build_rank_transfer_kaggle_bundle.py':os.environ['EXPECTED_BUNDLE_BUILDER_BLOB'],
+              'scripts/build_phase_a_kaggle_bundle.py':os.environ['EXPECTED_PHASE_BUILDER_BLOB'],
+              'configs/baseline_b021_robust.yaml':os.environ['EXPECTED_B21_CONFIG_BLOB'],
+          }
+          for rel,expected in checks.items():
+              if blob(science/rel)!=expected: raise SystemExit(f'science blob mismatch: {rel}')
+          PY
+
+      - name: Prepare locked Kaggle CLI and exact native runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          science="${WORKDIR}/science"; bridge="${WORKDIR}/bridge"
+          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/runner-a.py"
+          python3 "${science}/scripts/build_rank_transfer_kaggle_bundle.py" --repository-root "${science}" --source-commit "${SCIENCE_SOURCE_COMMIT}" --output "${WORKDIR}/runner-b.py"
+          cmp "${WORKDIR}/runner-a.py" "${WORKDIR}/runner-b.py"
+          python3 - "${WORKDIR}/runner-a.py" <<'PY'
+          import pathlib,sys
+          path=pathlib.Path(sys.argv[1]); text=path.read_text(encoding='utf-8')
+          old='REQUEST_ID = "__REQUEST_ID__"'; new='REQUEST_ID = "20260904-cmi-flu-rank-transfer-001"'
+          if text.count(old)!=1: raise SystemExit('request-id placeholder mismatch')
+          text=text.replace(old,new,1); compile(text,str(path),'exec'); path.write_text(text,encoding='utf-8')
+          PY
+          python3 -W error::SyntaxWarning -m py_compile "${WORKDIR}/runner-a.py"
+          python3 "${WORKDIR}/runner-a.py" --self-test
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${bridge}/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Fetch live Competition rules and determine CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os,re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []
+          content={}
+          for page in pages:
+              d=page.to_dict() if hasattr(page,'to_dict') else dict(page); name=str(d.get('name') or '').strip().lower()
+              if name: content[name]=str(d.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in k for k in content): raise SystemExit('live Competition pages unavailable')
+          plain=lambda s: re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',s)).casefold()
+          rules=plain(content['rules']); evaluation=plain(content['evaluation']); data=' '.join(plain(content[k]) for k in content if 'data' in k)
+          if not all(x in rules for x in ('data security','external data and tools')): raise SystemExit('live rules differ from execution guardrails')
+          if not all(x in evaluation for x in ('mean spearman correlation','40 donors','-99')): raise SystemExit('live evaluation differs from execution guardrails')
+          if 'sample_submission_part1.csv' not in data or 'investigations_260821.tsv' not in data: raise SystemExit('live data description differs from execution guardrails')
+          existing=api.kernels_list(user='renta0426',search=os.environ['TARGET_SLUG'],page_size=5) or []
+          if os.environ['TARGET_KERNEL'] in {str(getattr(x,'ref','')) for x in existing}: raise SystemExit('target kernel already exists; duplicate refused')
+          active_refs=[]
+          for item in (api.kernels_list(user='renta0426',sort_by='dateRun',page_size=15) or [])[:15]:
+              ref=str(getattr(item,'ref',''))
+              if not ref: continue
+              try: status=str(getattr(api.kernels_status(ref),'status','')).upper()
+              except Exception: continue
+              if any(token in status for token in ('RUNNING','QUEUED','PENDING')): active_refs.append(ref)
+          active={'cpu':[],'gpu':[],'tpu':[],'unknown':[]}
+          if len(active_refs)>5: active['unknown'].extend(active_refs)
+          else:
+              with api.build_kaggle_client() as client:
+                  for ref in active_refs:
+                      resource='unknown'
+                      try:
+                          owner,slug=ref.split('/',1); req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+                          meta=client.kernels.kernels_api_client.get_kernel(req).metadata
+                          resource='tpu' if bool(getattr(meta,'enable_tpu',False)) else ('gpu' if bool(getattr(meta,'enable_gpu',False)) else 'cpu')
+                      except Exception: pass
+                      active[resource].append(ref)
+          can=len(active['cpu'])+len(active['unknown'])<1
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as handle: handle.write(f"can_launch={'true' if can else 'false'}\n")
+          print(f"RANK_TRANSFER_ADMISSION requested=cpu active_cpu={len(active['cpu'])} active_gpu={len(active['gpu'])} active_tpu={len(active['tpu'])} active_unknown={len(active['unknown'])} can_launch={can}")
+          PY
+
+      - name: Record deferred admission
+        if: steps.admission.outputs.can_launch != 'true'
+        run: echo 'Rank-transfer request deferred before Kaggle write; fresh approval required on manual redispatch.'
+
+      - name: Push one private CPU rank-transfer run
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kernel_dir="${WORKDIR}/kernel"; mkdir -p "${kernel_dir}"; cp "${WORKDIR}/runner-a.py" "${kernel_dir}/script.py"
+          python3 - "${kernel_dir}" <<'PY'
+          import json,os,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          metadata={
+              "id":os.environ['TARGET_KERNEL'],
+              "title":"CMI Flu Phase A Rank Transfer 20260904 001",
+              "code_file":"script.py",
+              "language":"python",
+              "kernel_type":"script",
+              "is_private":True,
+              "enable_gpu":False,
+              "enable_tpu":False,
+              "enable_internet":False,
+              "machine_shape":"",
+              "dataset_sources":[],
+              "competition_sources":[os.environ['TARGET_COMPETITION']],
+              "kernel_sources":[],
+              "model_sources":[]
+          }
+          (root/'kernel-metadata.json').write_text(json.dumps(metadata,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 10800 >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?; set -e; rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then echo 'ERROR: rank-transfer kernel push failed; response suppressed; no retry'; exit 1; fi
+          echo "CMI_FLU_RANK_TRANSFER_LAUNCH PASS request_id=20260904-cmi-flu-rank-transfer-001 target=${TARGET_KERNEL} accelerator=cpu internet=false submission=false automatic_compute_retries=0"
+
+      - name: Cleanup runner-local content
+        if: always()
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'Runner-local rank-transfer content removed'
