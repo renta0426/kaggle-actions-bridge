@@ -34,6 +34,10 @@ def main() -> int:
     package_bytes = namespace.get("package_bytes")
     if not callable(package_bytes):
         raise SystemExit("generated runtime lacks package_bytes()")
+    if not callable(namespace.get("sha256_bytes")):
+        raise SystemExit("generated runtime lacks sha256_bytes() required for bound-backbone verification")
+    if not callable(namespace.get("sha256_file")):
+        raise SystemExit("generated runtime lacks sha256_file() required for probe hashes")
     bundle = package_bytes()
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         required = {
@@ -90,7 +94,7 @@ def main() -> int:
         raise SystemExit(f"controlled-probe source import contract mismatch: {sorted(expected_imports - imports)}")
     print(
         "CMI_FLU_PUBLIC_PROBES_FROZEN_API PASS "
-        "fit_final_model=true task13_builder=true b02_builder=true submission_contract=true"
+        "fit_final_model=true task13_builder=true b02_builder=true submission_contract=true hash_helpers=true"
     )
     return 0
 
