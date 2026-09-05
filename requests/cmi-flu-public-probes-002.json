@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "request_id": "20260906-cmi-flu-public-probes-002",
+  "parent_request_id": "20260906-cmi-flu-public-probes-001",
+  "failed_workflow_run_id": 33979598196,
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-public-probes-20260906-002",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "7a85abcbf8282bc8bfe047b7db02a72f35222caa",
+  "science_source_path": "src/cmi_flu/public_probes.py",
+  "science_transport": "agent_relay_exact_blob",
+  "public_probes_blob_sha": "497a8875d440e1b8a03d4ef938bc3a834213b33d",
+  "relayed_science_path": "payloads/cmi-flu-public-probes-001/public_probes.py",
+  "backbone_kernel": "renta0426/cmi-flu-b21-robust-cv-20260903-001",
+  "backbone_expected_version": 1,
+  "backbone_read_mode": "legacy_exact_current_v1_direct_metadata_manifest_verified",
+  "backbone_reader_path": "scripts/cmi_flu_b21_legacy_current_submission_read.py",
+  "backbone_reader_blob_sha": "8da7916ed71c280d775e54d96f3f156a56bab629",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "expected_kernel_version": 1,
+  "probe_family": [
+    "task13_only",
+    "task12_only",
+    "task12_task13"
+  ],
+  "allowed_output_paths": [
+    "cmi-flu-public-probes-002/probe-task13.csv",
+    "cmi-flu-public-probes-002/probe-task12.csv",
+    "cmi-flu-public-probes-002/probe-task12-task13.csv",
+    "cmi-flu-public-probes-002/bridge-result.json",
+    "cmi-flu-public-probes-002/summary.md"
+  ],
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 90,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 18,
+    "initial_poll_schedule_seconds": [30, 60, 120, 300],
+    "steady_poll_interval_seconds": 600,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "read exact current version 1 B2.1 submission through the dedicated legacy direct-metadata reader into runner-local temporary storage",
+    "create one new private CPU Notebook version that generates exactly three predeclared probe CSVs",
+    "read exact current version 1 probe output hashes and aggregate diagnostics"
+  ],
+  "repair": {
+    "failed_stage": "read_b21_current_v1_backbone",
+    "established_root_cause": "generic current-output helper requires kernels_list search discoverability and new output hygiene that the frozen legacy B2.1 Notebook does not satisfy",
+    "scientific_contract_changed": false,
+    "generator_science_blob_changed": false,
+    "probe_family_changed": false
+  },
+  "competition_submission_attempted": false,
+  "public_scores_used_to_define_family": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-05T17:01:04Z"
+}
