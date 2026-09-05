@@ -11,6 +11,8 @@ import py_compile
 
 B64_PLACEHOLDER = "__CMI_FLU_BACKBONE_B64__"
 SHA_PLACEHOLDER = "__CMI_FLU_BACKBONE_SHA256__"
+TEMPLATE_HASH_CALL = "sha256_bytes(backbone_bytes)"
+BOUND_HASH_CALL = "__import__('hashlib').sha256(backbone_bytes).hexdigest()"
 EXPECTED_COLUMNS = (
     "participant_id",
     "Task1.1",
@@ -60,8 +62,14 @@ def main() -> int:
     encoded = base64.b64encode(data).decode("ascii")
     bound = replace_once(template, B64_PLACEHOLDER, encoded, label="backbone base64")
     bound = replace_once(bound, SHA_PLACEHOLDER, digest, label="backbone SHA-256")
-    if B64_PLACEHOLDER in bound or SHA_PLACEHOLDER in bound:
-        raise SystemExit("controlled-probe runtime retains an unbound backbone placeholder")
+    bound = replace_once(
+        bound,
+        TEMPLATE_HASH_CALL,
+        BOUND_HASH_CALL,
+        label="bound-backbone SHA implementation",
+    )
+    if B64_PLACEHOLDER in bound or SHA_PLACEHOLDER in bound or TEMPLATE_HASH_CALL in bound:
+        raise SystemExit("controlled-probe runtime retains an unbound transport placeholder")
     if "competition_submit" in bound or "kaggle competitions submit" in bound:
         raise SystemExit("bound controlled-probe runtime contains a submission path")
 
@@ -72,7 +80,7 @@ def main() -> int:
     py_compile.compile(str(output), doraise=True)
     print(
         "CMI_FLU_PUBLIC_PROBES_BACKBONE_BIND PASS "
-        f"rows=40 bytes={len(data)} sha256={digest}"
+        f"rows=40 bytes={len(data)} sha256={digest} bound_hash_helper=hashlib"
     )
     return 0
 
