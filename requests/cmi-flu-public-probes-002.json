@@ -16,6 +16,7 @@
   "backbone_expected_version": 1,
   "backbone_read_mode": "legacy_exact_current_v1_direct_metadata_manifest_verified",
   "backbone_reader_path": "scripts/cmi_flu_b21_legacy_current_submission_read.py",
+  "backbone_reader_blob_sha": "8da7916ed71c280d775e54d96f3f156a56bab629",
   "b21_base_request_id": "20260903-cmi-flu-b21-001",
   "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
   "expected_kernel_version": 1,
