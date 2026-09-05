@@ -1,0 +1,652 @@
+name: CMI-Flu Phase B Task1.1 prior immunity CPU run and readout
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/161-cmi-flu-task11-prior-immunity-launch.yml
+      - requests/cmi-flu-task11-prior-immunity-001.json
+      - scripts/cmi_flu_task11_prior_immunity_prepare.py
+      - scripts/cmi_flu_task11_prior_immunity_prepare_v2.py
+      - scripts/cmi_flu_task11_prior_immunity_frozen_api_check.py
+      - scripts/cmi_flu_b21_runtime_adapter.py
+      - scripts/cmi_flu_b21_patch.py
+      - scripts/cmi_flu_b2_patch_v4.py
+      - payloads/cmi-flu-b2-broad-004/**
+  pull_request:
+    paths:
+      - .github/workflows/161-cmi-flu-task11-prior-immunity-launch.yml
+      - requests/cmi-flu-task11-prior-immunity-001.json
+      - scripts/cmi_flu_task11_prior_immunity_prepare.py
+      - scripts/cmi_flu_task11_prior_immunity_prepare_v2.py
+      - scripts/cmi_flu_task11_prior_immunity_frozen_api_check.py
+      - scripts/cmi_flu_b21_runtime_adapter.py
+      - scripts/cmi_flu_b21_patch.py
+      - scripts/cmi_flu_b2_patch_v4.py
+      - payloads/cmi-flu-b2-broad-004/**
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_KERNEL: renta0426/cmi-flu-phase-b-task1-1-prior-immunity-20260905-001
+  TARGET_SLUG: cmi-flu-phase-b-task1-1-prior-immunity-20260905-001
+  TARGET_TITLE: CMI Flu Phase B Task1.1 Prior Immunity 20260905 001
+  EXPECTED_KERNEL_VERSION: "1"
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  SCIENCE_COMMIT: 06c85e6263b59cd6ac97b7087779e7a9fb1cbdae
+  SCIENCE_BLOB: 50d9a43604d2b75479b8f873a86a8daf9d5bd7a9
+  SCIENCE_URL: https://raw.githubusercontent.com/renta0426/CMI-Flu-Invited-Prediction-Challenge/06c85e6263b59cd6ac97b7087779e7a9fb1cbdae/src/cmi_flu/task11_prior_immunity.py
+  B21_ADAPTER_BLOB: de71dea0e335bdcd79325c0de926bf8848d0979f
+
+jobs:
+  validate:
+    name: Validate Phase B Task1.1 prior-immunity request 001
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "VALIDATE_WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/repo" <<'PY'
+          from __future__ import annotations
+          import io, os, pathlib, ssl, sys, tarfile, urllib.request
+          target = pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000:
+              raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tf:
+              members = tf.getmembers()
+              prefixes = {m.name.split('/', 1)[0] for m in members if m.name}
+              if len(prefixes) != 1:
+                  raise SystemExit('unexpected commit archive layout')
+              prefix = next(iter(prefixes)) + '/'
+              for member in members:
+                  if not member.isfile():
+                      continue
+                  if not member.name.startswith(prefix):
+                      raise SystemExit('unexpected archive member')
+                  rel = pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts:
+                      raise SystemExit('unsafe archive path')
+                  data = tf.extractfile(member).read()
+                  out = target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True, exist_ok=True)
+                  out.write_bytes(data)
+          PY
+
+      - name: Fetch and verify pinned public science source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${VALIDATE_WORKDIR}/science.py" <<'PY'
+          from __future__ import annotations
+          import hashlib, os, pathlib, ssl, sys, urllib.request
+          target = pathlib.Path(sys.argv[1])
+          url = os.environ['SCIENCE_URL']
+          expected_blob = os.environ['SCIENCE_BLOB']
+          expected_commit = os.environ['SCIENCE_COMMIT']
+          if f'/{expected_commit}/' not in url:
+              raise SystemExit('science URL is not pinned to approved commit')
+          req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+              if response.status != 200:
+                  raise SystemExit('pinned science source unavailable')
+              data = response.read(150_001)
+          if not data or len(data) > 150_000:
+              raise SystemExit('pinned science source outside byte budget')
+          found = hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
+          if found != expected_blob:
+              raise SystemExit(f'pinned science blob mismatch: {found}')
+          source = data.decode('utf-8')
+          compile(source, str(target), 'exec')
+          target.write_bytes(data)
+          print(f'PINNED_TASK11_PRIOR_IMMUNITY_SOURCE PASS bytes={len(data)} blob={found}')
+          PY
+
+      - name: Validate generated runtime and frozen API contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${VALIDATE_WORKDIR}/repo/scripts/cmi_flu_task11_prior_immunity_prepare_v2.py" \
+            --repository-root "${VALIDATE_WORKDIR}/repo" \
+            --science-source "${VALIDATE_WORKDIR}/science.py" \
+            --output "${VALIDATE_WORKDIR}/script.py"
+          python3 "${VALIDATE_WORKDIR}/repo/scripts/cmi_flu_task11_prior_immunity_frozen_api_check.py" \
+            --runtime "${VALIDATE_WORKDIR}/script.py"
+          grep -F 'REQUEST_ID = "20260905-cmi-flu-task11-prior-immunity-001"' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'SOURCE_COMMIT = "06c85e6263b59cd6ac97b7087779e7a9fb1cbdae"' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'TASK11_PRIOR_IMMUNITY_SOURCE_BLOB_SHA = "50d9a43604d2b75479b8f873a86a8daf9d5bd7a9"' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F "BASE_CONDITIONS = ('b1', 'b21', 'anchor_residual')" "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'ANCHOR_RESIDUAL_LAMBDA = 0.25' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'FUSION_WEIGHTS = (0.25, 0.5)' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'sample_weight=' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'kaggle competitions submit' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'api.competition_submit' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          python3 - <<'PY'
+          import os, re
+          title = os.environ['TARGET_TITLE']
+          slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
+          if slug != os.environ['TARGET_SLUG']:
+              raise SystemExit(f'kernel title/slug contract mismatch: derived={slug}')
+          if os.environ['TARGET_KERNEL'] != f"renta0426/{slug}":
+              raise SystemExit('kernel id/slug contract mismatch')
+          print(f'KERNEL_TITLE_SLUG_CONTRACT PASS slug={slug}')
+          PY
+          echo 'CMI_FLU_TASK11_PRIOR_IMMUNITY_001_VALIDATE PASS'
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl, urllib.request
+          for url in (
+              'https://www.kaggle.com/terms',
+              'https://www.kaggle.com/aup',
+              'https://www.kaggle.com/community-guidelines',
+              'https://www.kaggle.com/docs/api',
+          ):
+              req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+                  if response.status != 200 or not response.read(65536):
+                      raise SystemExit(f'official Kaggle page unavailable: {url}')
+          print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
+          PY
+
+      - name: Cleanup validation content
+        if: always()
+        run: |
+          if [[ -n "${VALIDATE_WORKDIR-}" && -d "${VALIDATE_WORKDIR}" ]]; then rm -rf "${VALIDATE_WORKDIR}"; fi
+
+  launch:
+    name: Run and read exactly one Phase B Task1.1 prior-immunity CPU request 001
+    needs: validate
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/161-cmi-flu-task11-prior-immunity-launch.yml@refs/heads/main" ]]
+          echo 'PROTECTED_CMI_FLU_TASK11_PRIOR_IMMUNITY_001_BOUNDARY PASS'
+
+      - name: Materialize approved bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/repo" <<'PY'
+          from __future__ import annotations
+          import io, os, pathlib, ssl, sys, tarfile, urllib.request
+          target = pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url = f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as response:
+              archive = response.read(20_000_001)
+          if len(archive) > 20_000_000:
+              raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tf:
+              members = tf.getmembers()
+              prefixes = {m.name.split('/', 1)[0] for m in members if m.name}
+              if len(prefixes) != 1:
+                  raise SystemExit('unexpected commit archive layout')
+              prefix = next(iter(prefixes)) + '/'
+              for member in members:
+                  if not member.isfile():
+                      continue
+                  if not member.name.startswith(prefix):
+                      raise SystemExit('unexpected archive member')
+                  rel = pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts:
+                      raise SystemExit('unsafe archive path')
+                  data = tf.extractfile(member).read()
+                  out = target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True, exist_ok=True)
+                  out.write_bytes(data)
+          PY
+
+      - name: Fetch and verify pinned public science source before secret use
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable during science fetch: ${name}"; exit 1; }
+          done
+          python3 - "${WORKDIR}/science.py" <<'PY'
+          from __future__ import annotations
+          import hashlib, os, pathlib, ssl, sys, urllib.request
+          target = pathlib.Path(sys.argv[1])
+          url = os.environ['SCIENCE_URL']
+          if f"/{os.environ['SCIENCE_COMMIT']}/" not in url:
+              raise SystemExit('science URL is not commit-pinned')
+          req = urllib.request.Request(url, headers={'User-Agent': 'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()) as response:
+              if response.status != 200:
+                  raise SystemExit('pinned science source unavailable')
+              data = response.read(150_001)
+          if not data or len(data) > 150_000:
+              raise SystemExit('pinned science source outside byte budget')
+          found = hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
+          if found != os.environ['SCIENCE_BLOB']:
+              raise SystemExit(f'pinned science blob mismatch: {found}')
+          source = data.decode('utf-8'); compile(source, str(target), 'exec'); target.write_bytes(data)
+          print(f'PINNED_TASK11_PRIOR_IMMUNITY_SOURCE PASS bytes={len(data)} blob={found}')
+          PY
+
+      - name: Prepare frozen runtime and install locked Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/repo/scripts/cmi_flu_task11_prior_immunity_prepare_v2.py" \
+            --repository-root "${WORKDIR}/repo" \
+            --science-source "${WORKDIR}/science.py" \
+            --output "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/repo/scripts/cmi_flu_task11_prior_immunity_frozen_api_check.py" \
+            --runtime "${WORKDIR}/script.py"
+          rm -f "${WORKDIR}/science.py"
+          python3 - "${WORKDIR}/repo/${LOCK_PATH}" <<'PY'
+          import pathlib, re, sys
+          lock = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          pattern = re.compile(r'^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$')
+          lines = [x.strip() for x in lock.splitlines() if x.strip() and not x.lstrip().startswith('#')]
+          if len(lines) != 33 or not all(pattern.fullmatch(x) for x in lines) or not any(x.startswith('kaggle==2.2.4 ') for x in lines):
+              raise SystemExit('Kaggle CLI lock validation failed')
+          PY
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/repo/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Recheck live rules and CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - "${WORKDIR}/admission.txt" <<'PY'
+          from __future__ import annotations
+          import os, pathlib, re, sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          decision_path = pathlib.Path(sys.argv[1])
+          api = KaggleApi(); api.authenticate()
+          pages = api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []
+          content = {}
+          for page in pages:
+              data = page.to_dict() if hasattr(page, 'to_dict') else dict(page)
+              name = str(data.get('name') or '').strip().lower()
+              if name:
+                  content[name] = str(data.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in key for key in content):
+              raise SystemExit('live Competition pages unavailable')
+          plain = lambda text: re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', text)).casefold()
+          rules = plain(content['rules']); evaluation = plain(content['evaluation'])
+          data_text = ' '.join(plain(content[key]) for key in content if 'data' in key)
+          if not all(token in rules for token in ('data security', 'external data and tools')):
+              raise SystemExit('live rules differ from approved data/tool guardrails')
+          if not all(token in evaluation for token in ('mean spearman correlation', '40 donors', '-99')):
+              raise SystemExit('live evaluation differs from approved guardrails')
+          if 'sample_submission_part1.csv' not in data_text or 'investigations_260821.tsv' not in data_text:
+              raise SystemExit('live data description differs from approved guardrails')
+
+          existing = api.kernels_list(user='renta0426', search=os.environ['TARGET_SLUG'], page_size=5) or []
+          if os.environ['TARGET_KERNEL'] in {str(getattr(item, 'ref', '')) for item in existing}:
+              raise SystemExit('target Task1.1 prior-immunity kernel already exists; duplicate refused')
+
+          active_refs = []
+          for item in (api.kernels_list(user='renta0426', sort_by='dateRun', page_size=5) or [])[:5]:
+              ref = str(getattr(item, 'ref', ''))
+              if not ref:
+                  continue
+              try:
+                  status = str(getattr(api.kernels_status(ref), 'status', '')).upper()
+              except Exception:
+                  active_refs.append((ref, 'unknown')); continue
+              if any(token in status for token in ('RUNNING', 'QUEUED', 'PENDING')):
+                  active_refs.append((ref, None))
+          active = {'cpu': 0, 'gpu': 0, 'tpu': 0, 'unknown': 0}
+          with api.build_kaggle_client() as client:
+              for ref, forced in active_refs:
+                  if forced == 'unknown':
+                      active['unknown'] += 1; continue
+                  try:
+                      owner, slug = ref.split('/', 1)
+                      request = ApiGetKernelRequest(); request.user_name = owner; request.kernel_slug = slug
+                      meta = client.kernels.kernels_api_client.get_kernel(request).metadata
+                      resource = 'tpu' if bool(getattr(meta, 'enable_tpu', False)) else ('gpu' if bool(getattr(meta, 'enable_gpu', False)) else 'cpu')
+                  except Exception:
+                      resource = 'unknown'
+                  active[resource] += 1
+          can_launch = active['cpu'] + active['unknown'] < 1
+          decision_path.write_text('launch\n' if can_launch else 'defer\n', encoding='utf-8')
+          print(
+              'TASK11_PRIOR_IMMUNITY_001_PREFLIGHT '
+              f"requested=cpu active_cpu={active['cpu']} active_gpu={active['gpu']} "
+              f"active_tpu={active['tpu']} active_unknown={active['unknown']} can_launch={can_launch}"
+          )
+          PY
+          if [[ "$(cat "${WORKDIR}/admission.txt")" == "launch" ]]; then
+            echo 'can_launch=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'can_launch=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Record deferred admission
+        if: steps.admission.outputs.can_launch != 'true'
+        run: echo 'Task1.1 prior-immunity request deferred before Kaggle write; fresh approval is required for any later dispatch.'
+
+      - name: Push exactly one private CPU run
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kernel_dir="${WORKDIR}/kernel"
+          mkdir -p "${kernel_dir}"
+          cp "${WORKDIR}/script.py" "${kernel_dir}/script.py"
+          python3 - "${kernel_dir}" <<'PY'
+          import json, os, pathlib, re, sys
+          root = pathlib.Path(sys.argv[1])
+          title = os.environ['TARGET_TITLE']
+          slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
+          if slug != os.environ['TARGET_SLUG']:
+              raise SystemExit(f'kernel title/slug mismatch before write: derived={slug}')
+          if os.environ['TARGET_KERNEL'] != f"renta0426/{slug}":
+              raise SystemExit('kernel id/slug mismatch before write')
+          metadata = {
+              "id": os.environ['TARGET_KERNEL'],
+              "title": title,
+              "code_file": "script.py",
+              "language": "python",
+              "kernel_type": "script",
+              "is_private": True,
+              "enable_gpu": False,
+              "enable_tpu": False,
+              "enable_internet": False,
+              "machine_shape": "",
+              "dataset_sources": [],
+              "competition_sources": [os.environ['TARGET_COMPETITION']],
+              "kernel_sources": [],
+              "model_sources": [],
+          }
+          (root / 'kernel-metadata.json').write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(f'KERNEL_METADATA_TASK11_PRIOR_IMMUNITY_001 PASS slug={slug} cpu=true internet=false private=true')
+          PY
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" --timeout 7200 >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          if [[ "${rc}" -ne 0 ]]; then
+            python3 - "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr" "${rc}" <<'PY'
+          import hashlib, pathlib, sys
+          stdout_path, stderr_path, rc = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), int(sys.argv[3])
+          out = stdout_path.read_bytes() if stdout_path.exists() else b''
+          err = stderr_path.read_bytes() if stderr_path.exists() else b''
+          text = (out + b'\n' + err).decode('utf-8', errors='replace').casefold()
+          categories = [
+              ('rate_limit', ('too many requests', '429')),
+              ('concurrent_session_limit', ('maximum batch cpu session count', 'session count')),
+              ('notebook_not_found', ('notebook not found',)),
+              ('permission_denied', ('permission', 'forbidden', '403')),
+              ('bad_request', ('bad request', '400', 'invalid')),
+              ('title_or_slug', ('slug', 'title')),
+          ]
+          category = 'unknown'
+          for name, tokens in categories:
+              if any(token in text for token in tokens):
+                  category = name; break
+          print(
+              f'TASK11_PRIOR_IMMUNITY_001_PUSH_FAILURE rc={rc} category={category} '
+              f'stdout_bytes={len(out)} stdout_sha256={hashlib.sha256(out).hexdigest()} '
+              f'stderr_bytes={len(err)} stderr_sha256={hashlib.sha256(err).hexdigest()}'
+          )
+          PY
+            rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+            echo 'ERROR: Task1.1 prior-immunity kernel push failed; raw response suppressed; no retry'
+            exit 1
+          fi
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          echo 'CMI_FLU_TASK11_PRIOR_IMMUNITY_001_LAUNCH PASS request_id=20260905-cmi-flu-task11-prior-immunity-001 accelerator=cpu internet=false submission=false automatic_compute_retries=0'
+
+      - name: Wait boundedly with responsive initial polling
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os, time
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          target = os.environ['TARGET_KERNEL']
+          expected_version = int(os.environ['EXPECTED_KERNEL_VERSION'])
+          api = KaggleApi(); api.authenticate()
+          deadline = time.monotonic() + 7200
+          initial_delays = [30, 60, 120, 300]
+          max_calls = 18
+          terminal = None
+          for attempt in range(1, max_calls + 1):
+              status = str(getattr(api.kernels_status(target), 'status', '')).upper()
+              print(f"TASK11_PRIOR_IMMUNITY_001_STATUS attempt={attempt}/{max_calls} status={status or 'UNKNOWN'}")
+              if status and not any(token in status for token in ('RUNNING', 'QUEUED', 'PENDING')):
+                  terminal = status
+                  break
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  break
+              delay = initial_delays[attempt - 1] if attempt <= len(initial_delays) else 600
+              time.sleep(min(delay, max(1.0, remaining)))
+          if terminal is None:
+              raise SystemExit('Task1.1 prior-immunity run did not reach terminal status inside bounded 120-minute watch')
+          if any(token in terminal for token in ('ERROR', 'FAIL', 'CANCEL')):
+              raise SystemExit(f'Task1.1 prior-immunity terminal failure status={terminal}')
+          owner, slug = target.split('/', 1)
+          with api.build_kaggle_client() as client:
+              request = ApiGetKernelRequest(); request.user_name = owner; request.kernel_slug = slug
+              meta = client.kernels.kernels_api_client.get_kernel(request).metadata
+          if str(getattr(meta, 'ref', '')) != target:
+              raise SystemExit('terminal Task1.1 prior-immunity kernel identity mismatch')
+          if not bool(getattr(meta, 'is_private', False)):
+              raise SystemExit('terminal Task1.1 prior-immunity kernel is not private')
+          observed_version = int(getattr(meta, 'current_version_number', 0) or 0)
+          if observed_version != expected_version:
+              raise SystemExit(f'current version mismatch observed={observed_version} expected={expected_version}')
+          print(f"TASK11_PRIOR_IMMUNITY_001_TERMINAL PASS status={terminal} version={observed_version}")
+          PY
+
+      - name: Read only exact aggregate outputs from current version 1
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          PATH: ${{ env.WORKDIR }}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          output_dir="${WORKDIR}/safe-output"
+          "${WORKDIR}/venv/bin/python" "${WORKDIR}/repo/scripts/kaggle_current_output_read.py" \
+            --kernel "${TARGET_KERNEL}" \
+            --expected-version "${EXPECTED_KERNEL_VERSION}" \
+            --allow-file bridge-result.json:5242880 \
+            --allow-file metrics.json:5242880 \
+            --allow-file summary.md:1048576 \
+            --output-dir "${output_dir}"
+
+      - name: Validate and render aggregate-only Task1.1 prior-immunity result
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - "${WORKDIR}/safe-output" <<'PY'
+          from __future__ import annotations
+          import hashlib, json, math, pathlib, sys
+
+          root = pathlib.Path(sys.argv[1])
+          files = sorted(path.name for path in root.iterdir() if path.is_file())
+          if files != ['bridge-result.json', 'metrics.json', 'summary.md']:
+              raise SystemExit('safe-output file set mismatch')
+          texts = {name: (root / name).read_text(encoding='utf-8') for name in files}
+          banned = ('"participant_id"', '"subject_group"', '"row_index"', '"oof_predictions"', '"challenge_predictions"')
+          for name, text in texts.items():
+              hits = [token for token in banned if token in text]
+              if hits:
+                  raise SystemExit(f'aggregate-output privacy contract failed for {name}: banned_count={len(hits)}')
+
+          bridge = json.loads(texts['bridge-result.json'])
+          metrics = json.loads(texts['metrics.json'])
+          if bridge.get('request_id') != '20260905-cmi-flu-task11-prior-immunity-001':
+              raise SystemExit('bridge request id mismatch')
+          if bridge.get('source_commit') != '06c85e6263b59cd6ac97b7087779e7a9fb1cbdae':
+              raise SystemExit('bridge science source mismatch')
+          if bridge.get('kernel_stage') != 'phase_b_task11_prior_immunity_late_fusion':
+              raise SystemExit('bridge stage mismatch')
+          if bridge.get('task11_prior_immunity_source_blob_sha') != '50d9a43604d2b75479b8f873a86a8daf9d5bd7a9':
+              raise SystemExit('bridge prior-immunity blob mismatch')
+          if bridge.get('b21_runtime_adapter_blob_sha') != 'de71dea0e335bdcd79325c0de926bf8848d0979f':
+              raise SystemExit('bridge B2.1 adapter mismatch')
+          if bridge.get('competition_submission_attempted') is not False or bridge.get('leaderboard_used_for_selection') is not False:
+              raise SystemExit('bridge selection/submission contract mismatch')
+          if metrics.get('run_id') != '20260905-cmi-flu-task11-prior-immunity-001':
+              raise SystemExit('metrics run id mismatch')
+          if metrics.get('experiment') != 'phase_b_task11_prior_immunity_late_fusion' or metrics.get('task') != 'Task1.1':
+              raise SystemExit('metrics experiment identity mismatch')
+          if metrics.get('competition_submission_attempted') is not False or metrics.get('leaderboard_used_for_selection') is not False:
+              raise SystemExit('metrics selection/submission contract mismatch')
+          digest = hashlib.sha256(texts['metrics.json'].encode('utf-8')).hexdigest()
+          if bridge.get('metrics_sha256') != digest:
+              raise SystemExit('metrics checksum mismatch')
+
+          base_conditions = ('b1', 'b21', 'anchor_residual')
+          fusion_conditions = (
+              'b1_plus_prior_w0.25', 'b1_plus_prior_w0.5',
+              'b21_plus_prior_w0.25', 'b21_plus_prior_w0.5',
+              'anchor_residual_plus_prior_w0.25', 'anchor_residual_plus_prior_w0.5',
+          )
+          folds = metrics.get('folds') or []
+          if len(folds) != 4 or {str(f.get('held_study')) for f in folds} != {'SDY180', 'SDY515', 'SDY519', 'SDY56'}:
+              raise SystemExit('Task1.1 held-study contract mismatch')
+          for fold in folds:
+              if int(fold.get('held_serology_rows', 0)) < 5:
+                  raise SystemExit('Task1.1 held-study serology coverage below contract')
+          summary = metrics.get('summary') or {}
+          if set(summary) != set(base_conditions) | set(fusion_conditions):
+              raise SystemExit('Task1.1 summary condition mismatch')
+          promotion = metrics.get('promotion') or {}
+          if set(promotion) != set(fusion_conditions):
+              raise SystemExit('Task1.1 promotion condition mismatch')
+          for condition, gate in promotion.items():
+              if not isinstance((gate or {}).get('passed'), bool):
+                  raise SystemExit(f'Task1.1 promotion flag missing: {condition}')
+          challenge = metrics.get('challenge') or {}
+          if int(challenge.get('rows', -1)) != 40:
+              raise SystemExit('Task1.1 challenge row count mismatch')
+          coverage = metrics.get('historical_coverage_by_study') or {}
+          if sum(int(x.get('target_rows', 0)) for x in coverage.values()) != 127:
+              raise SystemExit('Task1.1 historical target row total mismatch')
+
+          def finite(value):
+              return value is not None and math.isfinite(float(value))
+
+          print('CMI_FLU_TASK11_PRIOR_IMMUNITY_001_RESULT PASS aggregate_only=true submission=false leaderboard_selection=false')
+          print(
+              'coverage '
+              + ' '.join(
+                  f"{study}={int(item['serology_rows'])}/{int(item['target_rows'])}"
+                  for study, item in sorted(coverage.items())
+              )
+              + f" challenge={int(challenge.get('serology_rows', 0))}/40"
+          )
+          for condition in base_conditions + fusion_conditions:
+              item = summary[condition]
+              values = [item.get('mean'), item.get('median'), item.get('min')]
+              if not all(finite(v) for v in values):
+                  raise SystemExit(f'non-finite Task1.1 summary metric: {condition}')
+              suffix = ''
+              if condition in promotion:
+                  gate = promotion[condition]
+                  suffix = f" promoted={gate['passed']} wins={gate.get('wins')}/{gate.get('required_wins')}"
+              print(
+                  f"{condition} mean={float(item['mean']):.9f} median={float(item['median']):.9f} "
+                  f"min={float(item['min']):.9f}{suffix}"
+              )
+          selected = metrics.get('selected_promoted_condition')
+          print(f"selected_promoted_condition={selected or 'none'}")
+          challenge_conditions = challenge.get('conditions') or {}
+          if set(challenge_conditions) != set(fusion_conditions):
+              raise SystemExit('challenge condition set mismatch')
+          for condition in fusion_conditions:
+              evidence = challenge_conditions[condition]
+              agree_base = ((evidence.get('agreement_vs_base') or {}).get('rank_spearman') or {}).get('value')
+              agree_incumbent = ((evidence.get('agreement_vs_anchor_residual') or {}).get('rank_spearman') or {}).get('value')
+              if not finite(agree_base) or not finite(agree_incumbent):
+                  raise SystemExit(f'non-finite challenge rank agreement: {condition}')
+              print(
+                  f"challenge {condition} agree_base={float(agree_base):.9f} "
+                  f"agree_anchor_residual={float(agree_incumbent):.9f}"
+              )
+          PY
+
+      - name: Cleanup runner-local content
+        if: always()
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'Runner-local Task1.1 prior-immunity content removed'
