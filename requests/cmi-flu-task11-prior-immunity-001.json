@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "request_id": "20260905-cmi-flu-task11-prior-immunity-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-phase-b-task1-1-prior-immunity-20260905-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "06c85e6263b59cd6ac97b7087779e7a9fb1cbdae",
+  "science_source_path": "src/cmi_flu/task11_prior_immunity.py",
+  "science_transport": "agent_relay_exact_blob",
+  "relayed_science_path": "payloads/cmi-flu-task11-prior-immunity-001/task11_prior_immunity.py",
+  "task11_prior_immunity_blob_sha": "50d9a43604d2b75479b8f873a86a8daf9d5bd7a9",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "expected_kernel_version": 1,
+  "allowed_output_paths": [
+    "cmi-flu-task11-prior-immunity-001/bridge-result.json",
+    "cmi-flu-task11-prior-immunity-001/metrics.json",
+    "cmi-flu-task11-prior-immunity-001/summary.md"
+  ],
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 120,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 18,
+    "initial_poll_schedule_seconds": [30, 60, 120, 300],
+    "steady_poll_interval_seconds": 600,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one new private CPU Notebook version",
+    "read only the exact current Notebook version-1 aggregate outputs"
+  ],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-05T01:24:30Z"
+}
