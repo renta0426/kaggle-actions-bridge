@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "execution_id": "shadow-gold-positive-control-v2",
+  "base_experiment_id": "shadow-gold-positive-control-v1",
+  "base_config": "configs/shadow_gold_positive_control_v1.json",
+  "repair_version": "shadow-gold-positive-control-no-compute-manifest-v2",
+  "repair_scope": "protocol_manifest_compatibility_only",
+  "failed_execution_id": "shadow-gold-positive-control-v1",
+  "failed_stage": "child_protocol_load_before_model_compute",
+  "root_error": "shadow protocol no-compute guard failed: optimiser_steps_performed",
+  "required_no_compute_guard": {
+    "optimiser_steps_performed": 0,
+    "model_compute_started": false,
+    "accelerator_selected": false,
+    "kaggle_operation_performed": false
+  },
+  "scientific_protocol_changed": false,
+  "unchanged_scientific_contract": {
+    "candidate_rows": 10240,
+    "training_corpus_rows": 5120,
+    "evaluation_rows": 5120,
+    "probe_version": "content-hash-comment-probe-v1",
+    "probe_applied_to_members": true,
+    "probe_applied_to_nonmembers": true,
+    "membership_used_to_construct_probe": false,
+    "benchmark_id_used_to_construct_probe": false,
+    "exposure_repeats": 16,
+    "forced_training_window": "suffix",
+    "training_sequences": 81920,
+    "global_batch_size": 64,
+    "optimizer_steps_per_architecture": 1280,
+    "architecture_pair": ["shadow-gpt2-byte-5m", "shadow-llama-byte-5m"],
+    "primary_sensitivity_predictor": "loss",
+    "shadow_a_holdout_min_auc": 0.60,
+    "shadow_b_blind_holdout_min_auc": 0.60,
+    "shadow_a_holdout_min_tpr_at_1pct_fpr": 0.03,
+    "shadow_b_blind_holdout_min_tpr_at_1pct_fpr": 0.03,
+    "secondary_predictors_may_rescue_failed_primary_gate": false,
+    "stage2_v3_selection_allowed": false
+  },
+  "runtime": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "automatic_compute_retries": 0,
+    "fresh_kaggle_target_required": true,
+    "failed_target_must_not_be_overwritten": true,
+    "notebook_internet": false
+  },
+  "scientific_guards": {
+    "competition_rows_used": 0,
+    "external_rows_used": 0,
+    "external_model_holdout_consumed": false,
+    "fourth_external_holdout_consumed": false,
+    "failed_v1_produces_no_attack_evidence": true
+  }
+}
