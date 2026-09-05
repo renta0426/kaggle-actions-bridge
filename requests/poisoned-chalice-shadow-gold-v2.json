@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "request_id": "20260905-poisoned-chalice-shadow-gold-v2-002",
+  "parent_request_id": "20260905-poisoned-chalice-shadow-gold-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/shadow-gold-architecture-transfer-v2",
+  "launcher_path": "scripts/poisoned_chalice_shadow_gold_v2.py",
+  "launcher_blob_sha": "0ca590ac8f8fb6efcaa4b3f9fc3f3ea79180af4a",
+  "base_launcher_path": "scripts/poisoned_chalice_shadow_gold_v1.py",
+  "base_launcher_blob_sha": "4365d199641d4310aec4c8dbf198c20b2347f15b",
+  "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "scientific_research_commit": "bc0661fa0307b3e27b31f2ab4c83e90e74647390",
+  "repair_research_commit": "f8678f3d5d0a99763e02906f24c7a34e09e12f5e",
+  "scientific_experiment_id": "shadow-gold-architecture-transfer-v1",
+  "execution_id": "shadow-gold-architecture-transfer-v2",
+  "materialized_files": [
+    {"logical_path":"poisoned_chalice/controlled_transfer.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/controlled_transfer.py","git_blob_sha":"09b04c10d934654044817bb9b36fd7358a2aa942","max_bytes":65536},
+    {"logical_path":"poisoned_chalice/shadow_gold_corpus.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_corpus.py","git_blob_sha":"241e3481f7dc56f5fc7495436f3cfc33274a0823","max_bytes":32768},
+    {"logical_path":"poisoned_chalice/shadow_gold_kaggle.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_kaggle.py","git_blob_sha":"e68eb320605a943bb7d46b0e9ce51bb06142ffef","max_bytes":65536},
+    {"logical_path":"poisoned_chalice/shadow_gold_transfer.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_transfer.py","git_blob_sha":"1ee969fe852f8a18d00a5c0249f4a8a90d61338a","max_bytes":65536},
+    {"logical_path":"poisoned_chalice/shadow_protocol.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_protocol.py","git_blob_sha":"1c47b80696050aa2e5e7c62384617df61ecb80da","max_bytes":65536},
+    {"logical_path":"poisoned_chalice/shadow_scoring.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_scoring.py","git_blob_sha":"6bc2b55bec2a32cbb3b0cfe870e426f80260730d","max_bytes":65536},
+    {"logical_path":"poisoned_chalice/shadow_training.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training.py","git_blob_sha":"2fe3cf2079659ae10e1ebe0d5973f3ce96c26a03","max_bytes":65536},
+    {"logical_path":"poisoned_chalice/shadow_training_dual_gpu.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training_dual_gpu.py","git_blob_sha":"c75a5963fa930916024cb16b4fbf562ba4afa818","max_bytes":65536},
+    {"logical_path":"poisoned_chalice/stage2_api.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/stage2_api.py","git_blob_sha":"16578d3e01b6471e5bfb2b04cebb99e1b3126c7c","max_bytes":65536},
+    {"logical_path":"shadow_gold_architecture_transfer_v1.json","bridge_path":"materialized/poisoned-chalice-shadow-gold-v1/shadow_gold_architecture_transfer_v1.json","git_blob_sha":"ef62a70a8ec80e0e5a50d4fa6f5189128480722f","max_bytes":32768},
+    {"logical_path":"poisoned_chalice/shadow_gold_kaggle_v2.py","bridge_path":"materialized/poisoned-chalice-shadow-gold-v2/poisoned_chalice/shadow_gold_kaggle_v2.py","git_blob_sha":"df6e67f7d0e67d2585fd6226b9d2592223f808d2","max_bytes":32768},
+    {"logical_path":"shadow_gold_architecture_transfer_v2.json","bridge_path":"materialized/poisoned-chalice-shadow-gold-v2/shadow_gold_architecture_transfer_v2.json","git_blob_sha":"5060bbdb9b96aeef3663e3853fe00578addffc4e","max_bytes":32768}
+  ],
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 12,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 2,
+    "min_remaining_quota_hours": 1.0
+  },
+  "side_effects": [
+    "consume ten exact public scientific bridge snapshots plus two exact public repair snapshots",
+    "create one NEW private Kaggle GPU Notebook at renta0426/shadow-gold-architecture-transfer-v2 and start exactly one T4 x2 run"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission": false,
+  "select_as_final": false,
+  "runner_local_public_material_retention_days": 0,
+  "persistent_outputs": ["gold_attack.json","gold_metrics.json","gold_predictions.jsonl","gold_runtime_manifest.json"],
+  "clean_room": {
+    "deterministic_generated_code_like_corpus_only": true,
+    "competition_rows_used": 0,
+    "evaluation_labels_passed_to_gpu_children": false,
+    "smollm2_labels_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "public_leaderboard_tuning_used": false,
+    "pretrained_weights_used": false,
+    "competition_submission_created": false,
+    "protected_job_private_repository_access": false,
+    "external_model_holdout_consumed": false
+  },
+  "repair_contract": {
+    "repair_version": "shadow-gold-jsonl-column-order-v2",
+    "repair_scope": "persistence_readback_only",
+    "scientific_protocol_changed": false,
+    "exact_schema_set_required": true,
+    "missing_columns_allowed": false,
+    "extra_columns_allowed": false,
+    "duplicate_columns_allowed": false,
+    "canonical_reindex_after_validation": true,
+    "v1_failed_stage": "parent_finalize_jsonl_readback"
+  },
+  "benchmark_contract": {
+    "candidate_rows": 10240,
+    "training_corpus_rows": 5120,
+    "evaluation_rows": 5120,
+    "evaluation_rows_per_language_per_class": 512,
+    "training_sequences": 20480,
+    "global_batch_size": 64,
+    "optimizer_steps_per_architecture": 320,
+    "per_architecture_world_size": 1,
+    "distributed_training": false,
+    "architecture_gpu_assignment": {"left":0,"right":1},
+    "stage2_v3_selection_allowed": false,
+    "external_model_holdout_consumed": false
+  },
+  "prerequisite": {
+    "gpu_compatibility_pilot_status": "pass",
+    "failed_v1_execution_is_scientifically_invalid": true,
+    "failed_v1_target_must_not_be_overwritten": true
+  }
+}
