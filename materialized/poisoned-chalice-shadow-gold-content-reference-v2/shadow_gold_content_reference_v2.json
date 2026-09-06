@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "execution_id": "shadow-gold-content-reference-v2",
+  "repair_from": "shadow-gold-content-reference-v1",
+  "scientific_config_path": "configs/shadow_gold_content_reference_v1.json",
+  "repair_version": "content-reference-dual-gpu-kwarg-repair-v1",
+  "repair_scope": {
+    "old_keyword": "required_name_fragment",
+    "new_keyword": "required_gpu_name_fragment",
+    "dual_gpu_api_changed": false,
+    "science_changed": false,
+    "training_protocol_changed": false,
+    "content_reference_changed": false,
+    "candidate_matrix_changed": false,
+    "selection_protocol_changed": false,
+    "recovery_gate_changed": false,
+    "clean_room_changed": false
+  },
+  "runtime_contract": {
+    "accelerator": "gpu",
+    "kaggle_machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "optimizer_steps_per_architecture": 1280,
+    "automatic_compute_retries": 0,
+    "notebook_internet": false
+  },
+  "scientific_guards": {
+    "stage2_v3_selection_allowed": false,
+    "competition_feature_promotion_allowed": false,
+    "external_model_holdout_consumed": false,
+    "fourth_external_holdout_consumed": false
+  }
+}
