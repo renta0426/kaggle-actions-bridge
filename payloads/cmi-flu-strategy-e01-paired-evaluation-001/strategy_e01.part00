@@ -1,0 +1,200 @@
+"""Strategy v2 E01: paired evaluation and rank/calibration separation.
+
+This module regenerates the frozen current conditions under one exact split
+contract, then reports aggregate-only diagnostics.  It does not expose row-level
+predictions or participant identifiers and never performs Kaggle submission.
+
+The current competition-oriented incumbent is:
+- Task1.1: frozen B2.1 robust model
+- Task1.2: fixed anchor-residual expert (ExtraTrees d5/l5/sqrt, lambda=0.5)
+- Task1.3: frozen strict B2.1 robust model
+- Task2.1/2.2/2.3: frozen B2.1 robust HAI models
+
+Task1.4 is intentionally outside E01 because no public supervised AIM labels
+exist.
+"""
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+
+from .aliases import canonicalize_strain
+from .configuration import BaselineConfig
+from .contracts import DataContractError, require_columns, require_finite
+from .cv import NamedSplit, purged_leave_one_study_out
+from .datasets import HAIModelDataset, TaskDataset
+from .evaluation import (
+    default_splits_for_task,
+    run_compact_task,
+    run_hai_compact_for_panels,
+)
+from .metrics import percentile_rank, root_mean_squared_error, safe_spearman
+from .models import ModelSpec, fit_final_model
+from .runner import InputBundle, build_b02_datasets
+from .targets import geometric_mean
+
+
+EXPERIMENT = "strategy_v2_e01_paired_evaluation"
+RANDOM_SEED = 20260907
+SUBSET_N = 28
+SUBSET_REPETITIONS = 200
+CANDIDATE_DELTA_THRESHOLD = 0.02
+LARGE_STUDY_N = 10
+LARGE_STUDY_DECLINE_REVIEW = -0.10
+
+EXPECTED_B21_MODELS = {
+    "Task1.1": "pls_2",
+    "Task1.2": "enet_a0.001_l0.5",
+    "Task1.3": "pls_1",
+    "Task2.1": "et_subtype_d3_l5",
+    "Task2.2": "et_subtype_d5_l10",
+    "Task2.3": "ridge_exact_a100",
+}
+TASK12_AR_MODEL = "et_d5_l5_sqrt"
+TASK12_AR_LAMBDA = 0.5
+TASK_ANCHORS = {
+    "Task1.1": "cytokine_rank__CXCL10",
+    "Task1.2": "flow_rank__Classical_monocytes",
+    "Task1.3": "flow_rank__Antibody-secreting_cells_(ASC)",
+}
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if isinstance(value, Mapping):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    return value
+
+
+def _find_spec(config: BaselineConfig, model_set: str, name: str) -> ModelSpec:
+    matches = [spec for spec in config.model_specs(model_set) if spec.name == name]
+    if len(matches) != 1:
+        raise DataContractError(
+            f"E01 expected exactly one {model_set}/{name} spec; found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _identity_spec(spec: ModelSpec) -> ModelSpec:
+    return replace(spec, target_transform="identity", clip_min=None)
+
+
+def _rank_within(frame: pd.DataFrame, value_column: str) -> np.ndarray:
+    require_columns(frame, ["study_group", value_column], table_name="E01 rank frame")
+    result = np.full(len(frame), np.nan, dtype=float)
+    for _, positions in frame.groupby(
+        "study_group", dropna=False, observed=True
+    ).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        values = pd.to_numeric(
+            frame.iloc[pos][value_column], errors="coerce"
+        ).to_numpy(dtype=float)
+        require_finite(values, name=f"E01.{value_column}.within_study")
+        result[pos] = percentile_rank(values)
+    require_finite(result, name=f"E01.{value_column}.rank")
+    return result
+
+
+def _task11_direction(
+    frame: pd.DataFrame, *, anchor_column: str, target_column: str
+) -> int:
+    values: list[float] = []
+    for _, group in frame.groupby("study_group", dropna=False, observed=True):
+        metric = safe_spearman(group[anchor_column], group[target_column])
+        if metric.status == "ok" and metric.value != 0:
+            values.append(float(metric.value))
+    if values:
+        median = float(np.median(values))
+        if median != 0:
+            return 1 if median > 0 else -1
+        sign_sum = int(np.sign(values).sum())
+        if sign_sum:
+            return 1 if sign_sum > 0 else -1
+    pooled = safe_spearman(frame[anchor_column], frame[target_column])
+    if pooled.status == "ok" and pooled.value != 0:
+        return 1 if pooled.value > 0 else -1
+    return -1
+
+
+def _oriented_anchor(
+    task: str,
+    train: pd.DataFrame,
+    prediction: pd.DataFrame,
+    *,
+    anchor_column: str,
+    target_column: str,
+) -> np.ndarray:
+    require_columns(
+        train,
+        ["study_group", target_column, anchor_column],
+        table_name=f"E01 {task} anchor train",
+    )
+    require_columns(
+        prediction,
+        [anchor_column],
+        table_name=f"E01 {task} anchor prediction",
+    )
+    values = pd.to_numeric(
+        prediction[anchor_column], errors="coerce"
+    ).to_numpy(dtype=float)
+    require_finite(values, name=f"E01.{task}.anchor")
+    if task == "Task1.1":
+        direction = _task11_direction(
+            train, anchor_column=anchor_column, target_column=target_column
+        )
+        return values if direction > 0 else 1.0 - values
+    return values
+
+
+def _compact_base_frame(dataset: TaskDataset, result: Any) -> pd.DataFrame:
+    oof = result.oof_predictions.copy()
+    require_columns(oof, ["row_index", "target", "prediction"], table_name="E01 compact OOF")
+    row_index = pd.to_numeric(oof["row_index"], errors="raise").astype(int).to_numpy()
+    if (row_index < 0).any() or (row_index >= len(dataset.train)).any():
+        raise DataContractError("E01 compact OOF row index outside dataset")
+    source = dataset.train.iloc[row_index].reset_index(drop=True)
+    if not np.allclose(
+        pd.to_numeric(oof["target"], errors="coerce").to_numpy(dtype=float),
+        pd.to_numeric(source[dataset.target_column], errors="coerce").to_numpy(dtype=float),
+        rtol=0.0,
+        atol=1e-10,
+    ):
+        raise DataContractError("E01 compact OOF target mismatch")
+    frame = pd.DataFrame(
+        {
+            "row_index": row_index,
+            "participant_id": source["participant_id"].astype(str).to_numpy(),
+            "subject_group": source["subject_group"].astype(str).to_numpy(),
+            "study_group": source["study_group"].astype(str).to_numpy(),
+            "target": pd.to_numeric(source[dataset.target_column], errors="coerce").to_numpy(dtype=float),
+            "prediction": pd.to_numeric(oof["prediction"], errors="coerce").to_numpy(dtype=float),
+        }
+    )
+    if frame["row_index"].duplicated().any():
+        raise DataContractError("E01 top-line compact OOF is not one row per source row")
+    return frame.sort_values("row_index").reset_index(drop=True)
+
+
+def _anchor_frame(dataset: TaskDataset, splits: Sequence[NamedSplit]) -> pd.DataFrame:
+    anchor_column = TASK_ANCHORS[dataset.task]
+    require_columns(
+        dataset.train,
+        [
+            "participant_id",
+            "subject_group",
+            "study_group",
+            dataset.target_column,
+            anchor_column,
+        ],
+        table_name=f"E01 {dataset.task} train",
+    )
