@@ -19,10 +19,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 1
       - name: Verify audited repository state and delete every non-main branch
         shell: bash
         env:
@@ -32,7 +28,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          git ls-remote --heads origin \
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          git -C "${workdir}" init -q
+          git -C "${workdir}" remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git -C "${workdir}" config credential.helper '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f'
+
+          git -C "${workdir}" ls-remote --heads origin \
             | awk '{sub("refs/heads/", "", $2); print $2}' \
             | sort > /tmp/branches.txt
 
@@ -57,11 +59,11 @@ jobs:
           delete_count=0
           while IFS= read -r branch; do
             [[ "${branch}" == "main" ]] && continue
-            git push --quiet origin --delete "${branch}"
+            git -C "${workdir}" push --quiet origin --delete "${branch}"
             delete_count=$((delete_count + 1))
           done < /tmp/branches.txt
 
-          git ls-remote --heads origin \
+          git -C "${workdir}" ls-remote --heads origin \
             | awk '{sub("refs/heads/", "", $2); print $2}' \
             | sort > /tmp/final-branches.txt
           [[ "$(cat /tmp/final-branches.txt)" == "main" ]]
