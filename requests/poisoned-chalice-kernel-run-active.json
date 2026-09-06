@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "request_id": "20260907-poisoned-chalice-minkpp-paper-pilot-500-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1",
+  "launcher_path": "runners/poisoned_chalice/minkpp_paper_pilot_500_v1.py",
+  "launcher_blob_sha": "fd58ab0e83f078ea44a50f9e70750adc511506d1",
+  "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "research_commit": "0895502ddb188de5af4ba780eb6f77f2185e64d1",
+  "research_files": [
+    {
+      "path": "src/poisoned_chalice/minkpp_paper.py",
+      "git_blob_sha": "cd6479564ebec0818e42a6612f242d00642301ea",
+      "max_bytes": 65536,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "scripts/build_minkpp_pilot_notebook.py",
+      "git_blob_sha": "4bbc2dced5aa3b0d9c72ee617ba5e1bb2646d082",
+      "max_bytes": 131072,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "experiments/stage1-minkpp-paper-pilot-500/experiment.json",
+      "git_blob_sha": "2ee9c12aa529726ca940abb2cb3d31938b1cdbe6",
+      "max_bytes": 32768,
+      "snapshot_parts": 1
+    }
+  ],
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 45,
+    "hard_timeout_minutes": 90,
+    "max_active_runs": 2,
+    "min_remaining_quota_hours": 1.0
+  },
+  "api_budget": {
+    "max_calls": 60
+  },
+  "side_effects": [
+    "create one private notebook version"
+  ],
+  "persistent_outputs": [
+    "stage1-minkpp-paper-pilot-500/sample_manifest.parquet",
+    "stage1-minkpp-paper-pilot-500/sample_scores.parquet",
+    "stage1-minkpp-paper-pilot-500/window_scores.parquet",
+    "stage1-minkpp-paper-pilot-500/token_statistics.parquet",
+    "stage1-minkpp-paper-pilot-500/score_spearman.csv",
+    "stage1-minkpp-paper-pilot-500/metrics.json",
+    "stage1-minkpp-paper-pilot-500/run_manifest.json",
+    "stage1-minkpp-paper-pilot-500/REPORT.md"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "select_as_final": false,
+  "clean_room": {
+    "stage2_holdout_consumed": false,
+    "public_leaderboard_feedback_used": false,
+    "hidden_validation_labels_used": false,
+    "low_fpr_selection_from_500_forbidden": true,
+    "legacy_feature_semantics_modified": false
+  },
+  "scientific_contract": {
+    "rows": 500,
+    "member_rows": 250,
+    "per_language_per_label": 50,
+    "paper_schema": "prob_weighted_minkpp_v1",
+    "legacy_schema": "legacy_uniform_vocab_z",
+    "model_id": "bigcode/starcoder2-3b",
+    "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "max_model_tokens_per_window": 768,
+    "same_forward": true,
+    "cpu_oracle_required": true,
+    "dense_blocked_parity_required": true,
+    "low_fpr_selection_from_500_forbidden": true
+  }
+}

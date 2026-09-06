@@ -1,0 +1,216 @@
+name: Poisoned Chalice stable kernel runner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-kernel-run-active.json
+      - runners/poisoned_chalice/**
+      - materialized/poisoned-chalice-*/**
+      - scripts/poisoned_chalice_active_request.py
+      - scripts/kaggle_policy_preflight.py
+      - requirements/kaggle-2.2.4.lock
+      - .github/workflows/200-poisoned-chalice-stable-kernel-runner.yml
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-kernel-run-active.json
+      - runners/poisoned_chalice/**
+      - materialized/poisoned-chalice-*/**
+      - scripts/poisoned_chalice_active_request.py
+      - scripts/kaggle_policy_preflight.py
+      - requirements/kaggle-2.2.4.lock
+      - .github/workflows/200-poisoned-chalice-stable-kernel-runner.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  CONTROLLER_PATH: scripts/poisoned_chalice_active_request.py
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+  REQUEST_PATH: requests/poisoned-chalice-kernel-run-active.json
+  TARGET_COMPETITION: poisoned-chalice-icse27
+
+jobs:
+  validate:
+    name: Validate active Poisoned Chalice request without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Stage, policy-check, and build final Notebook bundle
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,time,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          for path,maximum in (("scripts/poisoned_chalice_active_request.py",131072),("scripts/kaggle_policy_preflight.py",65536)):
+            last=None
+            for attempt in range(3):
+              try:
+                url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+                if not data or len(data)>maximum: raise RuntimeError("source byte budget failed")
+                destination=root/pathlib.Path(path).name; destination.write_bytes(data); compile(data,path,"exec"); break
+              except Exception as exc:
+                last=exc
+                if attempt==2: raise SystemExit(f"stable runner source fetch failed: {path}: {last}")
+                time.sleep(attempt+1)
+          PY
+          python3 "${workdir}/kaggle_policy_preflight.py"
+          python3 "${workdir}/poisoned_chalice_active_request.py" --source-sha "${source_sha}" --output "${workdir}/stage"
+          python3 "${workdir}/stage/launcher.py" --static --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research"
+          python3 "${workdir}/stage/launcher.py" --materialize --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research" --kernel-dir "${workdir}/kernel"
+          python3 - "${workdir}/stage/request.json" "${workdir}/kernel/kernel-metadata.json" <<'PY'
+          import json,sys
+          request=json.load(open(sys.argv[1])); metadata=json.load(open(sys.argv[2]))
+          assert metadata["id"]==request["target"]
+          assert metadata["is_private"] is True and metadata["enable_gpu"] is True and metadata["enable_tpu"] is False
+          assert metadata["enable_internet"]==request["enable_internet"] and metadata["machine_shape"]==request["resource"]["machine_shape"]
+          print("POISONED_CHALICE_STABLE_VALIDATE PASS request="+request["request_id"]+" target="+request["target"]+" write_calls=0 build_installs=0")
+          PY
+
+  launch:
+    name: Launch approved Poisoned Chalice T4 request exactly once
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    concurrency:
+      group: kaggle-resource-gpu-global
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/200-poisoned-chalice-stable-kernel-runner.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" && -z "${RESEARCH_REPO_READ_TOKEN-}" ]]
+          echo "POISONED_CHALICE_STABLE_BOUNDARY PASS private_repo_access=0 retries=0 submissions=0"
+
+      - name: Rebuild approved bundle and locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; kernel_dir="${workdir}/kernel"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"; echo "KERNEL_DIR=${kernel_dir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,time,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          for path,maximum in (("scripts/poisoned_chalice_active_request.py",131072),("scripts/kaggle_policy_preflight.py",65536)):
+            last=None
+            for attempt in range(3):
+              try:
+                url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+                if not data or len(data)>maximum: raise RuntimeError("source byte budget failed")
+                destination=root/pathlib.Path(path).name; destination.write_bytes(data); compile(data,path,"exec"); break
+              except Exception as exc:
+                last=exc
+                if attempt==2: raise SystemExit(f"stable runner source fetch failed: {path}: {last}")
+                time.sleep(attempt+1)
+          PY
+          python3 "${workdir}/kaggle_policy_preflight.py"
+          python3 "${workdir}/poisoned_chalice_active_request.py" --source-sha "${EVENT_SHA}" --output "${workdir}/stage"
+          python3 "${workdir}/stage/launcher.py" --static --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research"
+          python3 "${workdir}/stage/launcher.py" --materialize --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research" --kernel-dir "${kernel_dir}"
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/stage/kaggle-2.2.4.lock" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "POISONED_CHALICE_STABLE_MATERIAL PASS locked_cli=2.2.4 private_repo_access=0 build_installs=0"
+
+      - name: Confirm live competition state and launch exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" && -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - "${WORKDIR}/stage/request.json" <<'PY'
+          import json,re,sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          request=json.load(open(sys.argv[1])); target=request["target"]; resource=request["resource"]; max_active=int(resource["max_active_runs"])
+          api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(request["competition"]) or []; content={}
+          for page in pages:
+            data=page.to_dict() if hasattr(page,"to_dict") else dict(page); name=str(data.get("name") or "").strip().lower()
+            if name: content[name]=str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content or not any("data" in name for name in content): raise SystemExit("live competition pages unavailable")
+          plain=re.sub(r"\s+"," ",re.sub(r"<[^>]+>"," ",content["evaluation"].replace(r"\%","%"))).casefold()
+          if not all(token in plain for token in ("auc","novelty","1%","false-positive")): raise SystemExit("evaluation contract changed")
+          slug=target.split("/",1)[1]; visible=api.kernels_list(user="renta0426",search=slug,page_size=20) or []
+          if any(str(getattr(item,"ref",""))==target for item in visible): raise SystemExit("approved target already exists; refusing overwrite")
+          quota=api.quota_view(); gpu=getattr(quota,"gpu_quota",None); used=getattr(gpu,"time_used",None); total=getattr(gpu,"total_time_allowed",None)
+          if used is None or total is None: raise SystemExit("GPU quota unavailable")
+          remaining=max(0.0,(total-used).total_seconds()/3600.0); minimum=float(resource["min_remaining_quota_hours"])
+          if remaining<minimum: raise SystemExit(f"insufficient GPU quota: remaining={remaining:.2f}h minimum={minimum:.2f}h")
+          recent=(api.kernels_list(user="renta0426",sort_by="dateRun",page_size=25) or [])[:25]; active=0; unknown=0; status_calls=0
+          for item in recent:
+            ref=str(getattr(item,"ref","") or "")
+            if not ref: continue
+            status_calls+=1
+            try: status=str(getattr(api.kernels_status(ref),"status","")).upper()
+            except Exception: unknown+=1; continue
+            if any(token in status for token in ("RUNNING","QUEUED","PENDING")): active+=1
+          if status_calls+5>int(request["api_budget"]["max_calls"]): raise SystemExit("API budget would be exceeded")
+          if unknown: raise SystemExit(f"conservative admission refused: active={active} unknown={unknown} max_active={max_active}")
+          if active>=max_active: raise SystemExit(f"concurrency admission refused: active={active} max_active={max_active}")
+          print(f"POISONED_CHALICE_STABLE_LIVE_PREFLIGHT PASS quota={remaining:.2f} active={active} max_active={max_active} unknown=0")
+          PY
+          "${WORKDIR}/kaggle-venv/bin/python" "${WORKDIR}/stage/launcher.py" --execute --request "${WORKDIR}/stage/request.json" --kernel-dir "${KERNEL_DIR}" --kaggle-bin "${WORKDIR}/kaggle-venv/bin/kaggle"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "POISONED_CHALICE_STABLE_CLEANUP PASS retention_days=0"
