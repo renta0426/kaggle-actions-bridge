@@ -1,0 +1,50 @@
+{
+  "experiment_id": "stage1-minkpp-paper-pilot-500",
+  "status": "implementation_complete_execution_pending",
+  "base_commit": "64c2805cd87d7007b6e756ebd62e4b5fddf9595a",
+  "branch": "exp/p0-paper-minkpp-500-20260907",
+  "priority": "P0/P1",
+  "hypothesis": "The paper-faithful probability-weighted Min-K++ definition is materially different from the frozen legacy uniform-vocabulary z feature and must be evaluated before Min-K++ is accepted or rejected.",
+  "model": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928"
+  },
+  "data": {
+    "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "split": "train",
+    "rows": 500,
+    "sampling": "50 member + 50 non-member per language; seed=2027; final order sorted by sample_id"
+  },
+  "scoring": {
+    "paper_schema": "prob_weighted_minkpp_v1",
+    "legacy_schema": "legacy_uniform_vocab_z",
+    "mink_fractions": [0.01, 0.05, 0.1, 0.2],
+    "comparators": ["mean_logp", "local64"],
+    "same_forward": true,
+    "max_model_tokens_per_window": 768,
+    "bounded_regions": ["prefix", "middle", "suffix"],
+    "max_source_chars_per_region": 9216,
+    "paper_vocab_block_size": 8192,
+    "float_accumulation": "float32"
+  },
+  "gates": {
+    "cpu_oracle": true,
+    "dense_blocked_parity": true,
+    "padding_mask_explicit": true,
+    "finite_scores_500": true,
+    "sample_order_preserved": true,
+    "runtime_and_peak_memory_recorded": true,
+    "low_fpr_selection_from_500_forbidden": true
+  },
+  "outputs": [
+    "sample_manifest.parquet",
+    "sample_scores.parquet",
+    "window_scores.parquet",
+    "token_statistics.parquet",
+    "score_spearman.csv",
+    "metrics.json",
+    "run_manifest.json",
+    "REPORT.md"
+  ]
+}
