@@ -1,0 +1,208 @@
+name: Poisoned Chalice paper Min-K++ pilot 500 guarded GPU launch
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/197-poisoned-chalice-minkpp-paper-pilot-500-launch.yml]
+  pull_request:
+    paths: [.github/workflows/197-poisoned-chalice-minkpp-paper-pilot-500-launch.yml]
+
+permissions: {}
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  RESEARCH_REPOSITORY: renta0426/The-Poisoned-Chalice-of-LLM-Evaluation
+  RESEARCH_COMMIT: 0895502ddb188de5af4ba780eb6f77f2185e64d1
+  KERNEL_SLUG: renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1
+
+jobs:
+  validate:
+    name: Secret-free Rules and source preflight
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce secret-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ github.event.repository.id }}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${{ runner.environment }}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          echo 'MINKPP_PILOT_SECRET_FREE_BOUNDARY PASS'
+
+      - name: Read current competition Rules and Kaggle policy pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q playwright
+          python3 -m playwright install chromium >/dev/null
+          python3 - <<'PY'
+          import hashlib, re, ssl, urllib.request
+          from playwright.sync_api import sync_playwright
+          url = "https://www.kaggle.com/competitions/poisoned-chalice-icse27/rules"
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+              response = page.goto(url, wait_until="domcontentloaded", timeout=90000)
+              if response is None or response.status >= 400:
+                  raise SystemExit("Rules fetch failed closed")
+              page.wait_for_timeout(6000)
+              body = page.locator("body").inner_text(timeout=30000)
+              browser.close()
+          text = "\n".join(x.strip() for x in body.splitlines() if x.strip())
+          low = text.casefold()
+          markers = ("competition rules", "one account", "eligibility", "binding agreement", "specific competition rules")
+          if len(text) < 1200 or "poisoned chalice" not in low or not any(x in low for x in markers):
+              raise SystemExit("Competition Rules body not rendered; fail closed")
+          print(f"CURRENT_COMPETITION_RULES PASS chars={len(text)} sha256={hashlib.sha256(text.encode()).hexdigest()}")
+          wanted = re.compile(r"external|internet|notebook|code|model|data|sharing|account|submission|team|gpu", re.I)
+          selected = [line for line in text.splitlines() if wanted.search(line)][:40]
+          print("RULES_RELEVANT_LINES_BEGIN\n" + "\n".join(selected) + "\nRULES_RELEVANT_LINES_END")
+          ctx = ssl.create_default_context()
+          for name, policy_url in {
+              "TERMS": "https://www.kaggle.com/terms",
+              "ACCEPTABLE_USE": "https://www.kaggle.com/legal/acceptable-use",
+              "API_DOCS": "https://www.kaggle.com/docs/api",
+          }.items():
+              req = urllib.request.Request(policy_url, headers={"User-Agent": "kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+                  data = r.read(2_000_001)
+              if not 500 <= len(data) <= 2_000_000:
+                  raise SystemExit(f"{name} retrieval failed closed")
+              print(f"CURRENT_{name} PASS bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}")
+          PY
+
+      - name: Verify exact research source and frozen contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, ssl, urllib.request
+          repo = "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation"
+          sha = "0895502ddb188de5af4ba780eb6f77f2185e64d1"
+          ctx = ssl.create_default_context(); files = {}
+          for path in ["src/poisoned_chalice/minkpp_paper.py", "scripts/build_minkpp_pilot_notebook.py", "experiments/stage1-minkpp-paper-pilot-500/experiment.json"]:
+              req = urllib.request.Request(f"https://raw.githubusercontent.com/{repo}/{sha}/{path}", headers={"User-Agent":"kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req, timeout=30, context=ctx) as r: files[path] = r.read(120001)
+              if not files[path] or len(files[path]) > 120000: raise SystemExit("research source size gate failed")
+          compile(files["src/poisoned_chalice/minkpp_paper.py"], "minkpp_paper.py", "exec")
+          compile(files["scripts/build_minkpp_pilot_notebook.py"], "build_minkpp_pilot_notebook.py", "exec")
+          c = json.loads(files["experiments/stage1-minkpp-paper-pilot-500/experiment.json"])
+          assert c["experiment_id"] == "stage1-minkpp-paper-pilot-500" and c["data"]["rows"] == 500
+          assert c["scoring"]["paper_schema"] == "prob_weighted_minkpp_v1"
+          assert c["model"]["revision"] == "733247c55e3f73af49ce8e9c7949bf14af205928"
+          assert c["gates"]["low_fpr_selection_from_500_forbidden"] is True
+          print("MINKPP_PILOT_SOURCE_CONTRACT PASS")
+          PY
+
+  launch:
+    name: Launch and harvest exactly one private T4 pilot
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    concurrency:
+      group: kaggle-resource-gpu-global
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Enforce protected one-shot boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ github.event.repository.id }}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${{ github.event.sender.id }}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${{ github.sha }}" == "${{ github.workflow_sha }}" ]]
+          [[ "${{ github.workflow_ref }}" == "renta0426/kaggle-actions-bridge/.github/workflows/197-poisoned-chalice-minkpp-paper-pilot-500-launch.yml@refs/heads/main" ]]
+          [[ "${{ runner.environment }}" == "github-hosted" ]]
+          echo 'PROTECTED_MINKPP_PILOT_BOUNDARY PASS gpu=T4 pushes=1 retries=0 submissions=0'
+
+      - name: Materialize exact private kernel package
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          root="${workdir}/research"; mkdir -p "${root}/src/poisoned_chalice" "${root}/scripts"
+          base="https://raw.githubusercontent.com/${RESEARCH_REPOSITORY}/${RESEARCH_COMMIT}"
+          curl -fsSL --max-time 30 "${base}/src/poisoned_chalice/minkpp_paper.py" -o "${root}/src/poisoned_chalice/minkpp_paper.py"
+          curl -fsSL --max-time 30 "${base}/scripts/build_minkpp_pilot_notebook.py" -o "${root}/scripts/build_minkpp_pilot_notebook.py"
+          python3 -m pip install -q nbformat
+          (cd "${root}" && python3 scripts/build_minkpp_pilot_notebook.py)
+          kernel_dir="${root}/notebooks/experiments/stage1-minkpp-paper-pilot-500"
+          python3 - "${kernel_dir}/kernel-metadata.json" <<'PY'
+          import json, sys
+          m=json.load(open(sys.argv[1])); assert m["id"]=="renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1"
+          assert m["enable_gpu"] and not m["enable_tpu"] and m["enable_internet"] and m["is_private"] and m["machine_shape"]=="NvidiaTeslaT4"
+          print("KERNEL_METADATA PASS private=true gpu=T4")
+          PY
+          echo "KERNEL_DIR=${kernel_dir}" >> "${GITHUB_ENV}"
+
+      - name: Install Kaggle CLI and authenticate
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" ]]
+          python3 -m venv "${WORKDIR}/venv"; "${WORKDIR}/venv/bin/pip" install -q 'kaggle==2.2.4'
+          mkdir -p "${HOME}/.kaggle"; umask 077; printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"; unset KAGGLE_API_TOKEN
+          "${WORKDIR}/venv/bin/kaggle" --version
+
+      - name: Launch exactly once
+        shell: bash
+        run: |
+          set -euo pipefail
+          k="${WORKDIR}/venv/bin/kaggle"; "${k}" kernels list --mine --page-size 1 >/dev/null
+          echo 'KAGGLE_READONLY_PREFLIGHT PASS'; "${k}" kernels push -p "${KERNEL_DIR}"; echo 'KAGGLE_KERNEL_PUSH COUNT=1 retries=0'
+
+      - name: Poll without compute retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          k="${WORKDIR}/venv/bin/kaggle"; terminal=""
+          for n in $(seq 1 240); do
+            s="$(${k} kernels status "${KERNEL_SLUG}" 2>&1)"; echo "poll=${n} $(printf '%s' "${s}" | tr '\n' ' ')"
+            low="$(printf '%s' "${s}" | tr '[:upper:]' '[:lower:]')"
+            if grep -Eq 'complete|error|cancel|failed' <<<"${low}"; then terminal="${low}"; break; fi
+            sleep 30
+          done
+          [[ -n "${terminal}" ]] && grep -Eq 'complete' <<<"${terminal}"
+
+      - name: Harvest aggregate-only outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          k="${WORKDIR}/venv/bin/kaggle"; out="${WORKDIR}/output"; mkdir -p "${out}" "${WORKDIR}/aggregate"
+          "${k}" kernels output "${KERNEL_SLUG}" -p "${out}" --force >/dev/null
+          result="${out}/stage1-minkpp-paper-pilot-500"
+          python3 - "${result}" "${WORKDIR}/aggregate" <<'PY'
+          import json, math, pathlib, shutil, sys
+          s=pathlib.Path(sys.argv[1]); t=pathlib.Path(sys.argv[2])
+          m=json.loads((s/"metrics.json").read_text()); r=json.loads((s/"run_manifest.json").read_text()); d=r["diagnostics"]
+          assert r["status"]=="complete" and m["rows"]==500 and d["cpu_oracle_abs_error"]<=2e-5
+          assert d["real_dense_blocked_max_z_diff"]<=5e-5 and d["real_dense_blocked_max_variance_diff"]<=5e-5
+          assert d["valid_target_tokens_from_reducer"]==d["target_tokens_from_windows"]
+          assert all(math.isfinite(float(v)) for v in m["auc_roc_exploratory"].values())
+          safe={"status":r["status"],"rows":m["rows"],"member_rows":m["member_rows"],"warning":m["warning"],"diagnostics":d,"runtime":r["runtime"],"auc_roc_exploratory":m["auc_roc_exploratory"],"paper_legacy_spearman":m["paper_legacy_spearman"]}
+          (t/"aggregate_result.json").write_text(json.dumps(safe,indent=2,sort_keys=True)+"\n"); shutil.copy2(s/"REPORT.md",t/"REPORT.md")
+          print("MINKPP_PILOT_COMPLETION_GATES PASS\n"+json.dumps(safe,indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poisoned-chalice-minkpp-paper-pilot-500-aggregate
+          path: ${{ env.WORKDIR }}/aggregate/
+          retention-days: 7
+
+      - name: Clean credentials and local outputs
+        if: always()
+        shell: bash
+        run: |
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
