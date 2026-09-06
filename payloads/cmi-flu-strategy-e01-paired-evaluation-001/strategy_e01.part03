@@ -1,0 +1,200 @@
+                train,
+                train,
+                anchor_column=anchor_column,
+                target_column=dataset.target_column,
+            )
+            val_anchor = _oriented_anchor(
+                "Task1.2",
+                train,
+                validation,
+                anchor_column=anchor_column,
+                target_column=dataset.target_column,
+            )
+            residual_column = "__e01_task12_shuffled_anchor_residual"
+            train[residual_column] = _rank_within(train, dataset.target_column) - train_anchor
+            excluded = tuple(dict.fromkeys([*dataset.excluded_columns, dataset.target_column]))
+            _, correction = fit_final_model(
+                train,
+                validation,
+                target_column=residual_column,
+                spec=spec,
+                excluded_columns=excluded,
+            )
+            prediction = val_anchor + TASK12_AR_LAMBDA * np.asarray(correction, dtype=float)
+        else:
+            _, prediction = fit_final_model(
+                train,
+                validation,
+                target_column=dataset.target_column,
+                spec=spec,
+                excluded_columns=dataset.excluded_columns,
+            )
+        require_finite(prediction, name=f"E01.{dataset.task}.shuffle_prediction")
+        parts.append(
+            pd.DataFrame(
+                {
+                    "participant_id": validation["participant_id"].astype(str).to_numpy(),
+                    "subject_group": validation["subject_group"].astype(str).to_numpy(),
+                    "study_group": validation["study_group"].astype(str).to_numpy(),
+                    "target": pd.to_numeric(validation[dataset.target_column], errors="coerce").to_numpy(dtype=float),
+                    "prediction": np.asarray(prediction, dtype=float),
+                    "row_index": split.validation_indices,
+                }
+            )
+        )
+    raw = pd.concat(parts, ignore_index=True)
+    if raw["row_index"].duplicated().any():
+        # Task1.3 repeated grouped CV: aggregate repeated predictions per original row.
+        grouped = (
+            raw.groupby("row_index", as_index=False, observed=True)
+            .agg(
+                participant_id=("participant_id", "first"),
+                subject_group=("subject_group", "first"),
+                study_group=("study_group", "first"),
+                target=("target", "first"),
+                prediction=("prediction", "mean"),
+            )
+        )
+        frame = grouped
+    else:
+        frame = raw.drop(columns=["row_index"])
+    return {
+        "seed": RANDOM_SEED,
+        "label_shuffle_scope": "within_study_subject_block",
+        "moved_subject_assignments_across_folds": int(moved),
+        "metrics": _metric_summary(
+            frame,
+            prediction_scale="rank_score" if task12_anchor_residual else "raw_target",
+        ),
+    }
+
+
+def _hai_panel_frame(
+    result: Any,
+    *,
+    panel_strains: Sequence[str],
+) -> pd.DataFrame:
+    panel = {canonicalize_strain(x) for x in panel_strains}
+    oof = result.oof_predictions.copy()
+    require_columns(
+        oof,
+        ["participant_id", "subject_group", "study_group", "virus_strain", "post_hai", "post_prediction"],
+        table_name="E01 HAI OOF",
+    )
+    oof["virus_strain"] = oof["virus_strain"].map(canonicalize_strain)
+    work = oof.loc[oof["virus_strain"].isin(panel)].copy()
+    if work.empty:
+        raise DataContractError("E01 HAI panel has zero historical OOF overlap")
+    grouped = (
+        work.groupby(
+            ["study_group", "participant_id", "subject_group"],
+            dropna=False,
+            observed=True,
+        )
+        .agg(
+            target=("post_hai", geometric_mean),
+            prediction=("post_prediction", geometric_mean),
+            panel_size=("virus_strain", "nunique"),
+        )
+        .reset_index()
+    )
+    return grouped
+
+
+def _hai_anchor_frame(result: Any, *, panel_strains: Sequence[str]) -> pd.DataFrame:
+    panel = {canonicalize_strain(x) for x in panel_strains}
+    oof = result.oof_predictions.copy()
+    require_columns(
+        oof,
+        ["participant_id", "subject_group", "study_group", "virus_strain", "post_hai", "log2_pre_hai"],
+        table_name="E01 HAI anchor source",
+    )
+    oof["virus_strain"] = oof["virus_strain"].map(canonicalize_strain)
+    work = oof.loc[oof["virus_strain"].isin(panel)].copy()
+    work["pre_hai"] = np.exp2(pd.to_numeric(work["log2_pre_hai"], errors="coerce").to_numpy(dtype=float))
+    grouped = (
+        work.groupby(
+            ["study_group", "participant_id", "subject_group"],
+            dropna=False,
+            observed=True,
+        )
+        .agg(
+            target=("post_hai", geometric_mean),
+            pre_hai=("pre_hai", geometric_mean),
+        )
+        .reset_index()
+    )
+    grouped["prediction"] = np.nan
+    for _, positions in grouped.groupby("study_group", dropna=False, observed=True).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        grouped.loc[grouped.index[pos], "prediction"] = percentile_rank(
+            grouped.iloc[pos]["pre_hai"].to_numpy(dtype=float)
+        )
+    return grouped[["participant_id", "subject_group", "study_group", "target", "prediction"]]
+
+
+def _hai_availability_frame(result: Any, *, panel_strains: Sequence[str]) -> pd.DataFrame:
+    panel = {canonicalize_strain(x) for x in panel_strains}
+    oof = result.oof_predictions.copy()
+    oof["virus_strain"] = oof["virus_strain"].map(canonicalize_strain)
+    work = oof.loc[oof["virus_strain"].isin(panel)].copy()
+    grouped = (
+        work.groupby(
+            ["study_group", "participant_id", "subject_group"],
+            dropna=False,
+            observed=True,
+        )
+        .agg(
+            target=("post_hai", geometric_mean),
+            prediction=("virus_strain", "nunique"),
+        )
+        .reset_index()
+    )
+    return grouped
+
+
+def _subject_signatures(frame: pd.DataFrame) -> dict[str, tuple[str, ...]]:
+    result = {}
+    for subject, group in frame.groupby("subject_group", observed=True):
+        result[str(subject)] = tuple(sorted(canonicalize_strain(v) for v in group["virus_strain"]))
+    return result
+
+
+def _shuffle_hai_train(
+    train: pd.DataFrame,
+    *,
+    target_column: str,
+    rng: np.random.Generator,
+) -> tuple[pd.DataFrame, int, int]:
+    work = train.copy()
+    require_columns(
+        work,
+        ["study_group", "subject_group", "virus_strain", target_column],
+        table_name="E01 HAI shuffle",
+    )
+    work["virus_strain"] = work["virus_strain"].map(canonicalize_strain)
+    shuffled = pd.Series(index=work.index, dtype=float)
+    moved_subjects = 0
+    singleton_signature_subjects = 0
+    for _, study in work.groupby("study_group", dropna=False, observed=True):
+        signatures = _subject_signatures(study)
+        by_signature: dict[tuple[str, ...], list[str]] = {}
+        for subject, signature in signatures.items():
+            by_signature.setdefault(signature, []).append(subject)
+        for signature, subjects in by_signature.items():
+            donors = list(subjects)
+            if len(donors) == 1:
+                singleton_signature_subjects += 1
+            perm = rng.permutation(len(donors))
+            mapping = {recipient: donors[int(perm[i])] for i, recipient in enumerate(donors)}
+            moved_subjects += sum(mapping[s] != s for s in donors)
+            donor_table = study[["subject_group", "virus_strain", target_column]].copy()
+            donor_table["subject_group"] = donor_table["subject_group"].astype(str)
+            donor_table = donor_table.rename(
+                columns={"subject_group": "__donor", target_column: "__target"}
+            )
+            recipients = study.loc[study["subject_group"].astype(str).isin(subjects)].copy()
+            recipients["__donor"] = recipients["subject_group"].astype(str).map(mapping)
+            matched = recipients[["__donor", "virus_strain"]].merge(
+                donor_table,
+                on=["__donor", "virus_strain"],

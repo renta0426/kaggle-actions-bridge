@@ -1,0 +1,200 @@
+    )
+    if len(aligned) != len(candidate) or len(aligned) != len(reference):
+        raise DataContractError("E01 paired comparison does not align all rows")
+    folds = []
+    deltas = []
+    large_declines = []
+    for study, group in aligned.groupby("study_group", dropna=False, observed=True, sort=True):
+        c = safe_spearman(group["target"], group["candidate"])
+        r = safe_spearman(group["target"], group["reference"])
+        delta = None
+        if c.status == "ok" and r.status == "ok":
+            delta = float(c.value - r.value)
+            deltas.append(delta)
+            if len(group) >= LARGE_STUDY_N and delta < LARGE_STUDY_DECLINE_REVIEW:
+                large_declines.append(str(study))
+        folds.append(
+            {
+                "study": str(study),
+                "n": int(len(group)),
+                "candidate_spearman": c.value,
+                "candidate_status": c.status,
+                "reference_spearman": r.value,
+                "reference_status": r.status,
+                "delta": delta,
+            }
+        )
+    strict_delta = float(np.mean(deltas)) if len(deltas) == len(folds) and folds else None
+    return _json_safe(
+        {
+            "candidate": candidate_name,
+            "reference": reference_name,
+            "rows": int(len(aligned)),
+            "study_mean_delta_strict": strict_delta,
+            "candidate_threshold": CANDIDATE_DELTA_THRESHOLD,
+            "passes_candidate_delta_heuristic": (
+                strict_delta is not None and strict_delta >= CANDIDATE_DELTA_THRESHOLD
+            ),
+            "large_study_decline_threshold": LARGE_STUDY_DECLINE_REVIEW,
+            "large_studies_requiring_review": large_declines,
+            "all_folds_valid": len(deltas) == len(folds),
+            "folds": folds,
+        }
+    )
+
+
+def _sensitivity_28(
+    candidate: pd.DataFrame,
+    reference: pd.DataFrame,
+    *,
+    candidate_name: str,
+    reference_name: str,
+) -> Mapping[str, Any]:
+    keys = ["participant_id", "subject_group", "study_group", "target"]
+    aligned = candidate[keys + ["prediction"]].rename(columns={"prediction": "candidate"}).merge(
+        reference[keys + ["prediction"]].rename(columns={"prediction": "reference"}),
+        on=keys,
+        how="inner",
+        validate="one_to_one",
+    )
+    rng = np.random.default_rng(RANDOM_SEED)
+    studies = []
+    for study, group in aligned.groupby("study_group", dropna=False, observed=True, sort=True):
+        n = len(group)
+        if n < SUBSET_N:
+            studies.append(
+                {
+                    "study": str(study),
+                    "n": int(n),
+                    "status": "not_run_n_lt_28",
+                    "repetitions": 0,
+                }
+            )
+            continue
+        deltas = []
+        invalid = 0
+        positive = 0
+        rmse_deltas = []
+        indices = np.arange(n)
+        for _ in range(SUBSET_REPETITIONS):
+            chosen = rng.choice(indices, size=SUBSET_N, replace=False)
+            subset = group.iloc[chosen]
+            c = safe_spearman(subset["target"], subset["candidate"])
+            r = safe_spearman(subset["target"], subset["reference"])
+            if c.status != "ok" or r.status != "ok":
+                invalid += 1
+                continue
+            delta = float(c.value - r.value)
+            deltas.append(delta)
+            positive += int(delta > 0)
+            cr = root_mean_squared_error(
+                _rank_array(subset["target"]),
+                _rank_array(subset["candidate"]),
+            )
+            rr = root_mean_squared_error(
+                _rank_array(subset["target"]),
+                _rank_array(subset["reference"]),
+            )
+            rmse_deltas.append(float(cr.value - rr.value))
+        arr = np.asarray(deltas, dtype=float)
+        rmse_arr = np.asarray(rmse_deltas, dtype=float)
+        studies.append(
+            _json_safe(
+                {
+                    "study": str(study),
+                    "n": int(n),
+                    "status": "ok" if arr.size else "all_invalid",
+                    "repetitions": SUBSET_REPETITIONS,
+                    "valid_repetitions": int(arr.size),
+                    "invalid_repetitions": int(invalid),
+                    "spearman_delta_mean": float(arr.mean()) if arr.size else None,
+                    "spearman_delta_median": float(np.median(arr)) if arr.size else None,
+                    "spearman_delta_q10": float(np.quantile(arr, 0.10)) if arr.size else None,
+                    "spearman_delta_q90": float(np.quantile(arr, 0.90)) if arr.size else None,
+                    "candidate_better_fraction": float(positive / arr.size) if arr.size else None,
+                    "rank_rmse_delta_mean": float(rmse_arr.mean()) if rmse_arr.size else None,
+                }
+            )
+        )
+    return {
+        "candidate": candidate_name,
+        "reference": reference_name,
+        "subset_n": SUBSET_N,
+        "repetitions": SUBSET_REPETITIONS,
+        "seed": RANDOM_SEED,
+        "without_replacement": True,
+        "studies": studies,
+        "interpretation": "sensitivity analysis only; not a confidence interval for the hidden 2025 cohort",
+    }
+
+
+def _rank_array(values: Sequence[float] | pd.Series) -> np.ndarray:
+    array = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=float)
+    require_finite(array, name="E01 sensitivity rank input")
+    return percentile_rank(array)
+
+
+def _compact_availability_frame(dataset: TaskDataset) -> pd.DataFrame:
+    excluded = set(dataset.excluded_columns) | {dataset.target_column}
+    columns = [c for c in dataset.train.columns if c not in excluded]
+    available = dataset.train[columns].notna().sum(axis=1).to_numpy(dtype=float)
+    return pd.DataFrame(
+        {
+            "participant_id": dataset.train["participant_id"].astype(str).to_numpy(),
+            "subject_group": dataset.train["subject_group"].astype(str).to_numpy(),
+            "study_group": dataset.train["study_group"].astype(str).to_numpy(),
+            "target": pd.to_numeric(dataset.train[dataset.target_column], errors="coerce").to_numpy(dtype=float),
+            "prediction": available,
+        }
+    )
+
+
+def _shuffle_compact_train(
+    train: pd.DataFrame,
+    *,
+    target_column: str,
+    rng: np.random.Generator,
+) -> tuple[pd.DataFrame, int]:
+    work = train.copy()
+    require_columns(work, ["study_group", "subject_group", target_column], table_name="E01 compact shuffle")
+    values = pd.to_numeric(work[target_column], errors="coerce").to_numpy(dtype=float)
+    require_finite(values, name="E01 compact shuffle target")
+    shuffled = values.copy()
+    moved_subjects = 0
+    for _, positions in work.groupby("study_group", dropna=False, observed=True).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        subjects = work.iloc[pos]["subject_group"].astype(str)
+        if subjects.duplicated().any():
+            raise DataContractError("E01 compact shuffle expects one row per subject within study")
+        perm = rng.permutation(len(pos))
+        shuffled[pos] = values[pos[perm]]
+        moved_subjects += int(np.sum(perm != np.arange(len(pos))))
+    work[target_column] = shuffled
+    return work, moved_subjects
+
+
+def _compact_shuffle_oof(
+    dataset: TaskDataset,
+    *,
+    spec: ModelSpec,
+    splits: Sequence[NamedSplit],
+    task12_anchor_residual: bool = False,
+) -> Mapping[str, Any]:
+    rng = np.random.default_rng(RANDOM_SEED)
+    parts = []
+    moved = 0
+    if task12_anchor_residual:
+        spec = _identity_spec(spec)
+    for split in splits:
+        original_train = dataset.train.iloc[split.train_indices].copy()
+        validation = dataset.train.iloc[split.validation_indices].copy()
+        train, moved_here = _shuffle_compact_train(
+            original_train,
+            target_column=dataset.target_column,
+            rng=rng,
+        )
+        moved += moved_here
+        if task12_anchor_residual:
+            anchor_column = TASK_ANCHORS["Task1.2"]
+            train_anchor = _oriented_anchor(
+                "Task1.2",

@@ -1,0 +1,200 @@
+                how="left",
+                validate="many_to_one",
+            )
+            values = pd.to_numeric(matched["__target"], errors="coerce").to_numpy(dtype=float)
+            require_finite(values, name="E01 HAI shuffled target")
+            shuffled.loc[recipients.index] = values
+    if shuffled.isna().any():
+        raise DataContractError("E01 HAI block shuffle did not assign every row")
+    work[target_column] = shuffled.loc[work.index].to_numpy(dtype=float)
+    return work, moved_subjects, singleton_signature_subjects
+
+
+def _hai_shuffle_oof(
+    dataset: HAIModelDataset,
+    *,
+    spec: ModelSpec,
+    panel_strains: Sequence[str],
+) -> Mapping[str, Any]:
+    splits = purged_leave_one_study_out(
+        dataset.train["study_group"].astype(str),
+        dataset.train["subject_group"].astype(str),
+    )
+    rng = np.random.default_rng(RANDOM_SEED)
+    parts = []
+    moved = 0
+    singletons = 0
+    for split in splits:
+        original_train = dataset.train.iloc[split.train_indices].copy()
+        validation = dataset.train.iloc[split.validation_indices].copy()
+        train, moved_here, singleton_here = _shuffle_hai_train(
+            original_train,
+            target_column=dataset.target_column,
+            rng=rng,
+        )
+        moved += moved_here
+        singletons += singleton_here
+        _, target_prediction = fit_final_model(
+            train,
+            validation,
+            target_column=dataset.target_column,
+            spec=spec,
+            excluded_columns=dataset.excluded_columns,
+        )
+        post_prediction = dataset.target_prediction_to_post_hai(
+            target_prediction,
+            frame=validation,
+        )
+        require_finite(post_prediction, name="E01 HAI shuffled post prediction")
+        part = validation[
+            ["participant_id", "subject_group", "study_group", "virus_strain", "post_hai"]
+        ].copy()
+        part["prediction"] = np.asarray(post_prediction, dtype=float)
+        parts.append(part)
+    oof = pd.concat(parts, ignore_index=True)
+    panel = {canonicalize_strain(x) for x in panel_strains}
+    oof["virus_strain"] = oof["virus_strain"].map(canonicalize_strain)
+    work = oof.loc[oof["virus_strain"].isin(panel)].copy()
+    grouped = (
+        work.groupby(
+            ["study_group", "participant_id", "subject_group"],
+            dropna=False,
+            observed=True,
+        )
+        .agg(
+            target=("post_hai", geometric_mean),
+            prediction=("prediction", geometric_mean),
+        )
+        .reset_index()
+    )
+    return {
+        "seed": RANDOM_SEED,
+        "label_shuffle_scope": "within_study_subject_block_all_strains_together",
+        "signature_policy": "permute_only_subjects_with_identical_observed_strain_signature",
+        "moved_subject_assignments_across_folds": int(moved),
+        "singleton_signature_subjects_across_folds": int(singletons),
+        "metrics": _metric_summary(grouped, prediction_scale="raw_target"),
+    }
+
+
+def _hai_coverage(result: Any, *, panel_strains: Sequence[str]) -> Mapping[str, Any]:
+    panel = {canonicalize_strain(x) for x in panel_strains}
+    oof = result.oof_predictions.copy()
+    oof["virus_strain"] = oof["virus_strain"].map(canonicalize_strain)
+    work = oof.loc[oof["virus_strain"].isin(panel)].copy()
+    grouped = (
+        work.groupby(
+            ["study_group", "participant_id", "subject_group"],
+            dropna=False,
+            observed=True,
+        )
+        .agg(panel_size=("virus_strain", "nunique"))
+        .reset_index()
+    )
+    studies = []
+    for study, group in grouped.groupby("study_group", observed=True, sort=True):
+        studies.append(
+            {
+                "study": str(study),
+                "participants": int(len(group)),
+                "complete_panel_participants": int(group["panel_size"].eq(len(panel)).sum()),
+                "panel_size_min": int(group["panel_size"].min()),
+                "panel_size_max": int(group["panel_size"].max()),
+            }
+        )
+    return {
+        "requested_strains": len(panel),
+        "available_strains": int(work["virus_strain"].nunique()),
+        "participants": int(len(grouped)),
+        "complete_panel_participants": int(grouped["panel_size"].eq(len(panel)).sum()),
+        "panel_size_min": int(grouped["panel_size"].min()),
+        "panel_size_max": int(grouped["panel_size"].max()),
+        "studies": studies,
+        "proxy_only": True,
+        "proxy_definition": "historical observed subset of fixed 2025 task panel; participant geometric mean",
+    }
+
+
+def _compact_task_result(
+    task: str,
+    dataset: TaskDataset,
+    *,
+    config: BaselineConfig,
+    model_set: str,
+) -> Mapping[str, Any]:
+    splits = default_splits_for_task(dataset, random_state=config.random_state)
+    result = run_compact_task(
+        dataset,
+        specs=config.model_specs(model_set),
+        splits=splits,
+        random_state=config.random_state,
+        selection_policy="robust_v1",
+    )
+    expected = EXPECTED_B21_MODELS[task]
+    if result.selected_spec.name != expected:
+        raise DataContractError(
+            f"E01 frozen B2.1 reproduction mismatch for {task}: "
+            f"{result.selected_spec.name} != {expected}"
+        )
+    raw_b21 = _compact_base_frame(dataset, result)
+    anchor = _anchor_frame(dataset, splits)
+    if task == "Task1.2":
+        incumbent = _fixed_task12_anchor_residual(dataset, config=config, splits=splits)
+        incumbent_name = "task12_anchor_residual_et_d5_l5_sqrt_lambda0.5"
+        incumbent_scale = "rank_score"
+    else:
+        incumbent = raw_b21
+        incumbent_name = f"b21_{expected}"
+        incumbent_scale = "raw_target"
+    fixed_spec = _find_spec(config, model_set, expected)
+    if task == "Task1.2":
+        shuffle = _compact_shuffle_oof(
+            dataset,
+            spec=_find_spec(config, "task_12", TASK12_AR_MODEL),
+            splits=splits,
+            task12_anchor_residual=True,
+        )
+    else:
+        shuffle = _compact_shuffle_oof(
+            dataset,
+            spec=fixed_spec,
+            splits=splits,
+            task12_anchor_residual=False,
+        )
+    comparisons = {
+        "incumbent_vs_anchor": _paired_comparison(
+            incumbent, anchor,
+            candidate_name=incumbent_name,
+            reference_name="same_readout_anchor",
+        )
+    }
+    sensitivity = {
+        "incumbent_vs_anchor": _sensitivity_28(
+            incumbent, anchor,
+            candidate_name=incumbent_name,
+            reference_name="same_readout_anchor",
+        )
+    }
+    if task == "Task1.2":
+        comparisons["incumbent_vs_raw_b21"] = _paired_comparison(
+            incumbent, raw_b21,
+            candidate_name=incumbent_name,
+            reference_name=f"b21_{expected}",
+        )
+        sensitivity["incumbent_vs_raw_b21"] = _sensitivity_28(
+            incumbent, raw_b21,
+            candidate_name=incumbent_name,
+            reference_name=f"b21_{expected}",
+        )
+    return {
+        "incumbent": {
+            "name": incumbent_name,
+            "metrics": _metric_summary(incumbent, prediction_scale=incumbent_scale),
+        },
+        "frozen_b21_reference": {
+            "name": f"b21_{expected}",
+            "selected_model_reproduced": True,
+            "metrics": _metric_summary(raw_b21, prediction_scale="raw_target"),
+            "repeat_metrics": _json_safe(result.metrics.get("repeat_metrics", [])),
+        },
+        "anchor_reference": {
