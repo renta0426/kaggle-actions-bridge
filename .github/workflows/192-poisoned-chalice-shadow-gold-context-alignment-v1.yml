@@ -1,0 +1,263 @@
+name: Poisoned Chalice Gold training-context alignment v1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-shadow-gold-context-alignment-v1.json
+      - scripts/poisoned_chalice_shadow_gold_context_alignment_v1.py
+      - .github/workflows/192-poisoned-chalice-shadow-gold-context-alignment-v1.yml
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-shadow-gold-context-alignment-v1.json
+      - scripts/poisoned_chalice_shadow_gold_context_alignment_v1.py
+      - .github/workflows/192-poisoned-chalice-shadow-gold-context-alignment-v1.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-shadow-gold-context-alignment-v1.json
+  LAUNCHER_PATH: scripts/poisoned_chalice_shadow_gold_context_alignment_v1.py
+  BASE_LAUNCHER_PATH: scripts/poisoned_chalice_shadow_gold_content_reference_v1.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL: renta0426/shadow-gold-context-alignment-v1
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  MAX_ACTIVE_REMOTE_RUNS: "2"
+
+jobs:
+  validate:
+    name: Validate Gold context-alignment bundle without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate exact request and materialize Notebook
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"; [[ "${EVENT_NAME}" != "pull_request" ]] || source_sha="${PR_HEAD_SHA}"
+          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import hashlib,json,pathlib,ssl,sys,time,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          paths=[
+            "requests/poisoned-chalice-shadow-gold-context-alignment-v1.json",
+            "scripts/poisoned_chalice_shadow_gold_context_alignment_v1.py",
+            "scripts/poisoned_chalice_shadow_gold_content_reference_v1.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/controlled_transfer.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_corpus.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_kaggle.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_transfer.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_protocol.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_scoring.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training_dual_gpu.py",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/stage2_api.py",
+            "materialized/poisoned-chalice-shadow-gold-v2/poisoned_chalice/shadow_gold_kaggle_v2.py",
+            "materialized/poisoned-chalice-shadow-gold-positive-control-v1/poisoned_chalice/shadow_gold_positive_control.py",
+            "materialized/poisoned-chalice-shadow-gold-positive-control-v1/shadow_gold_positive_control_v1.json",
+            "materialized/poisoned-chalice-shadow-gold-positive-control-v2/poisoned_chalice/shadow_gold_positive_control_v2.py",
+            "materialized/poisoned-chalice-shadow-gold-content-reference-v1/poisoned_chalice/shadow_gold_content_reference.py",
+            "materialized/poisoned-chalice-shadow-gold-content-reference-v1/shadow_gold_content_reference_v1.json",
+          ]
+          def fetch(path,maximum=262144):
+            url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"; last=None
+            for attempt in range(3):
+              try:
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+                if len(data)>maximum: raise SystemExit(f"file too large: {path}")
+                dst=root/path; dst.parent.mkdir(parents=True,exist_ok=True); dst.write_bytes(data); return data
+              except Exception as exc:
+                last=exc
+                if attempt<2: time.sleep(attempt+1)
+            raise SystemExit(f"read-only fetch failed: {path}: {last}")
+          data={path:fetch(path) for path in paths}
+          request=json.loads(data[paths[0]])
+          def blob(value): return hashlib.sha1(b"blob "+str(len(value)).encode()+b"\0"+value).hexdigest()
+          checks={
+            "request_id":"20260906-poisoned-chalice-shadow-gold-context-alignment-v1-001",
+            "target":"renta0426/shadow-gold-context-alignment-v1",
+            "launcher_blob_sha":"da0826263c18a7f8c1a680e5e6eb2f174821410b",
+            "base_launcher_blob_sha":"fff2d72e0a00480ad6cb9d5523dd059c81812da7",
+            "research_commit":"15786822673e68ed0340a7975f17a3c749cc1889",
+            "content_reference_result_commit":"f09c8b9c4f69f6b89ba33f6a831216f25623411f",
+            "probe_local_result_commit":"844d83992ff364ee7bc43ae3560fb06540e2bd99",
+            "context_source_blob_sha":"24bf1c9cfff0a6688fea41803709e822b7974391",
+            "context_config_blob_sha":"1e831f4d4f00ab26870344e05ef3bfb7399f7f15",
+            "automatic_compute_retries":0,"enable_internet":False,"competition_submission":False,
+          }
+          for key,value in checks.items():
+            if request.get(key)!=value: raise SystemExit(f"request changed: {key}")
+          if blob(data[paths[1]])!=request["launcher_blob_sha"] or blob(data[paths[2]])!=request["base_launcher_blob_sha"]: raise SystemExit("launcher identity mismatch")
+          resource=request.get("resource") or {}
+          if (resource.get("accelerator"),resource.get("machine_shape"),resource.get("expected_visible_gpu_count"),resource.get("max_active_runs"),resource.get("min_remaining_quota_hours")) != ("gpu","NvidiaTeslaT4",2,2,1.0): raise SystemExit("resource contract changed")
+          science=request.get("scientific_contract") or {}; clean=request.get("clean_room") or {}
+          if science.get("candidate_count")!=9 or science.get("context_construction")!="bos_plus_last_254_payload_plus_eos_then_right_pad" or science.get("optimizer_steps_per_architecture")!=1280: raise SystemExit("science contract changed")
+          if science.get("minimum_holdout_auc_each_architecture")!=0.56 or science.get("minimum_auc_gain_vs_baseline_each_architecture")!=0.03 or science.get("minimum_tpr_at_1pct_fpr_each_architecture")!=0.015 or science.get("stage2_v3_selection_allowed") is not False: raise SystemExit("recovery gate changed")
+          if clean.get("known_probe_boundary_used") is not False or clean.get("probe_text_used") is not False or clean.get("features_sealed_before_label_reveal") is not True or clean.get("competition_rows_used")!=0 or clean.get("external_rows_used")!=0: raise SystemExit("clean-room boundary changed")
+          print("SHADOW_GOLD_CONTEXT_ALIGNMENT_V1_EXACT_REQUEST PASS write_calls=1 candidates=9 public_source=pinned")
+          PY
+          python3 "${workdir}/${LAUNCHER_PATH}" --static --launcher "${workdir}/${LAUNCHER_PATH}"
+          python3 "${workdir}/${LAUNCHER_PATH}" --materialize --snapshot-root "${workdir}" --kernel-dir "${workdir}/kernel" --base-launcher "${workdir}/${BASE_LAUNCHER_PATH}"
+          python3 - "${workdir}/kernel" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); nb=json.loads((root/'shadow-gold-context-alignment-v1.ipynb').read_text()); meta=json.loads((root/'kernel-metadata.json').read_text()); code=''.join(nb['cells'][1]['source'])
+          assert [c.get('id') for c in nb['cells']]==['context-alignment-intro','run-context-alignment']
+          for marker in ('15786822673e68ed0340a7975f17a3c749cc1889','run_context_alignment_benchmark','training_context_alignment_used','probe_boundary_used','context_alignment_metrics.json'): assert marker in code
+          assert meta.get('id')=='renta0426/shadow-gold-context-alignment-v1' and meta.get('enable_gpu') is True and meta.get('enable_tpu') is False and meta.get('enable_internet') is False and meta.get('machine_shape')=='NvidiaTeslaT4'
+          print('SHADOW_GOLD_CONTEXT_ALIGNMENT_V1_VALIDATE PASS gpu=2 steps=1280 candidates=9 outputs=4 cell_ids=stable')
+          PY
+
+  launch:
+    name: Launch Gold training-context alignment T4 x2
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    concurrency:
+      group: kaggle-resource-gpu-global
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/192-poisoned-chalice-shadow-gold-context-alignment-v1.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" && -z "${RESEARCH_REPO_READ_TOKEN-}" ]]
+          echo "SHADOW_GOLD_CONTEXT_ALIGNMENT_V1_PROTECTED_BOUNDARY PASS max_active=2 private_repo_access=0"
+
+      - name: Reconstruct approved bundle and locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; kernel_dir="${workdir}/kernel"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"; echo "KERNEL_DIR=${kernel_dir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,time,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          paths=[
+            "requests/poisoned-chalice-shadow-gold-context-alignment-v1.json","scripts/poisoned_chalice_shadow_gold_context_alignment_v1.py","scripts/poisoned_chalice_shadow_gold_content_reference_v1.py","requirements/kaggle-2.2.4.lock",
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/controlled_transfer.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_corpus.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_kaggle.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_transfer.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_protocol.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_scoring.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training_dual_gpu.py","materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/stage2_api.py","materialized/poisoned-chalice-shadow-gold-v2/poisoned_chalice/shadow_gold_kaggle_v2.py","materialized/poisoned-chalice-shadow-gold-positive-control-v1/poisoned_chalice/shadow_gold_positive_control.py","materialized/poisoned-chalice-shadow-gold-positive-control-v1/shadow_gold_positive_control_v1.json","materialized/poisoned-chalice-shadow-gold-positive-control-v2/poisoned_chalice/shadow_gold_positive_control_v2.py","materialized/poisoned-chalice-shadow-gold-content-reference-v1/poisoned_chalice/shadow_gold_content_reference.py","materialized/poisoned-chalice-shadow-gold-content-reference-v1/shadow_gold_content_reference_v1.json"]
+          for path in paths:
+            url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"; last=None
+            for attempt in range(3):
+              try:
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(262145)
+                if len(data)>262144: raise SystemExit(f"file too large: {path}")
+                dst=root/path; dst.parent.mkdir(parents=True,exist_ok=True); dst.write_bytes(data); break
+              except Exception as exc:
+                last=exc
+                if attempt==2: raise SystemExit(f"read-only fetch failed: {path}: {last}")
+                time.sleep(attempt+1)
+          print('SHADOW_GOLD_CONTEXT_ALIGNMENT_V1_PROTECTED_MATERIAL PASS pinned_public_source=1')
+          PY
+          python3 "${workdir}/${LAUNCHER_PATH}" --materialize --snapshot-root "${workdir}" --kernel-dir "${kernel_dir}" --base-launcher "${workdir}/${BASE_LAUNCHER_PATH}"
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/${LOCK_PATH}" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Confirm current Kaggle policy pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl,time,urllib.request
+          ctx=ssl.create_default_context()
+          for url in ("https://www.kaggle.com/terms","https://www.kaggle.com/aup","https://www.kaggle.com/community-guidelines","https://www.kaggle.com/docs/api","https://www.kaggle.com/docs/notebooks"):
+            for attempt in range(3):
+              try:
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response:
+                  if response.status!=200 or not response.read(65536): raise RuntimeError('empty')
+                break
+              except Exception:
+                if attempt==2: raise
+                time.sleep(attempt+1)
+          print('SHADOW_GOLD_CONTEXT_ALIGNMENT_V1_POLICY PASS')
+          PY
+
+      - name: Admit GPU slot and launch exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" && -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          import os,re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api=KaggleApi(); api.authenticate(); target=os.environ['TARGET_KERNEL']; max_active=int(os.environ['MAX_ACTIVE_REMOTE_RUNS'])
+          pages=api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []; content={}
+          for page in pages:
+            data=page.to_dict() if hasattr(page,'to_dict') else dict(page); name=str(data.get('name') or '').strip().lower()
+            if name: content[name]=str(data.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in name for name in content): raise SystemExit('live competition pages unavailable')
+          plain=re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',content['evaluation'].replace(r'\%','%'))).casefold()
+          if not all(token in plain for token in ('auc','novelty','1%','false-positive')): raise SystemExit('evaluation contract changed')
+          visible=api.kernels_list(user='renta0426',search='shadow-gold-context-alignment-v1',page_size=20) or []
+          if any(str(getattr(item,'ref',''))==target for item in visible): raise SystemExit('target already exists')
+          quota=api.quota_view(); gpu=getattr(quota,'gpu_quota',None); used=getattr(gpu,'time_used',None); total=getattr(gpu,'total_time_allowed',None)
+          if used is None or total is None: raise SystemExit('GPU quota unavailable')
+          remaining=max(0.0,(total-used).total_seconds()/3600.0)
+          if remaining<1.0: raise SystemExit(f'insufficient GPU quota: {remaining:.2f}h')
+          recent=(api.kernels_list(user='renta0426',sort_by='dateRun',page_size=25) or [])[:25]; active=0; unknown=0
+          for item in recent:
+            ref=str(getattr(item,'ref','') or '')
+            if not ref: continue
+            try: status=str(getattr(api.kernels_status(ref),'status','')).upper()
+            except Exception: unknown+=1; continue
+            if any(token in status for token in ('RUNNING','QUEUED','PENDING')): active+=1
+          if unknown: raise SystemExit(f'conservative admission refused: active={active} unknown={unknown} max_active={max_active}')
+          if active>=max_active: raise SystemExit(f'concurrency admission refused: active={active} max_active={max_active}')
+          print(f'SHADOW_GOLD_CONTEXT_ALIGNMENT_V1_LIVE_PREFLIGHT PASS quota={remaining:.2f} active={active} max_active={max_active} unknown=0')
+          PY
+          "${WORKDIR}/kaggle-venv/bin/python" "${WORKDIR}/${LAUNCHER_PATH}" --execute --kaggle-bin "${WORKDIR}/kaggle-venv/bin/kaggle" --kernel-dir "${KERNEL_DIR}"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "SHADOW_GOLD_CONTEXT_ALIGNMENT_V1_CLEANUP PASS retention_days=0"
