@@ -19,7 +19,7 @@
       "path": "scripts/build_minkpp_pilot_notebook.py",
       "git_blob_sha": "4bbc2dced5aa3b0d9c72ee617ba5e1bb2646d082",
       "max_bytes": 131072,
-      "snapshot_parts": 4
+      "snapshot_parts": 1
     },
     {
       "path": "experiments/stage1-minkpp-paper-pilot-500/experiment.json",
