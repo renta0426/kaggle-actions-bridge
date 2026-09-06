@@ -1,0 +1,40 @@
+name: One-shot delete start-boundary launch branch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-shot-delete-start-boundary-launch-branch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Delete merged temporary launch branch only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: launch/shadow-gold-start-boundary-attribution-v1
+        run: |
+          set -euo pipefail
+          [[ "${TARGET_BRANCH}" != "main" ]]
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          git -C "${workdir}" init -q
+          git -C "${workdir}" remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git -C "${workdir}" config credential.helper '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f'
+          git -C "${workdir}" ls-remote --exit-code --heads origin "refs/heads/${TARGET_BRANCH}" >/dev/null
+          git -C "${workdir}" push --quiet origin --delete "${TARGET_BRANCH}"
+          if git -C "${workdir}" ls-remote --exit-code --heads origin "refs/heads/${TARGET_BRANCH}" >/dev/null 2>&1; then
+            echo "BRANCH_DELETE_FAILED branch=${TARGET_BRANCH}"
+            exit 1
+          fi
+          echo "BRANCH_DELETE_COMPLETE branch=${TARGET_BRANCH}"
