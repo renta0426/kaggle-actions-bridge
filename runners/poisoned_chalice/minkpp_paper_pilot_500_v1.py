@@ -31,9 +31,6 @@ PERSISTENT_OUTPUTS = [
     f"{OUTPUT_PREFIX}/REPORT.md",
 ]
 
-# The frozen research builder uses only this small subset of nbformat. Keeping
-# the bridge-side materialization standard-library-only prevents a transient
-# PyPI failure between a green PR validation and the approved main launch.
 NBF_SHIM = r'''from __future__ import annotations
 import hashlib
 import json
@@ -192,7 +189,6 @@ def validate_research(research_root: Path) -> None:
         "probability_weighted_token_statistics_dense",
         "probability_weighted_token_statistics_blocked",
         "prob_weighted_minkpp_v1",
-        "legacy_uniform_vocab_z",
     ):
         if marker not in scorer_source:
             raise RuntimeError(f"paper scorer marker missing: {marker}")
@@ -200,6 +196,7 @@ def validate_research(research_root: Path) -> None:
         MODEL_ID,
         MODEL_REVISION,
         DATASET_REVISION,
+        "legacy_uniform_vocab_z",
         'samples_per_language: int = 100',
         'max_length: int = 768',
         'paper_vocab_block_size: int = 8_192',
