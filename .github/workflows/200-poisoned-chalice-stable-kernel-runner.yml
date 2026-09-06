@@ -6,6 +6,7 @@ on:
     paths:
       - requests/poisoned-chalice-kernel-run-active.json
       - runners/poisoned_chalice/**
+      - materialized/poisoned-chalice-*/**
       - scripts/poisoned_chalice_active_request.py
       - scripts/kaggle_policy_preflight.py
       - requirements/kaggle-2.2.4.lock
@@ -14,6 +15,7 @@ on:
     paths:
       - requests/poisoned-chalice-kernel-run-active.json
       - runners/poisoned_chalice/**
+      - materialized/poisoned-chalice-*/**
       - scripts/poisoned_chalice_active_request.py
       - scripts/kaggle_policy_preflight.py
       - requirements/kaggle-2.2.4.lock
@@ -87,7 +89,6 @@ jobs:
           PY
           python3 "${workdir}/kaggle_policy_preflight.py"
           python3 "${workdir}/poisoned_chalice_active_request.py" --source-sha "${source_sha}" --output "${workdir}/stage"
-          python3 -m pip install --disable-pip-version-check --no-input -q 'nbformat==5.10.4'
           python3 "${workdir}/stage/launcher.py" --static --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research"
           python3 "${workdir}/stage/launcher.py" --materialize --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research" --kernel-dir "${workdir}/kernel"
           python3 - "${workdir}/stage/request.json" "${workdir}/kernel/kernel-metadata.json" <<'PY'
@@ -96,7 +97,7 @@ jobs:
           assert metadata["id"]==request["target"]
           assert metadata["is_private"] is True and metadata["enable_gpu"] is True and metadata["enable_tpu"] is False
           assert metadata["enable_internet"]==request["enable_internet"] and metadata["machine_shape"]==request["resource"]["machine_shape"]
-          print("POISONED_CHALICE_STABLE_VALIDATE PASS request="+request["request_id"]+" target="+request["target"]+" write_calls=0")
+          print("POISONED_CHALICE_STABLE_VALIDATE PASS request="+request["request_id"]+" target="+request["target"]+" write_calls=0 build_installs=0")
           PY
 
   launch:
@@ -158,14 +159,13 @@ jobs:
           PY
           python3 "${workdir}/kaggle_policy_preflight.py"
           python3 "${workdir}/poisoned_chalice_active_request.py" --source-sha "${EVENT_SHA}" --output "${workdir}/stage"
-          python3 -m pip install --disable-pip-version-check --no-input -q 'nbformat==5.10.4'
           python3 "${workdir}/stage/launcher.py" --static --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research"
           python3 "${workdir}/stage/launcher.py" --materialize --request "${workdir}/stage/request.json" --research-root "${workdir}/stage/research" --kernel-dir "${kernel_dir}"
           python3 -m venv "${workdir}/kaggle-venv"
           "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/stage/kaggle-2.2.4.lock" >/dev/null
           "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
           "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
-          echo "POISONED_CHALICE_STABLE_MATERIAL PASS locked_cli=2.2.4 private_repo_access=0"
+          echo "POISONED_CHALICE_STABLE_MATERIAL PASS locked_cli=2.2.4 private_repo_access=0 build_installs=0"
 
       - name: Confirm live competition state and launch exactly once
         shell: bash
@@ -175,7 +175,7 @@ jobs:
           set -euo pipefail
           [[ -z "${RESEARCH_REPO_READ_TOKEN-}" && -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
           "${WORKDIR}/kaggle-venv/bin/python" - "${WORKDIR}/stage/request.json" <<'PY'
-          import json,os,re,sys
+          import json,re,sys
           from kaggle.api.kaggle_api_extended import KaggleApi
           request=json.load(open(sys.argv[1])); target=request["target"]; resource=request["resource"]; max_active=int(resource["max_active_runs"])
           api=KaggleApi(); api.authenticate()
