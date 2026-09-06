@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "request_id": "20260906-cmi-flu-manual-probe-files-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-manual-probe-files-20260906-001",
+  "source_kernel": "renta0426/cmi-flu-public-probes-20260906-006",
+  "source_expected_version": 1,
+  "source_files": {
+    "control-b21-regenerated.csv": "33467e28f68f5b8f2731f3547000edc39af932cac04a233b549b6df67854b037",
+    "probe-task13.csv": "6d1bac6f35ccbea549c4b23d71d6d4ddc652bf6577a853019855ea968295a717",
+    "probe-task12.csv": "365607d59cd530656b929a1c1c57412cc6d375265a8d1ba10d304c64e012f387",
+    "probe-task12-task13.csv": "0d6450453a5c82086372373d1f425229c8b4c3c05764b71f7c98265df4afbfc2"
+  },
+  "output_files": {
+    "submission-control-b21.csv": "33467e28f68f5b8f2731f3547000edc39af932cac04a233b549b6df67854b037",
+    "submission-task13-only.csv": "6d1bac6f35ccbea549c4b23d71d6d4ddc652bf6577a853019855ea968295a717",
+    "submission-task12-only.csv": "365607d59cd530656b929a1c1c57412cc6d375265a8d1ba10d304c64e012f387",
+    "submission-task12-task13.csv": "0d6450453a5c82086372373d1f425229c8b4c3c05764b71f7c98265df4afbfc2"
+  },
+  "sample_submission_filename": "sample_submission_part1.csv",
+  "sample_submission_header": [
+    "participant_id",
+    "Task1.1",
+    "Task1.2",
+    "Task1.3",
+    "Task1.4",
+    "Task2.1",
+    "Task2.2",
+    "Task2.3"
+  ],
+  "submission_rows": 40,
+  "require_no_minus_99": true,
+  "require_all_task_columns_finite": true,
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 3,
+    "hard_timeout_minutes": 20,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 10,
+    "initial_poll_schedule_seconds": [15, 30, 60],
+    "steady_poll_interval_seconds": 120,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one private CPU Notebook version that attaches current version 1 of the successful 006 private Notebook as a kernel source",
+    "write four manually submittable CSV files whose bytes exactly match the four fixed 006 candidate/control files",
+    "read back only the four CSV files and one aggregate manifest for validation"
+  ],
+  "rules_checked_at_utc": "2026-09-06T11:51:00Z"
+}
