@@ -1,0 +1,200 @@
+    if dataset.task == "Task1.1":
+        parts = []
+        for split in splits:
+            train = dataset.train.iloc[split.train_indices]
+            validation = dataset.train.iloc[split.validation_indices]
+            score = _oriented_anchor(
+                dataset.task,
+                train,
+                validation,
+                anchor_column=anchor_column,
+                target_column=dataset.target_column,
+            )
+            parts.append(
+                pd.DataFrame(
+                    {
+                        "row_index": split.validation_indices,
+                        "participant_id": validation["participant_id"].astype(str).to_numpy(),
+                        "subject_group": validation["subject_group"].astype(str).to_numpy(),
+                        "study_group": validation["study_group"].astype(str).to_numpy(),
+                        "target": pd.to_numeric(validation[dataset.target_column], errors="coerce").to_numpy(dtype=float),
+                        "prediction": score,
+                    }
+                )
+            )
+        result = pd.concat(parts, ignore_index=True)
+        # LOSO Task1.1 must cover each row once.
+        if result["row_index"].duplicated().any() or set(result["row_index"]) != set(range(len(dataset.train))):
+            raise DataContractError("E01 Task1.1 anchor OOF coverage mismatch")
+        return result.sort_values("row_index").reset_index(drop=True)
+
+    result = dataset.train.reset_index().rename(
+        columns={"index": "row_index", dataset.target_column: "target", anchor_column: "prediction"}
+    )[
+        [
+            "row_index",
+            "participant_id",
+            "subject_group",
+            "study_group",
+            "target",
+            "prediction",
+        ]
+    ].copy()
+    for column in ("target", "prediction"):
+        result[column] = pd.to_numeric(result[column], errors="coerce")
+    require_finite(result[["target", "prediction"]].to_numpy(dtype=float), name=f"E01.{dataset.task}.anchor_frame")
+    return result
+
+
+def _fixed_task12_anchor_residual(
+    dataset: TaskDataset,
+    *,
+    config: BaselineConfig,
+    splits: Sequence[NamedSplit],
+) -> pd.DataFrame:
+    if dataset.task != "Task1.2":
+        raise DataContractError("E01 fixed anchor-residual is Task1.2-only")
+    anchor_column = TASK_ANCHORS["Task1.2"]
+    spec = _identity_spec(_find_spec(config, "task_12", TASK12_AR_MODEL))
+    excluded = tuple(dict.fromkeys([*dataset.excluded_columns, dataset.target_column]))
+    parts = []
+    for split in splits:
+        train = dataset.train.iloc[split.train_indices].copy()
+        validation = dataset.train.iloc[split.validation_indices].copy()
+        train_anchor = _oriented_anchor(
+            "Task1.2",
+            train,
+            train,
+            anchor_column=anchor_column,
+            target_column=dataset.target_column,
+        )
+        validation_anchor = _oriented_anchor(
+            "Task1.2",
+            train,
+            validation,
+            anchor_column=anchor_column,
+            target_column=dataset.target_column,
+        )
+        target_rank = _rank_within(train, dataset.target_column)
+        residual_column = "__e01_task12_anchor_residual"
+        train[residual_column] = target_rank - train_anchor
+        _, correction = fit_final_model(
+            train,
+            validation,
+            target_column=residual_column,
+            spec=spec,
+            excluded_columns=excluded,
+        )
+        correction = np.asarray(correction, dtype=float)
+        require_finite(correction, name="E01.Task1.2.anchor_residual_correction")
+        score = validation_anchor + TASK12_AR_LAMBDA * correction
+        parts.append(
+            pd.DataFrame(
+                {
+                    "row_index": split.validation_indices,
+                    "participant_id": validation["participant_id"].astype(str).to_numpy(),
+                    "subject_group": validation["subject_group"].astype(str).to_numpy(),
+                    "study_group": validation["study_group"].astype(str).to_numpy(),
+                    "target": pd.to_numeric(validation[dataset.target_column], errors="coerce").to_numpy(dtype=float),
+                    "prediction": score,
+                }
+            )
+        )
+    result = pd.concat(parts, ignore_index=True)
+    if result["row_index"].duplicated().any() or set(result["row_index"]) != set(range(len(dataset.train))):
+        raise DataContractError("E01 Task1.2 anchor-residual OOF coverage mismatch")
+    return result.sort_values("row_index").reset_index(drop=True)
+
+
+def _metric_summary(frame: pd.DataFrame, *, prediction_scale: str) -> Mapping[str, Any]:
+    require_columns(
+        frame,
+        ["participant_id", "subject_group", "study_group", "target", "prediction"],
+        table_name="E01 condition frame",
+    )
+    if frame["participant_id"].duplicated().any():
+        raise DataContractError("E01 condition frame must be one row per participant")
+    work = frame.copy()
+    for column in ("target", "prediction"):
+        work[column] = pd.to_numeric(work[column], errors="coerce")
+    require_finite(work[["target", "prediction"]].to_numpy(dtype=float), name="E01 condition values")
+    work["target_rank"] = _rank_within(work, "target")
+    work["prediction_rank"] = _rank_within(work, "prediction")
+
+    folds: list[dict[str, Any]] = []
+    for study, group in work.groupby("study_group", dropna=False, observed=True, sort=True):
+        spearman = safe_spearman(group["target"], group["prediction"])
+        rank_rmse = root_mean_squared_error(group["target_rank"], group["prediction_rank"])
+        unique = int(group["prediction"].nunique(dropna=True))
+        n = int(len(group))
+        raw_rmse = (
+            root_mean_squared_error(group["target"], group["prediction"]).to_dict()
+            if prediction_scale == "raw_target"
+            else None
+        )
+        folds.append(
+            {
+                "study": str(study),
+                "n": n,
+                "spearman": spearman.value,
+                "spearman_status": spearman.status,
+                "rank_rmse": rank_rmse.value,
+                "prediction_unique": unique,
+                "tie_fraction": float(1.0 - unique / n) if n else None,
+                "constant_prediction": unique < 2,
+                "raw_rmse": raw_rmse,
+            }
+        )
+    ok = [row for row in folds if row["spearman_status"] == "ok" and np.isfinite(float(row["spearman"]))]
+    strict_mean = float(np.mean([float(row["spearman"]) for row in ok])) if len(ok) == len(folds) and folds else None
+    finite_mean = float(np.mean([float(row["spearman"]) for row in ok])) if ok else None
+    finite_values = [float(row["spearman"]) for row in ok]
+    pooled = safe_spearman(work["target"], work["prediction"]).to_dict()
+    pooled_rank = safe_spearman(work["target_rank"], work["prediction_rank"]).to_dict()
+    rank_rmse = root_mean_squared_error(work["target_rank"], work["prediction_rank"]).to_dict()
+    raw_rmse = (
+        root_mean_squared_error(work["target"], work["prediction"]).to_dict()
+        if prediction_scale == "raw_target"
+        else None
+    )
+    unique_total = int(work["prediction"].nunique(dropna=True))
+    return _json_safe(
+        {
+            "rows": int(len(work)),
+            "subjects": int(work["subject_group"].nunique()),
+            "studies": int(work["study_group"].nunique()),
+            "prediction_scale": prediction_scale,
+            "study_equal_weight_spearman_mean_strict": strict_mean,
+            "study_equal_weight_spearman_mean_finite_diagnostic": finite_mean,
+            "study_spearman_median": float(np.median(finite_values)) if finite_values else None,
+            "study_spearman_min": min(finite_values) if finite_values else None,
+            "pooled_spearman": pooled,
+            "pooled_within_study_rank_spearman": pooled_rank,
+            "rank_rmse": rank_rmse,
+            "raw_scale_rmse": raw_rmse,
+            "prediction_min": float(work["prediction"].min()),
+            "prediction_max": float(work["prediction"].max()),
+            "prediction_unique": unique_total,
+            "tie_fraction": float(1.0 - unique_total / len(work)),
+            "constant_fold_count": sum(bool(row["constant_prediction"]) for row in folds),
+            "undefined_fold_count": len(folds) - len(ok),
+            "folds": folds,
+        }
+    )
+
+
+def _paired_comparison(
+    candidate: pd.DataFrame,
+    reference: pd.DataFrame,
+    *,
+    candidate_name: str,
+    reference_name: str,
+) -> Mapping[str, Any]:
+    keys = ["participant_id", "subject_group", "study_group", "target"]
+    left = candidate[keys + ["prediction"]].rename(columns={"prediction": "candidate"})
+    right = reference[keys + ["prediction"]].rename(columns={"prediction": "reference"})
+    aligned = left.merge(
+        right,
+        on=keys,
+        how="inner",
+        validate="one_to_one",
