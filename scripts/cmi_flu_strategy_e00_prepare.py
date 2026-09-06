@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
-'Build the one-shot aggregate-only Kaggle runtime for CMI-Flu strategy E00.'
+"""Build the one-shot aggregate-only Kaggle runtime for CMI-Flu strategy E00."""
 from __future__ import annotations
 
 import argparse
 import base64
 import hashlib
-import io
 import json
 from pathlib import Path
-import zipfile
+import subprocess
+import sys
+import tempfile
 
 REQUEST_ID = "20260907-cmi-flu-strategy-e00-readiness-001"
 COMPETITION = "cmi-flu-first-prediction-challenge"
 SCIENCE_COMMIT = "2529b45249d6bf528593c6f4f6a445678dd3e7c2"
-EXPECTED_CONFIG_BLOB = "170d3211e2795c0730e481056c7bb068accf97c9"
-EXPECTED_AUDIT_BLOB = "f6f6d91b7d76838f7c1623b07c8d6daa8b71e64b"
+E00_AUDIT_BLOB = "f6f6d91b7d76838f7c1623b07c8d6daa8b71e64b"
+E00_CONFIG_BLOB = "170d3211e2795c0730e481056c7bb068accf97c9"
+TASK11_PRIOR_BLOB = "50d9a43604d2b75479b8f873a86a8daf9d5bd7a9"
+E00_AUDIT_PATH = "payloads/cmi-flu-strategy-e00-readiness-001/audit_strategy_readiness.py"
+E00_CONFIG_PATH = "payloads/cmi-flu-strategy-e00-readiness-001/baseline_b021_robust.yaml"
+TASK11_PRIOR_PATH = "payloads/cmi-flu-task11-prior-immunity-001/task11_prior_immunity.py"
 
-REQUIRED_PACKAGE = {
-    "cmi_flu/__init__.py",
-    "cmi_flu/aliases.py",
-    "cmi_flu/configuration.py",
-    "cmi_flu/datasets.py",
-    "cmi_flu/features/flow.py",
-    "cmi_flu/runner.py",
-    "cmi_flu/task11_prior_immunity.py",
-}
-PLACEHOLDER_REFERENCES = {
+REFERENCE_PLACEHOLDERS = {
     "cytokine_name_map.csv": "source,target\n",
     "flow_name_revised.csv": "source,target\n",
     "hai_map.csv": "source,target\n",
@@ -36,8 +32,7 @@ PLACEHOLDER_REFERENCES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--science-root", type=Path, required=True)
-    parser.add_argument("--science-commit", required=True)
+    parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -50,25 +45,53 @@ def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
 
 
-def deterministic_package(source_root: Path) -> bytes:
-    package_root = source_root / "src" / "cmi_flu"
-    if not package_root.is_dir():
-        raise SystemExit("science package root is missing")
-    files = sorted(path for path in package_root.rglob("*.py") if path.is_file())
-    names = {path.relative_to(source_root / "src").as_posix() for path in files}
-    if REQUIRED_PACKAGE - names:
-        raise SystemExit("science package is missing required E00 modules")
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for path in files:
-            rel = path.relative_to(source_root / "src").as_posix()
-            data = path.read_bytes()
-            compile(data.decode("utf-8"), rel, "exec")
-            info = zipfile.ZipInfo(rel, date_time=(1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
-            archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
-    return buffer.getvalue()
+def require_exact_relay(path: Path, expected_blob: str, *, label: str) -> str:
+    data = path.read_bytes()
+    found = git_blob_sha(data)
+    if found != expected_blob:
+        raise SystemExit(f"{label} relay blob mismatch: {found}")
+    text = data.decode("utf-8")
+    if path.suffix == ".py":
+        compile(text, str(path), "exec")
+    return text
+
+
+def extract_frozen_runtime(root: Path, work: Path) -> tuple[bytes, str, str]:
+    """Reuse the already-audited B2/B2.1 frozen runtime and exact Task1.1 relay."""
+    prior = root / TASK11_PRIOR_PATH
+    require_exact_relay(prior, TASK11_PRIOR_BLOB, label="Task1.1 prior-immunity")
+    generated = work / "task11-frozen-runtime.py"
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts/cmi_flu_task11_prior_immunity_prepare_v2.py"),
+            "--repository-root",
+            str(root),
+            "--science-source",
+            str(prior),
+            "--output",
+            str(generated),
+        ],
+        check=True,
+    )
+    text = generated.read_text(encoding="utf-8")
+    namespace: dict[str, object] = {"__name__": "cmi_flu_e00_frozen_source"}
+    exec(compile(text, str(generated), "exec"), namespace, namespace)
+    package_fn = namespace.get("package_bytes")
+    if not callable(package_fn):
+        raise SystemExit("frozen Task1.1 runtime lacks package_bytes()")
+    package = package_fn()
+    if not isinstance(package, bytes) or not package:
+        raise SystemExit("frozen Task1.1 package is invalid")
+    adapter_source = namespace.get("B21_ADAPTER_SOURCE")
+    prior_source = namespace.get("TASK11_PRIOR_IMMUNITY_SOURCE")
+    if not isinstance(adapter_source, str) or not isinstance(prior_source, str):
+        raise SystemExit("frozen Task1.1 runtime lacks embedded science sources")
+    if git_blob_sha(prior_source.encode("utf-8")) != TASK11_PRIOR_BLOB:
+        raise SystemExit("frozen Task1.1 embedded source changed")
+    compile(adapter_source, "cmi_flu_b21_runtime_adapter.py", "exec")
+    compile(prior_source, "cmi_flu/task11_prior_immunity.py", "exec")
+    return package, adapter_source, prior_source
 
 
 def chunk64(data: bytes, width: int = 96) -> str:
@@ -76,13 +99,22 @@ def chunk64(data: bytes, width: int = 96) -> str:
     return "\n".join(text[i:i + width] for i in range(0, len(text), width))
 
 
-def build_runtime(package: bytes, config_text: str, audit_text: str, *, config_sha: str, audit_sha: str) -> str:
+def build_runtime(
+    package: bytes,
+    adapter_source: str,
+    prior_source: str,
+    config_text: str,
+    audit_text: str,
+) -> str:
+    config_sha = sha256(config_text.encode("utf-8"))
+    audit_sha = sha256(audit_text.encode("utf-8"))
     template = r'''#!/usr/bin/env python3
-'CMI-Flu strategy E00 aggregate readiness audit. No fitting or submission.'
+"""CMI-Flu strategy E00 aggregate readiness audit. No fitting or submission."""
 from __future__ import annotations
 
 import argparse
 import base64
+from dataclasses import replace
 import hashlib
 import importlib.util
 import io
@@ -90,6 +122,7 @@ import json
 import re
 import sys
 import tempfile
+import types
 import zipfile
 from pathlib import Path
 
@@ -99,9 +132,13 @@ SCIENCE_COMMIT = "__SCIENCE_COMMIT__"
 PACKAGE_SHA256 = "__PACKAGE_SHA256__"
 CONFIG_SHA256 = "__CONFIG_SHA256__"
 AUDIT_SHA256 = "__AUDIT_SHA256__"
+TASK11_PRIOR_BLOB = "__TASK11_PRIOR_BLOB__"
 PACKAGE_B64 = __PACKAGE_B64_REPR__
+B21_ADAPTER_SOURCE = __B21_ADAPTER_SOURCE__
+TASK11_PRIOR_SOURCE = __TASK11_PRIOR_SOURCE__
 CONFIG_TEXT = __CONFIG_TEXT__
 AUDIT_TEXT = __AUDIT_TEXT__
+REFERENCE_PLACEHOLDERS = __REFERENCE_PLACEHOLDERS__
 
 CORE_FILES = (
     "participants.tsv",
@@ -116,7 +153,6 @@ CORE_FILES = (
     "sample_submission_part1.csv",
     "md5sum",
 )
-REFERENCE_PLACEHOLDERS = __REFERENCE_PLACEHOLDERS__
 
 
 class BridgeContractError(RuntimeError):
@@ -146,11 +182,16 @@ def package_bytes() -> bytes:
         "cmi_flu/runner.py",
         "cmi_flu/datasets.py",
         "cmi_flu/features/flow.py",
-        "cmi_flu/task11_prior_immunity.py",
+        "cmi_flu/features/serology.py",
+        "cmi_flu/configuration.py",
     }
     if required - names:
         raise BridgeContractError("embedded_package_missing_modules")
     return data
+
+
+def _git_blob_sha(data: bytes) -> str:
+    return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
 
 
 def self_test() -> int:
@@ -159,7 +200,11 @@ def self_test() -> int:
         raise BridgeContractError("embedded_config_sha_mismatch")
     if hashlib.sha256(AUDIT_TEXT.encode("utf-8")).hexdigest() != AUDIT_SHA256:
         raise BridgeContractError("embedded_audit_sha_mismatch")
+    if _git_blob_sha(TASK11_PRIOR_SOURCE.encode("utf-8")) != TASK11_PRIOR_BLOB:
+        raise BridgeContractError("embedded_task11_prior_blob_mismatch")
     compile(AUDIT_TEXT, "audit_strategy_readiness.py", "exec")
+    compile(B21_ADAPTER_SOURCE, "cmi_flu_b21_runtime_adapter.py", "exec")
+    compile(TASK11_PRIOR_SOURCE, "cmi_flu/task11_prior_immunity.py", "exec")
     print(
         "CMI_FLU_E00_RUNTIME_SELF_TEST PASS "
         f"request_id={REQUEST_ID} package_bytes={len(package)} "
@@ -200,10 +245,8 @@ def locate_competition_data(explicit: Path | None) -> Path:
         exact_resolved = exact
     if exact_resolved in valid:
         return exact_resolved
-    if explicit is not None:
-        chosen = explicit.expanduser().resolve()
-        if chosen in valid:
-            return chosen
+    if explicit is not None and explicit.expanduser().resolve() in valid:
+        return explicit.expanduser().resolve()
     unique = list(dict.fromkeys(valid))
     if len(unique) != 1:
         raise BridgeContractError("competition_mount_ambiguous")
@@ -211,10 +254,7 @@ def locate_competition_data(explicit: Path | None) -> Path:
 
 
 def _vaccine_flag(value: object) -> bool:
-    if value is None:
-        return False
-    text = str(value).strip().casefold()
-    return text in {"1", "1.0", "true", "yes", "y"}
+    return str(value).strip().casefold() in {"1", "1.0", "true", "yes", "y"}
 
 
 def _canonical_strain(value: object) -> str:
@@ -247,6 +287,55 @@ def derive_reference_files(input_dir: Path, external_root: Path) -> tuple[int, i
     return len(vaccine), len(challenge)
 
 
+def install_runtime_compat(config_path: Path) -> None:
+    """Install B2.1 patches and adapt only the legacy config parser to b021."""
+    adapter_namespace: dict[str, object] = {}
+    exec(compile(B21_ADAPTER_SOURCE, "<b21_runtime_adapter>", "exec"), adapter_namespace, adapter_namespace)
+    install = adapter_namespace.get("install")
+    if not callable(install):
+        raise BridgeContractError("b21_adapter_install_missing")
+    install()
+
+    import cmi_flu.configuration as configuration
+    original = configuration.load_baseline_config
+
+    def load_compat(path, *, repository_root=None):
+        source = Path(path).expanduser().resolve()
+        if source == config_path.resolve():
+            text = source.read_text(encoding="utf-8")
+            if text.count("baseline: b021_taskwise_robust") != 1:
+                raise BridgeContractError("b021_config_anchor_changed")
+            compat = source.with_name("baseline_b02_e00_transport_compat.yaml")
+            compat.write_text(text.replace("baseline: b021_taskwise_robust", "baseline: b02_taskwise_compact", 1), encoding="utf-8")
+            loaded = original(compat, repository_root=repository_root)
+            raw = dict(loaded.raw)
+            raw["baseline"] = "b021_taskwise_robust"
+            return replace(
+                loaded,
+                source_path=source,
+                raw=raw,
+                baseline="b021_taskwise_robust",
+            )
+        return original(path, repository_root=repository_root)
+
+    configuration.load_baseline_config = load_compat
+
+    prior_module = types.ModuleType("cmi_flu.task11_prior_immunity")
+    prior_module.__file__ = "<cmi_flu.task11_prior_immunity>"
+    prior_module.__package__ = "cmi_flu"
+    sys.modules["cmi_flu.task11_prior_immunity"] = prior_module
+    exec(
+        compile(TASK11_PRIOR_SOURCE, "cmi_flu/task11_prior_immunity.py", "exec"),
+        prior_module.__dict__,
+        prior_module.__dict__,
+    )
+    if not callable(getattr(prior_module, "build_prior_immunity_features", None)):
+        raise BridgeContractError("task11_prior_feature_entry_missing")
+    columns = tuple(getattr(prior_module, "SEROLOGY_RANK_COLUMNS", ()))
+    if len(columns) != 9:
+        raise BridgeContractError("task11_prior_feature_contract_changed")
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -274,8 +363,7 @@ def render_summary(report: dict) -> str:
         if item.get("status") == "no_candidate_columns":
             lines.append(f"- {name}: no candidate columns")
             continue
-        train = item["train"]
-        challenge = item["challenge"]
+        train, challenge = item["train"], item["challenge"]
         lines.append(
             f"- {name}: features={train['feature_count']}; "
             f"train rows={train['rows_with_view']}/{train['rows']}; "
@@ -336,6 +424,9 @@ def execute(input_dir: Path) -> int:
             import joblib, numpy, pandas, scipy, sklearn, yaml
             _ = (joblib.__version__, numpy.__version__, pandas.__version__, scipy.__version__, sklearn.__version__, yaml.__version__)
 
+            stage = "install_frozen_runtime_compat"
+            install_runtime_compat(config_path)
+
             stage = "run_science_e00"
             spec = importlib.util.spec_from_file_location("cmi_flu_strategy_e00", helper_path)
             if spec is None or spec.loader is None:
@@ -377,6 +468,7 @@ def execute(input_dir: Path) -> int:
                 "request_id": REQUEST_ID,
                 "competition": COMPETITION,
                 "science_commit": SCIENCE_COMMIT,
+                "science_transport": "agent_relay_exact_blobs_plus_frozen_runtime",
                 "accelerator": "cpu",
                 "internet_enabled": False,
                 "submission_created": False,
@@ -396,9 +488,8 @@ def execute(input_dir: Path) -> int:
         )
         return 0
     except Exception as exc:
-        for path in (bridge_path, summary_path):
+        for path in (bridge_path, summary_path, e00_path):
             path.unlink(missing_ok=True)
-        e00_path.unlink(missing_ok=True)
         safe_failure(stage, exc)
         return 2
 
@@ -425,10 +516,13 @@ if __name__ == "__main__":
         "__PACKAGE_SHA256__": sha256(package),
         "__CONFIG_SHA256__": config_sha,
         "__AUDIT_SHA256__": audit_sha,
+        "__TASK11_PRIOR_BLOB__": TASK11_PRIOR_BLOB,
         "__PACKAGE_B64_REPR__": repr(chunk64(package)),
+        "__B21_ADAPTER_SOURCE__": repr(adapter_source),
+        "__TASK11_PRIOR_SOURCE__": repr(prior_source),
         "__CONFIG_TEXT__": repr(config_text),
         "__AUDIT_TEXT__": repr(audit_text),
-        "__REFERENCE_PLACEHOLDERS__": repr(PLACEHOLDER_REFERENCES),
+        "__REFERENCE_PLACEHOLDERS__": repr(REFERENCE_PLACEHOLDERS),
     }
     for old, new in replacements.items():
         if old not in template:
@@ -440,37 +534,28 @@ if __name__ == "__main__":
 
 def main() -> int:
     args = parse_args()
-    root = args.science_root.expanduser().resolve()
-    if args.science_commit != SCIENCE_COMMIT:
-        raise SystemExit("science commit argument differs from approved E00 commit")
-    config_path = root / "configs" / "baseline_b021_robust.yaml"
-    audit_path = root / "scripts" / "audit_strategy_readiness.py"
-    config_data = config_path.read_bytes()
-    audit_data = audit_path.read_bytes()
-    if git_blob_sha(config_data) != EXPECTED_CONFIG_BLOB:
-        raise SystemExit("science config blob mismatch")
-    if git_blob_sha(audit_data) != EXPECTED_AUDIT_BLOB:
-        raise SystemExit("science E00 helper blob mismatch")
-    config_text = config_data.decode("utf-8")
-    audit_text = audit_data.decode("utf-8")
-    compile(audit_text, str(audit_path), "exec")
+    root = args.repository_root.expanduser().resolve()
+    output = args.output.expanduser().resolve()
+    audit_path = root / E00_AUDIT_PATH
+    config_path = root / E00_CONFIG_PATH
+    audit_text = require_exact_relay(audit_path, E00_AUDIT_BLOB, label="E00 audit")
+    config_text = require_exact_relay(config_path, E00_CONFIG_BLOB, label="E00 config")
     if "baseline: b021_taskwise_robust" not in config_text or "verify_md5: true" not in config_text:
-        raise SystemExit("science E00 config contract mismatch")
-    package = deterministic_package(root)
-    runtime = build_runtime(
-        package,
-        config_text,
-        audit_text,
-        config_sha=sha256(config_data),
-        audit_sha=sha256(audit_data),
-    )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(runtime, encoding="utf-8")
+        raise SystemExit("E00 config contract mismatch")
+    if 'audit = "strategy_20260907_E00_partial"' in audit_text:
+        raise SystemExit("unexpected alternate E00 audit syntax")
+    if '"audit": "strategy_20260907_E00_partial"' not in audit_text:
+        raise SystemExit("E00 audit identity token missing")
+    with tempfile.TemporaryDirectory(prefix="cmi-flu-e00-build-") as tmp:
+        package, adapter_source, prior_source = extract_frozen_runtime(root, Path(tmp))
+    runtime = build_runtime(package, adapter_source, prior_source, config_text, audit_text)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(runtime, encoding="utf-8")
     print(
         "CMI_FLU_E00_BUILD PASS "
-        f"science_commit={SCIENCE_COMMIT} package_bytes={len(package)} "
-        f"package_sha256={sha256(package)} runtime_bytes={len(runtime.encode('utf-8'))} "
-        f"runtime_sha256={sha256(runtime.encode('utf-8'))}"
+        f"science_commit={SCIENCE_COMMIT} audit_blob={E00_AUDIT_BLOB} config_blob={E00_CONFIG_BLOB} "
+        f"package_bytes={len(package)} package_sha256={sha256(package)} "
+        f"runtime_bytes={len(runtime.encode('utf-8'))} runtime_sha256={sha256(runtime.encode('utf-8'))}"
     )
     return 0
 
