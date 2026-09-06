@@ -1,0 +1,83 @@
+{
+  "schema_version": 6,
+  "request_id": "20260906-cmi-flu-public-probes-006",
+  "parent_request_id": "20260906-cmi-flu-public-probes-005",
+  "failed_workflow_run_id": 34008782099,
+  "failed_error_code": "63b150fd446c17af259e",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-public-probes-20260906-006",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "7a85abcbf8282bc8bfe047b7db02a72f35222caa",
+  "science_source_path": "src/cmi_flu/public_probes.py",
+  "science_transport": "agent_relay_exact_blob",
+  "public_probes_blob_sha": "497a8875d440e1b8a03d4ef938bc3a834213b33d",
+  "relayed_science_path": "payloads/cmi-flu-public-probes-001/public_probes.py",
+  "backbone_mode": "regenerate_frozen_b21_in_same_notebook",
+  "control_output_name": "control-b21-regenerated.csv",
+  "control_role": "same-run regenerated B2.1 reproducibility control for the fixed three-probe family",
+  "b21_base_request_id": "20260903-cmi-flu-b21-001",
+  "b21_source_commit": "33030746bc7bad02ad2c1e670ac319cc943c524d",
+  "b21_runtime_adapter_blob_sha": "de71dea0e335bdcd79325c0de926bf8848d0979f",
+  "b21_base_package_zip_sha256": "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3",
+  "b21_verify_competition_md5": true,
+  "b21_authoritative_report_path": "reports/b2-1-results.md",
+  "b21_original_submission_sha256": "46f187ba85957ef1815f8b89d6f7aec53fa0b935d37225f05d140e309105dd38",
+  "b21_expected_selected_models": {
+    "Task1.1": "pls_2",
+    "Task1.2": "enet_a0.001_l0.5",
+    "Task1.3": "pls_1",
+    "Task1.4": "raw_pre_vacc_conserved_anchor",
+    "Task2.1": "et_subtype_d3_l5",
+    "Task2.2": "et_subtype_d5_l10",
+    "Task2.3": "ridge_exact_a100"
+  },
+  "require_byte_match_to_historical_submission": false,
+  "expected_kernel_version": 1,
+  "probe_family": [
+    "task13_only",
+    "task12_only",
+    "task12_task13"
+  ],
+  "allowed_output_paths": [
+    "cmi-flu-public-probes-006/control-b21-regenerated.csv",
+    "cmi-flu-public-probes-006/probe-task13.csv",
+    "cmi-flu-public-probes-006/probe-task12.csv",
+    "cmi-flu-public-probes-006/probe-task12-task13.csv",
+    "cmi-flu-public-probes-006/bridge-result.json",
+    "cmi-flu-public-probes-006/summary.md"
+  ],
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 150,
+    "hard_timeout_minutes": 300,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 36,
+    "initial_poll_schedule_seconds": [30, 60, 120, 300],
+    "steady_poll_interval_seconds": 600,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create one new private CPU Notebook version that regenerates the frozen B2.1 backbone, exports that same-run backbone as one control CSV, and generates exactly three predeclared probe CSVs",
+    "read exact current version 1 control/probe output hashes and aggregate diagnostics"
+  ],
+  "repair": {
+    "failed_stage": "regenerate_frozen_b21",
+    "established_root_cause": "request 005 correctly regenerated the authoritative B2.1 selected-model map but used byte-for-byte equality with the historical floating-point submission CSV as a hard cross-worker identity gate; the regenerated file hash differed, and the historical row-level bytes are unavailable through the current protected read path, so the bridge cannot distinguish harmless least-significant numerical/serialization drift from a larger historical-file difference using hash alone",
+    "mechanism_change": "preserve all frozen B2.1 scientific/provenance checks but replace the historical byte-equality gate with an explicit same-run regenerated B2.1 control CSV; require every non-target column of each of the unchanged three probes to equal that control exactly, and retain the historical B2.1 hash only as reference metadata",
+    "scientific_contract_changed": false,
+    "generator_science_blob_changed": false,
+    "probe_family_changed": false,
+    "backbone_scientific_contract_changed": false,
+    "control_artifact_added": true,
+    "historical_byte_identity_claimed": false,
+    "resource_contract_changed": false
+  },
+  "competition_submission_attempted": false,
+  "public_scores_used_to_define_family": false,
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "rules_checked_at_utc": "2026-09-06T03:45:00Z"
+}
