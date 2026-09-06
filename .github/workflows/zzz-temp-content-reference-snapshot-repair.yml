@@ -1,0 +1,47 @@
+name: Temporary content-reference snapshot exact repair
+
+on:
+  push:
+    branches: [launch/shadow-gold-content-reference-v1]
+    paths:
+      - .github/workflows/zzz-temp-content-reference-snapshot-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: launch/shadow-gold-content-reference-v1
+          fetch-depth: 1
+      - name: Repair one copied identifier and prove exact Git blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          path='materialized/poisoned-chalice-shadow-gold-content-reference-v1/poisoned_chalice/shadow_gold_content_reference.py'
+          python3 - "$path" <<'PY'
+          import hashlib, pathlib, sys
+          path=pathlib.Path(sys.argv[1])
+          data=path.read_bytes()
+          old=b'required_gpu_name_fragment="T4"'
+          new=b'required_name_fragment="T4"'
+          if data.count(old) != 1:
+              raise SystemExit(f'expected exactly one copied identifier mismatch, got {data.count(old)}')
+          repaired=data.replace(old,new)
+          blob=hashlib.sha1(b'blob '+str(len(repaired)).encode()+b'\0'+repaired).hexdigest()
+          expected='433258dfdb1c10b88062c05ea946579383471638'
+          if blob != expected:
+              raise SystemExit(f'repaired blob still differs: {blob} != {expected}')
+          path.write_bytes(repaired)
+          print(f'CONTENT_REFERENCE_EXACT_REPAIR PASS blob={blob}')
+          PY
+          git config user.name 'renta0426'
+          git config user.email '71638068+renta0426@users.noreply.github.com'
+          git add "$path"
+          git diff --cached --check
+          git commit -m 'Repair content-reference snapshot to exact research blob'
+          git push origin HEAD:launch/shadow-gold-content-reference-v1
