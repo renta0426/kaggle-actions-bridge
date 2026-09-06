@@ -1,0 +1,132 @@
+name: Poisoned Chalice Min-K++ paper pilot 500 no external actions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/199-poisoned-chalice-minkpp-paper-pilot-500-no-external-actions.yml
+
+permissions: {}
+
+env:
+  RESEARCH_REPOSITORY: renta0426/The-Poisoned-Chalice-of-LLM-Evaluation
+  RESEARCH_COMMIT: 0895502ddb188de5af4ba780eb6f77f2185e64d1
+  KERNEL_SLUG: renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Secret-free boundary and current Rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN; do test -z "${!name-}"; done
+          python3 -m pip install -q playwright
+          python3 -m playwright install chromium >/dev/null
+          python3 - <<'PY'
+          import hashlib, re, ssl, urllib.request
+          from playwright.sync_api import sync_playwright
+          url="https://www.kaggle.com/competitions/poisoned-chalice-icse27/rules"
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True); page=b.new_page(); r=page.goto(url,wait_until="domcontentloaded",timeout=90000)
+              if r is None or r.status>=400: raise SystemExit("Rules fetch failed closed")
+              page.wait_for_timeout(6000); text=page.locator("body").inner_text(timeout=30000); b.close()
+          text="\n".join(x.strip() for x in text.splitlines() if x.strip()); low=text.casefold()
+          markers=("competition rules","one account","eligibility","binding agreement","specific competition rules")
+          if len(text)<1200 or "poisoned chalice" not in low or not any(x in low for x in markers): raise SystemExit("Rules body unavailable; fail closed")
+          print(f"CURRENT_RULES PASS chars={len(text)} sha256={hashlib.sha256(text.encode()).hexdigest()}")
+          pat=re.compile(r"external|internet|notebook|code|model|data|sharing|account|submission|team|gpu",re.I)
+          print("RULES_RELEVANT_LINES_BEGIN"); print("\n".join([x for x in text.splitlines() if pat.search(x)][:50])); print("RULES_RELEVANT_LINES_END")
+          ctx=ssl.create_default_context()
+          for name,u in (("TERMS","https://www.kaggle.com/terms"),("ACCEPTABLE_USE","https://www.kaggle.com/legal/acceptable-use"),("API_DOCS","https://www.kaggle.com/docs/api")):
+              q=urllib.request.Request(u,headers={"User-Agent":"kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(q,timeout=30,context=ctx) as rr: body=rr.read(2_000_001)
+              if len(body)<500 or len(body)>2_000_000: raise SystemExit(name+" unavailable; fail closed")
+              print(f"CURRENT_{name} PASS bytes={len(body)} sha256={hashlib.sha256(body).hexdigest()}")
+          PY
+
+      - name: Exact research contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          t="$(mktemp -d)"; base="https://raw.githubusercontent.com/${RESEARCH_REPOSITORY}/${RESEARCH_COMMIT}"
+          mkdir -p "${t}/src/poisoned_chalice" "${t}/scripts" "${t}/experiments/stage1-minkpp-paper-pilot-500"
+          curl -fsSL --max-time 30 "${base}/src/poisoned_chalice/minkpp_paper.py" -o "${t}/src/poisoned_chalice/minkpp_paper.py"
+          curl -fsSL --max-time 30 "${base}/scripts/build_minkpp_pilot_notebook.py" -o "${t}/scripts/build_minkpp_pilot_notebook.py"
+          curl -fsSL --max-time 30 "${base}/experiments/stage1-minkpp-paper-pilot-500/experiment.json" -o "${t}/contract.json"
+          python3 -m py_compile "${t}/src/poisoned_chalice/minkpp_paper.py" "${t}/scripts/build_minkpp_pilot_notebook.py"
+          python3 - "${t}/contract.json" <<'PY'
+          import json,sys
+          c=json.load(open(sys.argv[1])); assert c["experiment_id"]=="stage1-minkpp-paper-pilot-500" and c["data"]["rows"]==500
+          assert c["scoring"]["paper_schema"]=="prob_weighted_minkpp_v1" and c["model"]["revision"]=="733247c55e3f73af49ce8e9c7949bf14af205928"
+          assert c["gates"]["low_fpr_selection_from_500_forbidden"] is True
+          print("RESEARCH_CONTRACT PASS")
+          PY
+          rm -rf "${t}"
+
+  launch:
+    needs: validate
+    environment: kaggle-readonry
+    concurrency:
+      group: kaggle-resource-gpu-global
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Build exact private T4 kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          w="$(mktemp -d)"; echo "WORKDIR=${w}" >> "${GITHUB_ENV}"; root="${w}/research"; mkdir -p "${root}/src/poisoned_chalice" "${root}/scripts"
+          base="https://raw.githubusercontent.com/${RESEARCH_REPOSITORY}/${RESEARCH_COMMIT}"
+          curl -fsSL --max-time 30 "${base}/src/poisoned_chalice/minkpp_paper.py" -o "${root}/src/poisoned_chalice/minkpp_paper.py"
+          curl -fsSL --max-time 30 "${base}/scripts/build_minkpp_pilot_notebook.py" -o "${root}/scripts/build_minkpp_pilot_notebook.py"
+          python3 -m pip install -q nbformat; (cd "${root}" && python3 scripts/build_minkpp_pilot_notebook.py)
+          kd="${root}/notebooks/experiments/stage1-minkpp-paper-pilot-500"; python3 - "${kd}/kernel-metadata.json" <<'PY'
+          import json,sys
+          m=json.load(open(sys.argv[1])); assert m["id"]=="renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1"
+          assert m["is_private"] and m["enable_gpu"] and not m["enable_tpu"] and m["enable_internet"] and m["machine_shape"]=="NvidiaTeslaT4"
+          print("KERNEL_METADATA PASS private=T4")
+          PY
+          echo "KERNEL_DIR=${kd}" >> "${GITHUB_ENV}"
+
+      - name: Authenticate and launch exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN}"; python3 -m venv "${WORKDIR}/venv"; "${WORKDIR}/venv/bin/pip" install -q 'kaggle==2.2.4'
+          mkdir -p "${HOME}/.kaggle"; umask 077; printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"; unset KAGGLE_API_TOKEN
+          k="${WORKDIR}/venv/bin/kaggle"; "${k}" kernels list --mine --page-size 1 >/dev/null; echo 'KAGGLE_READONLY_PREFLIGHT PASS'
+          "${k}" kernels push -p "${KERNEL_DIR}"; echo 'KAGGLE_KERNEL_PUSH PASS count=1 retry=0 submission=0'
+
+      - name: Poll and harvest aggregate result
+        shell: bash
+        run: |
+          set -euo pipefail
+          k="${WORKDIR}/venv/bin/kaggle"; complete=0
+          for n in $(seq 1 240); do
+            s="$(${k} kernels status "${KERNEL_SLUG}" 2>&1)"; echo "poll=${n} $(printf '%s' "${s}" | tr '\n' ' ')"; low="$(printf '%s' "${s}" | tr '[:upper:]' '[:lower:]')"
+            if grep -q 'complete' <<<"${low}"; then complete=1; break; fi; if grep -Eq 'error|cancel|failed' <<<"${low}"; then exit 1; fi; sleep 30
+          done
+          test "${complete}" -eq 1
+          out="${WORKDIR}/output"; mkdir -p "${out}"; "${k}" kernels output "${KERNEL_SLUG}" -p "${out}" --force >/dev/null; r="${out}/stage1-minkpp-paper-pilot-500"
+          python3 - "${r}" <<'PY'
+          import json,math,pathlib,sys
+          p=pathlib.Path(sys.argv[1]); m=json.loads((p/"metrics.json").read_text()); r=json.loads((p/"run_manifest.json").read_text()); d=r["diagnostics"]
+          assert r["status"]=="complete" and m["rows"]==500 and d["cpu_oracle_abs_error"]<=2e-5
+          assert d["real_dense_blocked_max_z_diff"]<=5e-5 and d["real_dense_blocked_max_variance_diff"]<=5e-5 and d["valid_target_tokens_from_reducer"]==d["target_tokens_from_windows"]
+          assert all(math.isfinite(float(v)) for v in m["auc_roc_exploratory"].values())
+          safe={"status":r["status"],"rows":m["rows"],"member_rows":m["member_rows"],"warning":m["warning"],"diagnostics":d,"runtime":r["runtime"],"auc_roc_exploratory":m["auc_roc_exploratory"],"paper_legacy_spearman":m["paper_legacy_spearman"]}
+          print("MINKPP_PILOT_COMPLETION_GATES PASS"); print(json.dumps(safe,indent=2,sort_keys=True))
+          PY
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"; test -z "${WORKDIR-}" || rm -rf "${WORKDIR}"
