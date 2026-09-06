@@ -1,0 +1,156 @@
+            left_holdout, left_holdout[name].to_numpy(dtype=np.float64), false_positive_rate=0.01
+        )["overall"]
+        holdout_candidates["right"][name] = evaluate_frozen_gold_holdout(
+            right_holdout, right_holdout[name].to_numpy(dtype=np.float64), false_positive_rate=0.01
+        )["overall"]
+    baseline = {
+        "left": evaluate_frozen_gold_holdout(
+            left_holdout, left_holdout.raw_stage2_loss_max.to_numpy(dtype=np.float64), false_positive_rate=0.01
+        )["overall"],
+        "right": evaluate_frozen_gold_holdout(
+            right_holdout, right_holdout.raw_stage2_loss_max.to_numpy(dtype=np.float64), false_positive_rate=0.01
+        )["overall"],
+    }
+    selected_holdout = {"left": holdout_candidates["left"][selected], "right": holdout_candidates["right"][selected]}
+    gains = {
+        side: float(selected_holdout[side]["auc"] - baseline[side]["auc"])
+        for side in ("left", "right")
+    }
+    recovery = config["recovery_criterion"]
+    checks = {
+        "left_min_auc": selected_holdout["left"]["auc"] >= float(recovery["minimum_holdout_auc_each_architecture"]),
+        "right_min_auc": selected_holdout["right"]["auc"] >= float(recovery["minimum_holdout_auc_each_architecture"]),
+        "left_min_gain": gains["left"] >= float(recovery["minimum_auc_gain_vs_raw_stage2_loss_max_each_architecture"]),
+        "right_min_gain": gains["right"] >= float(recovery["minimum_auc_gain_vs_raw_stage2_loss_max_each_architecture"]),
+        "left_min_tpr": selected_holdout["left"]["tpr_at_fpr"] >= float(recovery["minimum_tpr_at_1pct_fpr_each_architecture"]),
+        "right_min_tpr": selected_holdout["right"]["tpr_at_fpr"] >= float(recovery["minimum_tpr_at_1pct_fpr_each_architecture"]),
+    }
+    passed = all(checks.values())
+    result = {
+        "status": "complete",
+        "version": SHADOW_GOLD_CONTEXT_ALIGNMENT_VERSION,
+        "selected_candidate": selected,
+        "development_candidate_metrics": development_metrics,
+        "holdout_candidate_metrics": holdout_candidates,
+        "selected_holdout": selected_holdout,
+        "raw_stage2_loss_max_holdout": baseline,
+        "selected_auc_gain_vs_raw_stage2_loss_max": gains,
+        "recovery_checks": checks,
+        "recovery_passed": passed,
+        "selected_on_shadow_a_development_only": True,
+        "applied_unchanged_to_shadow_b": True,
+        "training_context_alignment_used": True,
+        "probe_boundary_used": False,
+        "probe_text_used": False,
+        "stage2_v3_selection_allowed": False,
+        "competition_feature_promotion_allowed": False,
+    }
+    predictions = left_holdout[["benchmark_id", "language", "length_bin", "character_count", "membership", "matched_pair_id"]].copy()
+    predictions["selected_candidate"] = selected
+    predictions["left_selected_score"] = left_holdout[selected].to_numpy(dtype=np.float64)
+    predictions["right_selected_score"] = right_holdout[selected].to_numpy(dtype=np.float64)
+    predictions["left_raw_stage2_loss_max"] = left_holdout.raw_stage2_loss_max.to_numpy(dtype=np.float64)
+    predictions["right_raw_stage2_loss_max"] = right_holdout.raw_stage2_loss_max.to_numpy(dtype=np.float64)
+    return result, predictions
+
+
+def run_context_alignment_benchmark(
+    *,
+    scratch_directory: str | Path,
+    positive_control_config: Mapping[str, Any],
+    context_alignment_config: Mapping[str, Any],
+    timeout_seconds: int = 5400,
+) -> tuple[dict[str, Any], pd.DataFrame, dict[str, Any]]:
+    """Repeat frozen training, seal aligned generic features, then reveal labels."""
+
+    positive_v1.validate_positive_control_config(positive_control_config)
+    validate_context_alignment_config(context_alignment_config)
+    names = visible_cuda_device_names()
+    validate_gpu_inventory(names, expected_count=2, required_name_fragment="T4")
+    scratch = Path(scratch_directory).resolve()
+    if scratch.exists() and any(scratch.iterdir()):
+        raise ShadowGoldContextAlignmentError("context-alignment scratch directory is not empty")
+    scratch.mkdir(parents=True, exist_ok=True)
+    prepared = positive_v2.prepare_positive_control_runtime(scratch / "prepared", positive_control_config)
+    dual = run_dual_gpu_shadow(
+        prepared["protocol_directory"],
+        scratch / "training",
+        max_steps=1280,
+        checkpoint_reload_atol=1e-5,
+        parameter_sync_atol=1e-5,
+        expected_gpu_count=2,
+        required_gpu_name_fragment="T4",
+        timeout_seconds=timeout_seconds,
+    )
+    left_features, left_manifest = score_context_alignment_features(
+        scratch / "training" / "left",
+        prepared["scoring_bundle_directory"],
+        context_alignment_config,
+    )
+    right_features, right_manifest = score_context_alignment_features(
+        scratch / "training" / "right",
+        prepared["scoring_bundle_directory"],
+        context_alignment_config,
+    )
+    seal_dir = scratch / "context_alignment_feature_seal"
+    seal_dir.mkdir()
+    left_path = seal_dir / "left_context_alignment_features.jsonl"
+    right_path = seal_dir / "right_context_alignment_features.jsonl"
+    gold_v1._write_jsonl(left_features, left_path, list(left_features.columns))
+    gold_v1._write_jsonl(right_features, right_path, list(right_features.columns))
+    seal = {
+        "status": "sealed",
+        "left_sha256": gold_v1._sha256_file(left_path),
+        "right_sha256": gold_v1._sha256_file(right_path),
+        "left_manifest": left_manifest,
+        "right_manifest": right_manifest,
+        "training_context_alignment_used": True,
+        "membership_labels_read": False,
+        "probe_boundary_used": False,
+        "probe_text_used": False,
+        "stage2_v3_selection_allowed": False,
+    }
+    gold_v1._write_json(seal_dir / "context_alignment_feature_seal.json", seal)
+    evaluation, predictions = evaluate_context_alignment(
+        left_features,
+        right_features,
+        prepared["label_directory"],
+        context_alignment_config,
+    )
+    manifest = {
+        "status": "complete",
+        "execution_id": EXECUTION_ID,
+        "version": SHADOW_GOLD_CONTEXT_ALIGNMENT_VERSION,
+        "gpu_names": names,
+        "prepared": prepared,
+        "dual_gpu_training": dual,
+        "context_alignment_feature_seal": seal,
+        "selected_candidate": evaluation["selected_candidate"],
+        "recovery_passed": evaluation["recovery_passed"],
+        "training_protocol_changed_from_positive_control_v2": False,
+        "training_context_alignment_used": True,
+        "features_sealed_before_label_reveal": True,
+        "probe_boundary_used": False,
+        "probe_text_used": False,
+        "competition_rows_used": 0,
+        "external_rows_used": 0,
+        "pretrained_weights_used": False,
+        "automatic_compute_retries": 0,
+        "stage2_v3_selection_allowed": False,
+        "competition_feature_promotion_allowed": False,
+        "external_model_holdout_consumed": False,
+        "fourth_external_holdout_consumed": False,
+    }
+    return evaluation, predictions, manifest
+
+
+__all__ = [
+    "EXECUTION_ID",
+    "SHADOW_GOLD_CONTEXT_ALIGNMENT_VERSION",
+    "ShadowGoldContextAlignmentError",
+    "build_training_aligned_suffix_plan",
+    "evaluate_context_alignment",
+    "run_context_alignment_benchmark",
+    "score_context_alignment_features",
+    "validate_context_alignment_config",
+]
