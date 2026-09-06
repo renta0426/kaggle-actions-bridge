@@ -607,7 +607,7 @@ def run_content_reference_benchmark(
         checkpoint_reload_atol=1e-5,
         parameter_sync_atol=1e-5,
         expected_gpu_count=2,
-        required_gpu_name_fragment="T4",
+        required_name_fragment="T4",
         timeout_seconds=timeout_seconds,
     )
 
