@@ -1,0 +1,250 @@
+        "probe_local_score_used_as_candidate",
+        "evaluation_labels_passed_to_training_children",
+        "stage2_v3_selection_allowed",
+        "competition_feature_promotion_allowed",
+        "external_model_holdout_consumed",
+        "fourth_external_holdout_consumed",
+        "smollm2_labels_used",
+        "public_leaderboard_feedback_used",
+        "hidden_stage1_validation_labels_used",
+    ):
+        if guards.get(key) is not False:
+            raise ShadowGoldContextAlignmentError(f"context-alignment scientific guard changed: {key}")
+    if guards.get("features_sealed_before_label_reveal") is not True:
+        raise ShadowGoldContextAlignmentError("context-alignment feature seal guard changed")
+    if guards.get("competition_rows_used") != 0 or guards.get("external_rows_used") != 0:
+        raise ShadowGoldContextAlignmentError("context-alignment external rows changed")
+
+
+def build_training_aligned_suffix_plan(
+    content: str,
+    *,
+    tokenizer: ByteCodeTokenizer | None = None,
+    max_sequence_tokens: int = 256,
+) -> dict[str, Any]:
+    """Build the exact suffix sequence wrapper without using probe information."""
+
+    runtime_tokenizer = tokenizer or ByteCodeTokenizer()
+    if max_sequence_tokens != 256:
+        raise ShadowGoldContextAlignmentError("context-alignment requires the frozen 256-token context")
+    payload = runtime_tokenizer.encode(str(content), add_special_tokens=False)
+    if len(payload) < 2:
+        raise ShadowGoldContextAlignmentError("context-alignment sample has fewer than two payload tokens")
+    capacity = max_sequence_tokens - 2
+    selected = payload[-capacity:]
+    input_ids = [runtime_tokenizer.bos_token_id, *selected, runtime_tokenizer.eos_token_id]
+    attention_mask = [1] * len(input_ids)
+    padding = max_sequence_tokens - len(input_ids)
+    input_ids += [runtime_tokenizer.pad_token_id] * padding
+    attention_mask += [0] * padding
+    # logits position i predicts input_ids[i+1].  Payload tokens occupy input
+    # positions 1..len(selected), so their causal-logit positions are 0..N-1.
+    payload_logit_positions = list(range(len(selected)))
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "payload_logit_positions": payload_logit_positions,
+        "selected_payload_tokens": len(selected),
+        "payload_capacity_tokens": capacity,
+    }
+
+
+def _min_k(values: np.ndarray, percent: int) -> float:
+    values = np.asarray(values, dtype=np.float64)
+    count = max(1, math.ceil(len(values) * percent / 100.0))
+    return float(np.partition(values, count - 1)[:count].mean())
+
+
+def _best_local(values: np.ndarray, width: int) -> float:
+    values = np.asarray(values, dtype=np.float64)
+    if len(values) <= width:
+        return float(values.mean())
+    sums = np.convolve(values, np.ones(width, dtype=np.float64), mode="valid")
+    return float((sums / width).max())
+
+
+def _raw_stage2_loss_max(model: Any, source: pd.DataFrame) -> np.ndarray:
+    runtime = Stage2RuntimeConfig(
+        max_length=256,
+        max_batch_tokens=4096,
+        vocab_chunk_tokens=64,
+        rank_vocab_block_size=256,
+        min_k_percents=(1, 2, 5, 10),
+        local_widths=(8, 16, 32, 64),
+        language_calibration_min_rows=20,
+        length_calibration_min_rows=12,
+        fidelity_gate=True,
+        fidelity_tokens=24,
+        fidelity_atol=1e-5,
+        device="auto",
+        move_model=False,
+    )
+    detailed = score_samples_detailed(
+        model=model,
+        tokenizer=ByteCodeTokenizer(),
+        samples=source.content.astype(str).tolist(),
+        languages=source.language.astype(str).tolist(),
+        runtime_config=runtime,
+    )
+    matrix = detailed.features.sort_values("sample_index").reset_index(drop=True)
+    if matrix.sample_index.tolist() != list(range(len(source))):
+        raise ShadowGoldContextAlignmentError("raw Stage2 baseline row order changed")
+    if "score_logp_mean__max" not in matrix.columns:
+        raise ShadowGoldContextAlignmentError("raw Stage2 Loss baseline is missing")
+    values = matrix["score_logp_mean__max"].to_numpy(dtype=np.float64)
+    if not np.isfinite(values).all():
+        raise ShadowGoldContextAlignmentError("raw Stage2 Loss baseline is non-finite")
+    return values
+
+
+def score_context_alignment_features(
+    training_output_directory: str | Path,
+    scoring_bundle_directory: str | Path,
+    config: Mapping[str, Any],
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Score training-aligned suffix summaries without loading membership labels."""
+
+    import torch
+
+    validate_context_alignment_config(config)
+    bundle = load_scoring_bundle(scoring_bundle_directory)
+    checkpoint = load_shadow_checkpoint(training_output_directory, backend="cuda")
+    if int(checkpoint.training_manifest.get("completed_steps", -1)) != 1280:
+        raise ShadowGoldContextAlignmentError("context-alignment checkpoint step count changed")
+    if checkpoint.training_manifest.get("pretrained_weights_used") is not False:
+        raise ShadowGoldContextAlignmentError("context-alignment pretrained-weight guard failed")
+    if checkpoint.training_manifest.get("evaluation_labels_read") is not False:
+        raise ShadowGoldContextAlignmentError("context-alignment checkpoint label guard failed")
+
+    source = bundle.frame.reset_index(drop=True)
+    tokenizer = ByteCodeTokenizer()
+    plans = [build_training_aligned_suffix_plan(content, tokenizer=tokenizer) for content in source.content.astype(str)]
+    candidate_values: dict[str, np.ndarray] = {
+        name: np.full(len(source), np.nan, dtype=np.float64) for name in _CANDIDATES
+    }
+    model = checkpoint.model
+    model.eval()
+    device = next(model.parameters()).device
+    batch_size = int(config["aligned_scoring"]["batch_size"])
+    min_k_percents = [int(value) for value in config["aligned_scoring"]["min_k_percents"]]
+    local_widths = [int(value) for value in config["aligned_scoring"]["local_widths"]]
+
+    with torch.no_grad():
+        for start in range(0, len(plans), batch_size):
+            stop = min(start + batch_size, len(plans))
+            batch = plans[start:stop]
+            input_ids = torch.as_tensor([row["input_ids"] for row in batch], dtype=torch.long, device=device)
+            attention_mask = torch.as_tensor([row["attention_mask"] for row in batch], dtype=torch.long, device=device)
+            output = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
+            logits = output.logits if hasattr(output, "logits") else output[0]
+            shifted_logits = logits[:, :-1].float()
+            targets = input_ids[:, 1:]
+            correct = torch.log_softmax(shifted_logits, dim=-1).gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+            for local_index, plan in enumerate(batch):
+                positions = torch.as_tensor(plan["payload_logit_positions"], dtype=torch.long, device=device)
+                values = correct[local_index].index_select(0, positions).detach().cpu().numpy().astype(np.float64)
+                row_index = start + local_index
+                candidate_values["aligned_loss_mean"][row_index] = float(values.mean())
+                for percent in min_k_percents:
+                    candidate_values[f"aligned_min_k_{percent:02d}"][row_index] = _min_k(values, percent)
+                for width in local_widths:
+                    candidate_values[f"aligned_local{width:02d}_max"][row_index] = _best_local(values, width)
+            del input_ids, attention_mask, output, logits, shifted_logits, targets, correct
+
+    raw_baseline = _raw_stage2_loss_max(model, source)
+    features = source[_METADATA_COLUMNS].copy()
+    for name in _CANDIDATES:
+        if not np.isfinite(candidate_values[name]).all():
+            raise ShadowGoldContextAlignmentError(f"context-alignment candidate is non-finite: {name}")
+        features[name] = candidate_values[name]
+    features["raw_stage2_loss_max"] = raw_baseline
+    features = features[_FEATURE_COLUMNS]
+    if features.benchmark_id.duplicated().any():
+        raise ShadowGoldContextAlignmentError("context-alignment feature IDs are duplicated")
+    manifest = {
+        "status": "sealed",
+        "version": SHADOW_GOLD_CONTEXT_ALIGNMENT_VERSION,
+        "architecture_slot": checkpoint.training_manifest.get("architecture_slot"),
+        "rows": len(features),
+        "candidate_features": list(_CANDIDATES),
+        "context_construction": "bos_plus_last_254_payload_plus_eos_then_right_pad",
+        "scored_payload_tokens_only": True,
+        "score_eos": False,
+        "raw_stage2_baseline_same_checkpoint": True,
+        "evaluation_input_sha256": bundle.input_sha256,
+        "checkpoint_sha256": checkpoint.checkpoint_sha256,
+        "model_state_sha256": checkpoint.model_state_sha256,
+        "probe_boundary_used": False,
+        "probe_text_used": False,
+        "membership_labels_read": False,
+        "benchmark_ids_passed_to_model": False,
+        "stage2_v3_selection_allowed": False,
+    }
+    del checkpoint, model
+    torch.cuda.empty_cache()
+    return features, manifest
+
+
+def _load_labels(label_directory: str | Path) -> pd.DataFrame:
+    root = Path(label_directory).resolve()
+    path = root / "evaluation_labels.jsonl"
+    manifest_path = root / "label_manifest.json"
+    if not path.is_file() or not manifest_path.is_file():
+        raise ShadowGoldContextAlignmentError("context-alignment parent label seal is incomplete")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("passed_to_gpu_children") is not False:
+        raise ShadowGoldContextAlignmentError("context-alignment label boundary failed")
+    if manifest.get("label_sha256") != gold_v1._sha256_file(path):
+        raise ShadowGoldContextAlignmentError("context-alignment parent label hash mismatch")
+    labels = pd.read_json(path, lines=True)
+    return gold_v2.canonicalize_exact_schema(labels, gold_v1._LABEL_COLUMNS, artifact_name="Gold parent label")
+
+
+def _select_candidate(development: pd.DataFrame) -> tuple[str, dict[str, Any]]:
+    metrics: dict[str, Any] = {}
+    for name in _CANDIDATES:
+        metrics[name] = evaluate_frozen_gold_holdout(
+            development,
+            development[name].to_numpy(dtype=np.float64),
+            false_positive_rate=0.01,
+        )["overall"]
+    order = {name: index for index, name in enumerate(_CANDIDATES)}
+    selected = max(
+        _CANDIDATES,
+        key=lambda name: (
+            metrics[name]["partial_auc_standardized"],
+            metrics[name]["tpr_at_fpr"],
+            metrics[name]["auc"],
+            -order[name],
+        ),
+    )
+    return selected, metrics
+
+
+def evaluate_context_alignment(
+    left_features: pd.DataFrame,
+    right_features: pd.DataFrame,
+    label_directory: str | Path,
+    config: Mapping[str, Any],
+) -> tuple[dict[str, Any], pd.DataFrame]:
+    """Select on Shadow-A development and transfer the aligned scalar unchanged."""
+
+    validate_context_alignment_config(config)
+    if list(left_features.columns) != _FEATURE_COLUMNS or list(right_features.columns) != _FEATURE_COLUMNS:
+        raise ShadowGoldContextAlignmentError("context-alignment feature schema changed")
+    if left_features.benchmark_id.astype(str).tolist() != right_features.benchmark_id.astype(str).tolist():
+        raise ShadowGoldContextAlignmentError("context-alignment left/right row order differs")
+    labels = _load_labels(label_directory)
+    left_labeled = attach_exact_labels(left_features, labels)
+    right_labeled = attach_exact_labels(right_features, labels)
+    left_development, left_holdout = split_development_holdout(left_labeled, seed=2027)
+    _, right_holdout = split_development_holdout(right_labeled, seed=2027)
+    holdout_ids = left_holdout.benchmark_id.astype(str).tolist()
+    right_holdout = right_holdout.set_index(right_holdout.benchmark_id.astype(str), drop=False).loc[holdout_ids].reset_index(drop=True)
+    if right_holdout.benchmark_id.astype(str).tolist() != holdout_ids:
+        raise ShadowGoldContextAlignmentError("context-alignment paired holdout order changed")
+
+    selected, development_metrics = _select_candidate(left_development)
+    holdout_candidates: dict[str, Any] = {"left": {}, "right": {}}
+    for name in _CANDIDATES:
+        holdout_candidates["left"][name] = evaluate_frozen_gold_holdout(
