@@ -2,9 +2,8 @@
 """Stage and validate the one active Poisoned Chalice kernel-run request.
 
 The GitHub Actions workflow is intentionally stable. New experiments update the
-active request and a request-specific launcher instead of adding another YAML
-workflow. This controller is credential-free and only reads exact public files
-at immutable Git commits.
+active request, one request-specific launcher, and exact public bridge snapshots.
+The private research repository is provenance only and is never read at runtime.
 """
 from __future__ import annotations
 
@@ -22,6 +21,7 @@ RESEARCH_REPOSITORY = "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation"
 REQUEST_PATH = "requests/poisoned-chalice-kernel-run-active.json"
 LOCK_PATH = "requirements/kaggle-2.2.4.lock"
 LAUNCHER_PREFIX = "runners/poisoned_chalice/"
+MATERIALIZED_PREFIX = "materialized/"
 USER_AGENT = "kaggle-actions-bridge/1"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REQUEST_ID_RE = re.compile(r"^20[0-9]{6}-poisoned-chalice-[a-z0-9-]+-[0-9]{3}$")
@@ -61,6 +61,7 @@ RESOURCE_KEYS = {
     "max_active_runs",
     "min_remaining_quota_hours",
 }
+RESEARCH_FILE_KEYS = {"path", "git_blob_sha", "max_bytes", "snapshot_parts"}
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -99,12 +100,44 @@ def _fetch(url: str, maximum: int, attempts: int = 3) -> bytes:
     raise RuntimeError(f"bounded read failed: {last}")
 
 
-def _raw(repository: str, sha: str, path: str, maximum: int) -> bytes:
+def _raw_bridge(sha: str, path: str, maximum: int) -> bytes:
     if not SHA_RE.fullmatch(sha):
-        raise ValueError("immutable 40-hex source SHA required")
+        raise ValueError("immutable 40-hex bridge source SHA required")
     safe = _safe_relative(path)
-    url = f"https://raw.githubusercontent.com/{repository}/{sha}/{safe}"
+    url = f"https://raw.githubusercontent.com/{BRIDGE_REPOSITORY}/{sha}/{safe}"
     return _fetch(url, maximum)
+
+
+def _snapshot_root(request: dict[str, object]) -> str:
+    target = str(request["target"])
+    slug = target.split("/", 1)[1]
+    return f"{MATERIALIZED_PREFIX}{slug}"
+
+
+def _load_snapshot(source_sha: str, request: dict[str, object], item: dict[str, object]) -> bytes:
+    path = _safe_relative(str(item["path"]))
+    maximum = int(item["max_bytes"])
+    parts = int(item["snapshot_parts"])
+    root = _snapshot_root(request)
+    if parts == 1:
+        data = _raw_bridge(source_sha, f"{root}/{path}", maximum)
+    else:
+        chunks: list[bytes] = []
+        remaining = maximum
+        for index in range(1, parts + 1):
+            # Each part is bounded by the original full-file budget. The final
+            # concatenation is separately constrained to the declared maximum.
+            chunk = _raw_bridge(source_sha, f"{root}/{path}.part{index:02d}", maximum)
+            chunks.append(chunk)
+            remaining -= len(chunk)
+            if remaining < 0:
+                raise ValueError(f"snapshot exceeds byte budget: {path}")
+        data = b"".join(chunks)
+    if not data or len(data) > maximum:
+        raise ValueError(f"snapshot size invalid: {path}")
+    if git_blob_sha(data) != item["git_blob_sha"]:
+        raise ValueError(f"snapshot/research Git blob mismatch: {path}")
+    return data
 
 
 def validate_request(request: dict[str, object]) -> None:
@@ -130,17 +163,20 @@ def validate_request(request: dict[str, object]) -> None:
     if not isinstance(launcher_blob, str) or not SHA_RE.fullmatch(launcher_blob):
         raise ValueError("invalid launcher blob SHA")
 
+    # The private repository identity/commit are provenance only. Runtime reads
+    # must come from the public bridge snapshots whose concatenated Git blobs
+    # match the approved research blobs exactly.
     if request.get("research_repository") != RESEARCH_REPOSITORY:
-        raise ValueError("research repository is not allowlisted")
+        raise ValueError("research repository provenance is not allowlisted")
     research_commit = request.get("research_commit")
     if not isinstance(research_commit, str) or not SHA_RE.fullmatch(research_commit):
-        raise ValueError("invalid research commit")
+        raise ValueError("invalid research commit provenance")
     files = request.get("research_files")
     if not isinstance(files, list) or not 1 <= len(files) <= 12:
         raise ValueError("invalid research_files count")
     seen: set[str] = set()
     for item in files:
-        if not isinstance(item, dict) or set(item) != {"path", "git_blob_sha", "max_bytes"}:
+        if not isinstance(item, dict) or set(item) != RESEARCH_FILE_KEYS:
             raise ValueError("invalid research file descriptor")
         path = _safe_relative(str(item["path"]))
         if not path.startswith(("src/", "scripts/", "experiments/", "configs/")):
@@ -150,10 +186,13 @@ def validate_request(request: dict[str, object]) -> None:
         seen.add(path)
         blob = item["git_blob_sha"]
         maximum = item["max_bytes"]
+        parts = item["snapshot_parts"]
         if not isinstance(blob, str) or not SHA_RE.fullmatch(blob):
             raise ValueError("invalid research blob SHA")
         if not isinstance(maximum, int) or not 1 <= maximum <= 262_144:
             raise ValueError("invalid research byte budget")
+        if not isinstance(parts, int) or not 1 <= parts <= 16:
+            raise ValueError("invalid snapshot part count")
 
     resource = request.get("resource")
     if not isinstance(resource, dict) or set(resource) != RESOURCE_KEYS:
@@ -207,17 +246,17 @@ def validate_lock(data: bytes) -> None:
 
 def stage(source_sha: str, output: Path) -> dict[str, object]:
     output.mkdir(parents=True, exist_ok=True)
-    request_bytes = _raw(BRIDGE_REPOSITORY, source_sha, REQUEST_PATH, 65_536)
+    request_bytes = _raw_bridge(source_sha, REQUEST_PATH, 65_536)
     request = json.loads(request_bytes)
     validate_request(request)
 
     launcher_path = str(request["launcher_path"])
-    launcher = _raw(BRIDGE_REPOSITORY, source_sha, launcher_path, 262_144)
+    launcher = _raw_bridge(source_sha, launcher_path, 262_144)
     if git_blob_sha(launcher) != request["launcher_blob_sha"]:
         raise ValueError("launcher blob mismatch")
     compile(launcher, launcher_path, "exec")
 
-    lock = _raw(BRIDGE_REPOSITORY, source_sha, LOCK_PATH, 65_536)
+    lock = _raw_bridge(source_sha, LOCK_PATH, 65_536)
     validate_lock(lock)
 
     (output / "request.json").write_bytes(request_bytes)
@@ -226,27 +265,24 @@ def stage(source_sha: str, output: Path) -> dict[str, object]:
     research_root = output / "research"
     research_root.mkdir(parents=True, exist_ok=True)
     for item in request["research_files"]:
-        data = _raw(
-            RESEARCH_REPOSITORY,
-            str(request["research_commit"]),
-            str(item["path"]),
-            int(item["max_bytes"]),
-        )
-        if git_blob_sha(data) != item["git_blob_sha"]:
-            raise ValueError(f"research blob mismatch: {item['path']}")
+        data = _load_snapshot(source_sha, request, item)
         destination = research_root / str(item["path"])
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
+        if destination.suffix == ".py":
+            compile(data, str(item["path"]), "exec")
 
     safe = {
         "request_id": request["request_id"],
         "target": request["target"],
         "research_commit": request["research_commit"],
         "research_files": len(request["research_files"]),
+        "snapshot_root": _snapshot_root(request),
         "accelerator": request["resource"]["accelerator"],
         "machine_shape": request["resource"]["machine_shape"],
         "automatic_compute_retries": request["automatic_compute_retries"],
         "competition_submission": request["competition_submission"],
+        "private_repo_runtime_access": False,
     }
     print("POISONED_CHALICE_ACTIVE_REQUEST_STAGE PASS " + json.dumps(safe, sort_keys=True))
     return safe
