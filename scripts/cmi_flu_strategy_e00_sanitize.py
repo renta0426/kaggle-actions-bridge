@@ -134,22 +134,52 @@ def main() -> int:
     args.output.write_bytes(encoded)
     print(
         "CMI_FLU_E00_PRIVACY_GATE PASS "
-        f"safe_bytes={len(encoded)} safe_sha256={hashlib.sha256(encoded).hexdigest()}"
+        f"safe_bytes={len(encoded)} safe_sha256={hashlib.sha256(encoded).hexdigest()} "
+        f"warnings={safe['captured_warning_count']} science_ready=false"
     )
     for name, item in sorted(safe_views.items()):
         if item.get("status") == "no_candidate_columns":
             print(f"E00_VIEW name={name} status=no_candidate_columns")
-        else:
+            continue
+        print(
+            f"E00_VIEW name={name} features={item['train'].get('feature_count')} "
+            f"train_rows={item['train'].get('rows_with_view')}/{item['train'].get('rows')} "
+            f"challenge_rows={item['challenge'].get('rows_with_view')}/{item['challenge'].get('rows')}"
+        )
+        for split in ("train", "challenge"):
+            for row in item[split].get("studies", []):
+                print(
+                    f"E00_STUDY view={name} split={split} study={row.get('study')} "
+                    f"rows={row.get('rows')} subjects={row.get('subjects')} "
+                    f"rows_with_view={row.get('rows_with_view')} "
+                    f"subjects_with_view={row.get('subjects_with_view')} "
+                    f"complete_rows={row.get('rows_with_complete_view')}"
+                )
+        for row in item.get("purged_support", []):
             print(
-                f"E00_VIEW name={name} features={item['train'].get('feature_count')} "
-                f"train_rows={item['train'].get('rows_with_view')}/{item['train'].get('rows')} "
-                f"challenge_rows={item['challenge'].get('rows_with_view')}/{item['challenge'].get('rows')}"
+                f"E00_PURGE view={name} held_study={row.get('held_study')} "
+                f"held_rows={row.get('held_rows')} held_rows_with_view={row.get('held_rows_with_view')} "
+                f"source_before={row.get('source_rows_before_purge')} "
+                f"source_after={row.get('source_rows_after_purge')} "
+                f"source_with_view={row.get('source_rows_with_view_after_purge')} "
+                f"source_subjects_with_view={row.get('source_subjects_with_view_after_purge')} "
+                f"source_studies_with_view={row.get('source_studies_with_view_after_purge')}"
             )
     for name, item in sorted(safe["measurement_ambiguity"].items()):
         print(
             f"E00_MEASUREMENT name={name} status={item.get('status')} rows={item.get('rows')} "
-            f"multi_keys={item.get('keys_with_multiple_rows')} conflicts={item.get('keys_with_any_metadata_conflict')}"
+            f"keys={item.get('aggregation_keys')} multi_keys={item.get('keys_with_multiple_rows')} "
+            f"conflicts={item.get('keys_with_any_metadata_conflict')}"
         )
+        for field, detail in sorted((item.get("metadata_fields") or {}).items()):
+            print(
+                f"E00_METADATA name={name} field={field} ambiguous_keys={detail.get('ambiguous_keys')} "
+                f"missing_rows={detail.get('missing_or_unknown_rows')}"
+            )
+        missing = item.get("unavailable_metadata_columns") or []
+        if missing:
+            print(f"E00_UNAVAILABLE_METADATA name={name} fields={','.join(sorted(map(str, missing)))}")
+    print("E00_REMAINING_GATES " + ",".join(map(str, safe["remaining_gates"])))
     return 0
 
 
