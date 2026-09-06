@@ -9,3 +9,4 @@ This directory contains bounded, non-sensitive records of resource-consuming or 
 - `cmi-flu-hai-strain-reference-schema-004.md`: credential-free structural diagnosis of the locked organizer strain reference used to define repair 004 without exposing sequence values.
 - `cmi-flu-public-probes-002.md`: controlled Public-probe repair 002 pre-write failure because the current Kaggle token could not read the historical private B2.1 Notebook.
 - `cmi-flu-public-probes-003.md`: request 003 resource-consuming failure caused by a bridge-side-only `sha256_bytes` helper leaking into the generated Kaggle runtime before frozen B2.1 regeneration began.
+- `cmi-flu-public-probes-004.md`: request 004 resource-consuming failure caused by stale bridge provenance assertions for B2.1 selected models; repair 005 locks the authoritative seven-task model map and exact original B2.1 submission hash.
