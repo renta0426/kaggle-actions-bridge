@@ -95,7 +95,7 @@
     "backend": "cuda",
     "kaggle_machine_shape": "NvidiaTeslaT4",
     "expected_visible_gpu_count": 2,
-    "training_architecture_gpu_assignment": {"left":0,"right":1},
+    "training_architecture_gpu_assignment": {"left": 0, "right": 1},
     "per_architecture_world_size": 1,
     "distributed_training": false,
     "ddp_used": false,
