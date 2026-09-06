@@ -1,0 +1,408 @@
+name: CMI-Flu controlled Public probes hash repair 004 CPU generator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/166-cmi-flu-public-probes-hash-repair-004.yml
+      - requests/cmi-flu-public-probes-004.json
+      - scripts/cmi_flu_public_probes_prepare_v4.py
+      - docs/incidents/cmi-flu-public-probes-003.md
+  pull_request:
+    paths:
+      - .github/workflows/166-cmi-flu-public-probes-hash-repair-004.yml
+      - requests/cmi-flu-public-probes-004.json
+      - scripts/cmi_flu_public_probes_prepare_v4.py
+      - docs/incidents/cmi-flu-public-probes-003.md
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET_COMPETITION: cmi-flu-first-prediction-challenge
+  TARGET_KERNEL: renta0426/cmi-flu-public-probes-20260906-004
+  TARGET_SLUG: cmi-flu-public-probes-20260906-004
+  TARGET_TITLE: CMI Flu Public Probes 20260906 004
+  EXPECTED_KERNEL_VERSION: "1"
+  REQUEST_PATH: requests/cmi-flu-public-probes-004.json
+  PREPARE_PATH: scripts/cmi_flu_public_probes_prepare_v4.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  SCIENCE_BLOB: 497a8875d440e1b8a03d4ef938bc3a834213b33d
+  B21_ADAPTER_BLOB: de71dea0e335bdcd79325c0de926bf8848d0979f
+  B21_PACKAGE_SHA256: 48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3
+
+jobs:
+  validate:
+    name: Validate Public-probe request 004 hash-boundary repair
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "VALIDATE_WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/repo" <<'PY'
+          from __future__ import annotations
+          import io, os, pathlib, ssl, sys, tarfile, urllib.request
+          target=pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url=f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              archive=response.read(20_000_001)
+          if len(archive)>20_000_000: raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tf:
+              members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
+              if len(prefixes)!=1: raise SystemExit('unexpected commit archive layout')
+              prefix=next(iter(prefixes))+'/'
+              for member in members:
+                  if not member.isfile(): continue
+                  if not member.name.startswith(prefix): raise SystemExit('unexpected archive member')
+                  rel=pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit('unsafe archive path')
+                  data=tf.extractfile(member).read(); out=target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
+          PY
+
+      - name: Validate exact repaired runtime without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${VALIDATE_WORKDIR}/repo/${PREPARE_PATH}" \
+            --repository-root "${VALIDATE_WORKDIR}/repo" \
+            --output "${VALIDATE_WORKDIR}/script.py"
+          python3 -W error::SyntaxWarning -m py_compile "${VALIDATE_WORKDIR}/script.py"
+          grep -F 'REQUEST_ID = "20260906-cmi-flu-public-probes-004"' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'TARGET_STAGE = "controlled_public_probes_regenerated_frozen_b21"' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'B21_SOURCE_COMMIT_FOR_REGEN = "33030746bc7bad02ad2c1e670ac319cc943c524d"' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F '"backbone_mode": "regenerate_frozen_b21_in_same_notebook"' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'verify_md5=True' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          grep -F 'if hashlib.sha256(bundle).hexdigest() != PACKAGE_ZIP_SHA256:' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'sha256_bytes(' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F '__CMI_FLU_BACKBONE_' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'kernels_status(' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'kernels_list(' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'kaggle kernels output' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'competition_submit' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          ! grep -F 'kaggle competitions submit' "${VALIDATE_WORKDIR}/script.py" >/dev/null
+          python3 - <<'PY'
+          import os,re
+          title=os.environ['TARGET_TITLE']; slug=re.sub(r'[^a-z0-9]+','-',title.lower()).strip('-')
+          if slug!=os.environ['TARGET_SLUG']: raise SystemExit('title-derived slug mismatch')
+          if os.environ['TARGET_KERNEL']!=f"renta0426/{slug}": raise SystemExit('target kernel identity mismatch')
+          print('CMI_FLU_PUBLIC_PROBES_004_IDENTITY PASS')
+          PY
+          echo 'CMI_FLU_PUBLIC_PROBES_004_VALIDATE PASS'
+
+      - name: Confirm current public Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl, urllib.request
+          for url in ('https://www.kaggle.com/terms','https://www.kaggle.com/aup','https://www.kaggle.com/community-guidelines','https://www.kaggle.com/docs/api'):
+              req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req,timeout=30,context=ssl.create_default_context()) as response:
+                  if response.status!=200 or not response.read(65536): raise SystemExit(f'official Kaggle page unavailable: {url}')
+          print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
+          PY
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${VALIDATE_WORKDIR-}" && -d "${VALIDATE_WORKDIR}" ]]; then rm -rf "${VALIDATE_WORKDIR}"; fi
+
+  launch:
+    name: Generate fixed three-probe family on one repaired private CPU run 004
+    needs: validate
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/166-cmi-flu-public-probes-hash-repair-004.yml@refs/heads/main" ]]
+          echo 'PROTECTED_CMI_FLU_PUBLIC_PROBES_004_BOUNDARY PASS'
+
+      - name: Materialize approved bridge commit and prepare locked runtime
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/repo" <<'PY'
+          from __future__ import annotations
+          import io,os,pathlib,ssl,sys,tarfile,urllib.request
+          target=pathlib.Path(sys.argv[1]); target.mkdir(parents=True)
+          url=f"https://api.github.com/repos/{os.environ['EXPECTED_REPOSITORY']}/tarball/{os.environ['EVENT_SHA']}"
+          req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              archive=response.read(20_000_001)
+          if len(archive)>20_000_000: raise SystemExit('bridge commit archive exceeds byte budget')
+          with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tf:
+              members=tf.getmembers(); prefixes={m.name.split('/',1)[0] for m in members if m.name}
+              if len(prefixes)!=1: raise SystemExit('unexpected commit archive layout')
+              prefix=next(iter(prefixes))+'/'
+              for member in members:
+                  if not member.isfile(): continue
+                  if not member.name.startswith(prefix): raise SystemExit('unexpected archive member')
+                  rel=pathlib.PurePosixPath(member.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit('unsafe archive path')
+                  data=tf.extractfile(member).read(); out=target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
+          PY
+          python3 "${workdir}/repo/${PREPARE_PATH}" --repository-root "${workdir}/repo" --output "${workdir}/script.py"
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/script.py"
+          grep -F 'if hashlib.sha256(bundle).hexdigest() != PACKAGE_ZIP_SHA256:' "${workdir}/script.py" >/dev/null
+          ! grep -F 'sha256_bytes(' "${workdir}/script.py" >/dev/null
+          ! grep -F 'kernels_status(' "${workdir}/script.py" >/dev/null
+          ! grep -F 'kernels_list(' "${workdir}/script.py" >/dev/null
+          ! grep -F 'competition_submit' "${workdir}/script.py" >/dev/null
+          python3 - "${workdir}/repo/${LOCK_PATH}" <<'PY'
+          import pathlib,re,sys
+          lock=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          pattern=re.compile(r'^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$')
+          lines=[x.strip() for x in lock.splitlines() if x.strip() and not x.lstrip().startswith('#')]
+          if len(lines)!=33 or not all(pattern.fullmatch(x) for x in lines) or not any(x.startswith('kaggle==2.2.4 ') for x in lines):
+              raise SystemExit('Kaggle CLI lock validation failed')
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/repo/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Recheck live Competition rules, target freshness, and CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - "${WORKDIR}/admission.txt" <<'PY'
+          from __future__ import annotations
+          import os,pathlib,re,sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          decision=pathlib.Path(sys.argv[1]); api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []; content={}
+          for page in pages:
+              d=page.to_dict() if hasattr(page,'to_dict') else dict(page); name=str(d.get('name') or '').strip().lower()
+              if name: content[name]=str(d.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in k for k in content): raise SystemExit('live Competition pages unavailable')
+          plain=lambda s: re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',s)).casefold()
+          rules=plain(content['rules']); evaluation=plain(content['evaluation']); data=' '.join(plain(content[k]) for k in content if 'data' in k)
+          if not all(x in rules for x in ('maximum of five (5) submissions per day','data security','external data and tools')): raise SystemExit('live rules differ from approved guardrails')
+          if not all(x in evaluation for x in ('mean spearman correlation','40 donors','-99')): raise SystemExit('live evaluation differs from approved guardrails')
+          if 'sample_submission_part1.csv' not in data or 'investigations_260821.tsv' not in data: raise SystemExit('live data description differs from approved guardrails')
+          existing=api.kernels_list(user='renta0426',search=os.environ['TARGET_SLUG'],page_size=5) or []
+          if os.environ['TARGET_KERNEL'] in {str(getattr(x,'ref','')) for x in existing}: raise SystemExit('target Public-probe generator 004 already exists')
+          active_refs=[]
+          for item in (api.kernels_list(user='renta0426',sort_by='dateRun',page_size=10) or [])[:10]:
+              ref=str(getattr(item,'ref',''))
+              if not ref: continue
+              try: status=str(getattr(api.kernels_status(ref),'status','')).upper()
+              except Exception: continue
+              if any(t in status for t in ('RUNNING','QUEUED','PENDING')): active_refs.append(ref)
+          active={'cpu':0,'gpu':0,'tpu':0,'unknown':0}
+          if len(active_refs)>5:
+              active['unknown']=len(active_refs)
+          else:
+              with api.build_kaggle_client() as client:
+                  for ref in active_refs:
+                      resource='unknown'
+                      try:
+                          owner,slug=ref.split('/',1); req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+                          meta=client.kernels.kernels_api_client.get_kernel(req).metadata
+                          resource='tpu' if bool(getattr(meta,'enable_tpu',False)) else ('gpu' if bool(getattr(meta,'enable_gpu',False)) else 'cpu')
+                      except Exception: pass
+                      active[resource]+=1
+          can_launch=active['cpu']+active['unknown']<1
+          decision.write_text('launch\n' if can_launch else 'defer\n',encoding='utf-8')
+          print(f"PUBLIC_PROBES_004_PREFLIGHT requested=cpu active_cpu={active['cpu']} active_gpu={active['gpu']} active_tpu={active['tpu']} active_unknown={active['unknown']} can_launch={can_launch}")
+          PY
+          if [[ "$(cat "${WORKDIR}/admission.txt")" == "launch" ]]; then echo 'can_launch=true' >> "${GITHUB_OUTPUT}"; else echo 'can_launch=false' >> "${GITHUB_OUTPUT}"; fi
+
+      - name: Record deferred admission
+        if: steps.admission.outputs.can_launch != 'true'
+        run: echo 'Public-probe request 004 deferred before Kaggle write; fresh approval required on a new dispatch.'
+
+      - name: Push exactly one private CPU repair run 004
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,re
+          title=os.environ['TARGET_TITLE']; slug=re.sub(r'[^a-z0-9]+','-',title.lower()).strip('-')
+          if slug!=os.environ['TARGET_SLUG'] or os.environ['TARGET_KERNEL']!=f"renta0426/{slug}": raise SystemExit('kernel metadata identity mismatch')
+          PY
+          kernel_dir="${WORKDIR}/kernel"; mkdir -p "${kernel_dir}"; cp "${WORKDIR}/script.py" "${kernel_dir}/script.py"
+          python3 - "${kernel_dir}" <<'PY'
+          import json,os,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          metadata={
+              'id':os.environ['TARGET_KERNEL'],'title':os.environ['TARGET_TITLE'],
+              'code_file':'script.py','language':'python','kernel_type':'script',
+              'is_private':True,'enable_gpu':False,'enable_tpu':False,'enable_internet':False,
+              'machine_shape':'','dataset_sources':[],'competition_sources':[os.environ['TARGET_COMPETITION']],
+              'kernel_sources':[],'model_sources':[]
+          }
+          (root/'kernel-metadata.json').write_text(json.dumps(metadata,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          set +e
+          "${WORKDIR}/venv/bin/kaggle" kernels push -p "${kernel_dir}" >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          if [[ "${rc}" -ne 0 ]]; then
+            python3 - "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr" "${rc}" <<'PY'
+          import hashlib,pathlib,sys
+          out,err,rc=pathlib.Path(sys.argv[1]),pathlib.Path(sys.argv[2]),int(sys.argv[3])
+          ob=out.read_bytes() if out.exists() else b''; eb=err.read_bytes() if err.exists() else b''
+          text=(ob+eb).decode('utf-8','replace').casefold()
+          category='unknown'
+          for name,tokens in (
+              ('rate_limit',('429','too many requests','rate limit')),
+              ('concurrent_session_limit',('concurrent','session limit','quota')),
+              ('permission_denied',('permission','forbidden','403')),
+              ('bad_request',('bad request','400')),
+              ('title_or_slug',('slug','title')),
+          ):
+              if any(token in text for token in tokens): category=name; break
+          print(f"PUBLIC_PROBES_004_PUSH_FAILURE rc={rc} category={category} stdout_bytes={len(ob)} stdout_sha256={hashlib.sha256(ob).hexdigest()} stderr_bytes={len(eb)} stderr_sha256={hashlib.sha256(eb).hexdigest()}")
+          PY
+            rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+            exit 1
+          fi
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          echo "CMI_FLU_PUBLIC_PROBES_004_LAUNCH PASS request_id=20260906-cmi-flu-public-probes-004 target=${TARGET_KERNEL} accelerator=cpu internet=false submission=false automatic_compute_retries=0"
+
+      - name: Wait boundedly with responsive initial polling
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          import os,time
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api=KaggleApi(); api.authenticate(); target=os.environ['TARGET_KERNEL']
+          schedule=[30,60,120,300]; steady=600; max_calls=36; hard=18000; started=time.monotonic()
+          terminal_ok=('COMPLETE','COMPLETED'); terminal_bad=('ERROR','FAIL','CANCEL')
+          for call in range(1,max_calls+1):
+              status=str(getattr(api.kernels_status(target),'status','')).upper(); elapsed=int(time.monotonic()-started)
+              print(f"PUBLIC_PROBES_004_STATUS call={call} elapsed_s={elapsed} status={status or 'UNKNOWN'}")
+              if any(token in status for token in terminal_ok): print('PUBLIC_PROBES_004_TERMINAL PASS'); break
+              if any(token in status for token in terminal_bad): raise SystemExit(f'Public-probe generator 004 terminal failure: {status}')
+              if elapsed>=hard: raise SystemExit('Public-probe generator 004 exceeded 300-minute hard monitor bound')
+              sleep=schedule[call-1] if call<=len(schedule) else steady
+              time.sleep(min(sleep,max(1,hard-elapsed)))
+          else: raise SystemExit('Public-probe generator 004 exhausted bounded status-call budget')
+          PY
+
+      - name: Read exact current-v1 probe outputs
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          PATH: ${{ env.WORKDIR }}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" "${WORKDIR}/repo/scripts/kaggle_current_output_read.py" \
+            --kernel "${TARGET_KERNEL}" \
+            --expected-version "${EXPECTED_KERNEL_VERSION}" \
+            --allow-file probe-task13.csv:262144 \
+            --allow-file probe-task12.csv:262144 \
+            --allow-file probe-task12-task13.csv:262144 \
+            --allow-file bridge-result.json:262144 \
+            --allow-file summary.md:65536 \
+            --output-dir "${WORKDIR}/outputs"
+
+      - name: Validate regenerated backbone provenance and exact probe hashes
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/outputs" <<'PY'
+          import csv,hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); result=json.loads((root/'bridge-result.json').read_text(encoding='utf-8'))
+          if result.get('schema_version')!=3 or result.get('request_id')!='20260906-cmi-flu-public-probes-004': raise SystemExit('result identity mismatch')
+          if result.get('kernel_stage')!='controlled_public_probes_regenerated_frozen_b21': raise SystemExit('kernel stage mismatch')
+          if result.get('source_commit')!='7a85abcbf8282bc8bfe047b7db02a72f35222caa': raise SystemExit('science commit mismatch')
+          if result.get('base_package_zip_sha256')!='48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3': raise SystemExit('frozen B2.1 package mismatch')
+          if result.get('public_probes_source_blob_sha')!='497a8875d440e1b8a03d4ef938bc3a834213b33d': raise SystemExit('Public-probe science blob mismatch')
+          if result.get('b21_source_commit')!='33030746bc7bad02ad2c1e670ac319cc943c524d': raise SystemExit('B2.1 source commit mismatch')
+          if result.get('b21_runtime_adapter_blob_sha')!='de71dea0e335bdcd79325c0de926bf8848d0979f': raise SystemExit('B2.1 adapter mismatch')
+          if result.get('backbone_mode')!='regenerate_frozen_b21_in_same_notebook': raise SystemExit('backbone mode mismatch')
+          if result.get('regenerated_b21_checksum_verified_files')!=28: raise SystemExit('B2.1 checksum verified count mismatch')
+          if result.get('regenerated_b21_checksum_skipped')!=['md5sum']: raise SystemExit('B2.1 checksum skipped contract mismatch')
+          selected=result.get('regenerated_b21_selected_models') or {}
+          for task,model in {'Task2.1':'et_subtype_d3_l5','Task2.2':'et_subtype_d3_l5','Task2.3':'pls_exact_5'}.items():
+              if selected.get(task)!=model: raise SystemExit(f'B2.1 selected model mismatch: {task}')
+          if selected.get('Task1.4')!='raw_pre_vacc_conserved_anchor': raise SystemExit('B2.1 Task1.4 anchor mismatch')
+          if result.get('competition_submission_attempted') is not False: raise SystemExit('generator unexpectedly attempted Competition submission')
+          if result.get('public_scores_used_to_define_family') is not False: raise SystemExit('generator unexpectedly used Public scores')
+          files={'task13_only':'probe-task13.csv','task12_only':'probe-task12.csv','task12_task13':'probe-task12-task13.csv'}
+          hashes=result.get('probe_sha256') or {}; expected_header=['participant_id','Task1.1','Task1.2','Task1.3','Task1.4','Task2.1','Task2.2','Task2.3']
+          for name,filename in files.items():
+              path=root/filename; digest=hashlib.sha256(path.read_bytes()).hexdigest()
+              if hashes.get(name)!=digest: raise SystemExit(f'probe hash mismatch: {name}')
+              with path.open(newline='',encoding='utf-8') as stream: rows=list(csv.reader(stream))
+              if not rows or rows[0]!=expected_header or len(rows)!=41: raise SystemExit(f'probe CSV contract mismatch: {name}')
+          changed=result.get('probe_changed_columns')
+          if changed!={'task13_only':['Task1.3'],'task12_only':['Task1.2'],'task12_task13':['Task1.2','Task1.3']}: raise SystemExit('probe changed-column contract mismatch')
+          print('CMI_FLU_PUBLIC_PROBES_004_RESULT PASS '+f"b21_submission_sha256={result.get('regenerated_b21_submission_sha256')} "+' '.join(f"{name}_sha256={hashes[name]}" for name in ('task13_only','task12_only','task12_task13')))
+          PY
+
+      - name: Cleanup runner-local private content
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'Runner-local controlled Public-probe 004 content removed'
