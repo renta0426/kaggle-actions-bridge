@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "execution_id": "shadow-gold-context-decomposition-v1",
+  "phase": "P4-stage2-transfer",
+  "role": "gold_suffix_context_decomposition",
+  "purpose": "Decompose the positive training-context-alignment effect into suffix-region selection, raw-window length/crop, BOS start-context alignment, and positional specificity without candidate selection.",
+  "base_evidence": {
+    "context_alignment_result_commit": "5efad09708be2ee3645726365aa02afda73c7179",
+    "formal_context_alignment_gate_failed": true,
+    "mechanistic_context_alignment_effect_positive": true,
+    "next_scalars_must_use_no_selection": true
+  },
+  "training_contract": {
+    "candidate_rows": 10240,
+    "training_corpus_rows": 5120,
+    "evaluation_rows": 5120,
+    "probe_version": "content-hash-comment-probe-v1",
+    "probe_applied_to_members": true,
+    "probe_applied_to_nonmembers": true,
+    "exposure_repeats": 16,
+    "forced_training_window": "suffix",
+    "training_sequences": 81920,
+    "global_batch_size": 64,
+    "optimizer_steps_per_architecture": 1280,
+    "architecture_pair": ["shadow-gpt2-byte-5m", "shadow-llama-byte-5m"],
+    "random_initialisation": true,
+    "pretrained_weights_used": false,
+    "scientific_protocol_changed_from_positive_control_v2": false
+  },
+  "scoring": {
+    "version": "suffix-context-decomposition-v1",
+    "tokenizer": "lossless_utf8_bytes",
+    "max_sequence_tokens": 256,
+    "mean_log_likelihood_only": true,
+    "candidate_selection_used": false,
+    "probe_boundary_used": false,
+    "probe_text_used": false,
+    "membership_used_for_scoring": false,
+    "benchmark_id_used_as_model_input": false,
+    "batch_size": 64,
+    "condition_definitions": {
+      "raw_stage2_loss_max": "stage2-model-independent-v1 score_logp_mean__max",
+      "raw_suffix256_mean": "last_256_payload_tokens_no_special_tokens_mean_predicted_logp",
+      "raw_suffix254_mean": "last_254_payload_tokens_no_special_tokens_mean_predicted_logp",
+      "bos_suffix254_mean": "bos_plus_last_254_payload_plus_eos_score_payload_mean",
+      "bos_prefix254_mean": "bos_plus_first_254_payload_plus_eos_score_payload_mean",
+      "bos_middle254_mean": "bos_plus_middle_254_payload_plus_eos_score_payload_mean"
+    }
+  },
+  "conditions": [
+    "raw_stage2_loss_max",
+    "raw_suffix256_mean",
+    "raw_suffix254_mean",
+    "bos_suffix254_mean",
+    "bos_prefix254_mean",
+    "bos_middle254_mean"
+  ],
+  "mechanistic_decision": {
+    "aligned_min_auc_each_architecture": 0.56,
+    "aligned_min_gain_vs_raw_stage2_each_architecture": 0.03,
+    "aligned_min_tpr_at_1pct_fpr_each_architecture": 0.015,
+    "location_explains_most_auc_tolerance": 0.01,
+    "crop_explains_most_auc_tolerance": 0.01,
+    "bos_context_material_min_auc_gain": 0.02,
+    "suffix_specificity_min_auc_margin": 0.03,
+    "both_architectures_required_for_named_mechanism": true,
+    "criterion_is_mechanistic_only": true,
+    "does_not_promote_stage2_v3": true
+  },
+  "runtime": {
+    "backend": "cuda",
+    "accelerator": "gpu",
+    "kaggle_machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "architecture_gpu_assignment": {"left": 0, "right": 1},
+    "per_architecture_world_size": 1,
+    "distributed_training": false,
+    "ddp_used": false,
+    "nccl_used": false,
+    "run_architectures_concurrently": true,
+    "checkpoint_reload_atol": 1e-05,
+    "automatic_compute_retries": 0,
+    "notebook_internet": false
+  },
+  "scientific_guards": {
+    "known_probe_boundary_used": false,
+    "probe_text_used": false,
+    "probe_local_score_used": false,
+    "candidate_selection_used": false,
+    "evaluation_labels_passed_to_training_children": false,
+    "features_sealed_before_label_reveal": true,
+    "stage2_v3_selection_allowed": false,
+    "competition_feature_promotion_allowed": false,
+    "external_model_holdout_consumed": false,
+    "fourth_external_holdout_consumed": false,
+    "smollm2_labels_used": false,
+    "public_leaderboard_feedback_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "competition_rows_used": 0,
+    "external_rows_used": 0
+  }
+}
