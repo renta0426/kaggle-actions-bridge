@@ -1,0 +1,180 @@
+"""Training-context alignment ablation for the controlled Gold benchmark.
+
+Probe-local scoring recovered memorisation while raw generic aggregation and a
+content-difficulty residual did not.  One remaining confounder is context
+construction: probe-local scoring recreated the exact positive-control training
+suffix (BOS + up to 254 payload bytes + EOS), whereas the generic Stage2 scorer
+uses ordinary content windows without that training wrapper.
+
+This module isolates that difference.  It knows only that the frozen positive-
+control training window was the suffix; it never receives the probe text or
+boundary.  It scores *all* payload bytes in the training-aligned suffix and
+compares a small frozen set of generic summaries with the same-run raw Stage2
+Loss baseline.  Labels are joined only after both architecture feature tables
+are sealed.
+"""
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+
+from . import shadow_gold_kaggle as gold_v1
+from . import shadow_gold_kaggle_v2 as gold_v2
+from . import shadow_gold_positive_control as positive_v1
+from . import shadow_gold_positive_control_v2 as positive_v2
+from .shadow_gold_transfer import (
+    attach_exact_labels,
+    evaluate_frozen_gold_holdout,
+    split_development_holdout,
+)
+from .shadow_protocol import ByteCodeTokenizer, ShadowSequenceConfig, encode_exposure
+from .shadow_scoring import load_scoring_bundle, load_shadow_checkpoint
+from .shadow_training_dual_gpu import (
+    run_dual_gpu_shadow,
+    validate_gpu_inventory,
+    visible_cuda_device_names,
+)
+from .stage2_api import Stage2RuntimeConfig, score_samples_detailed
+
+
+SHADOW_GOLD_CONTEXT_ALIGNMENT_VERSION = "training-aligned-suffix-generic-v1"
+EXECUTION_ID = "shadow-gold-context-alignment-v1"
+_CANDIDATES = [
+    "aligned_loss_mean",
+    "aligned_min_k_01",
+    "aligned_min_k_02",
+    "aligned_min_k_05",
+    "aligned_min_k_10",
+    "aligned_local08_max",
+    "aligned_local16_max",
+    "aligned_local32_max",
+    "aligned_local64_max",
+]
+_METADATA_COLUMNS = ["benchmark_id", "language", "length_bin", "character_count"]
+_FEATURE_COLUMNS = [*_METADATA_COLUMNS, *_CANDIDATES, "raw_stage2_loss_max"]
+
+
+class ShadowGoldContextAlignmentError(RuntimeError):
+    """Raised when a frozen context-alignment invariant fails."""
+
+
+def validate_context_alignment_config(config: Mapping[str, Any]) -> None:
+    if config.get("execution_id") != EXECUTION_ID or config.get("role") != "gold_training_context_alignment_ablation":
+        raise ShadowGoldContextAlignmentError("context-alignment identity changed")
+    base = config.get("base_evidence") or {}
+    if base.get("content_reference_result_commit") != "f09c8b9c4f69f6b89ba33f6a831216f25623411f":
+        raise ShadowGoldContextAlignmentError("context-alignment content-reference evidence changed")
+    if base.get("probe_local_result_commit") != "844d83992ff364ee7bc43ae3560fb06540e2bd99":
+        raise ShadowGoldContextAlignmentError("context-alignment probe-local evidence changed")
+    if base.get("training_protocol_must_be_identical") is not True or base.get("known_probe_boundary_must_not_be_used") is not True:
+        raise ShadowGoldContextAlignmentError("context-alignment base guards changed")
+
+    training = config.get("training_contract") or {}
+    expected_training = {
+        "candidate_rows": 10240,
+        "training_corpus_rows": 5120,
+        "evaluation_rows": 5120,
+        "evaluation_rows_per_language_per_class": 512,
+        "probe_version": positive_v1.PROBE_VERSION,
+        "probe_applied_to_members": True,
+        "probe_applied_to_nonmembers": True,
+        "membership_used_to_construct_probe": False,
+        "benchmark_id_used_to_construct_probe": False,
+        "exposure_repeats": 16,
+        "forced_training_window": "suffix",
+        "training_sequences": 81920,
+        "global_batch_size": 64,
+        "optimizer_steps_per_architecture": 1280,
+        "architecture_pair": ["shadow-gpt2-byte-5m", "shadow-llama-byte-5m"],
+        "learning_rate": 0.0003,
+        "weight_decay": 0.1,
+        "warmup_fraction": 0.05,
+        "gradient_clip_norm": 1.0,
+        "random_initialisation": True,
+        "pretrained_weights_used": False,
+    }
+    for key, value in expected_training.items():
+        if training.get(key) != value:
+            raise ShadowGoldContextAlignmentError(f"context-alignment training contract changed: {key}")
+
+    scoring = config.get("aligned_scoring") or {}
+    expected_scoring = {
+        "version": SHADOW_GOLD_CONTEXT_ALIGNMENT_VERSION,
+        "tokenizer": "lossless_utf8_bytes",
+        "max_sequence_tokens": 256,
+        "payload_capacity_tokens": 254,
+        "context_construction": "bos_plus_last_254_payload_plus_eos_then_right_pad",
+        "score_payload_tokens_only": True,
+        "score_eos": False,
+        "probe_boundary_used": False,
+        "probe_text_used": False,
+        "language_used_to_locate_probe": False,
+        "benchmark_id_used_as_model_input": False,
+        "membership_used_for_scoring": False,
+        "min_k_percents": [1, 2, 5, 10],
+        "local_widths": [8, 16, 32, 64],
+        "batch_size": 64,
+    }
+    for key, value in expected_scoring.items():
+        if scoring.get(key) != value:
+            raise ShadowGoldContextAlignmentError(f"context-alignment scorer changed: {key}")
+    if list(config.get("candidate_features") or []) != _CANDIDATES:
+        raise ShadowGoldContextAlignmentError("context-alignment candidate matrix changed")
+
+    baseline = config.get("baseline") or {}
+    if baseline.get("name") != "raw_stage2_loss_max" or baseline.get("source") != "stage2-model-independent-v1 score_logp_mean__max":
+        raise ShadowGoldContextAlignmentError("context-alignment baseline changed")
+    if baseline.get("computed_on_same_checkpoint_and_evaluation_batch") is not True:
+        raise ShadowGoldContextAlignmentError("context-alignment same-run baseline guard changed")
+
+    selection = config.get("selection_protocol") or {}
+    expected_selection = {
+        "fit_architecture_slot": "left",
+        "blind_transfer_architecture_slot": "right",
+        "matched_pair_split_seed": 2027,
+        "development_fraction": 0.5,
+        "candidate_order_tiebreak_is_frozen": True,
+        "selection_order": ["partial_auc_standardized", "tpr_at_fpr", "auc", "fixed_candidate_order"],
+        "selected_candidate_applied_unchanged_to_left_holdout": True,
+        "selected_candidate_applied_unchanged_to_right_holdout": True,
+        "no_logistic_fit": True,
+    }
+    for key, value in expected_selection.items():
+        if selection.get(key) != value:
+            raise ShadowGoldContextAlignmentError(f"context-alignment selection changed: {key}")
+
+    recovery = config.get("recovery_criterion") or {}
+    expected_recovery = {
+        "minimum_holdout_auc_each_architecture": 0.56,
+        "minimum_auc_gain_vs_raw_stage2_loss_max_each_architecture": 0.03,
+        "minimum_tpr_at_1pct_fpr_each_architecture": 0.015,
+        "both_architectures_required": True,
+        "all_conditions_required": True,
+        "failed_gate_is_valid_scientific_result_not_runtime_failure": True,
+        "criterion_is_mechanistic_only": True,
+        "does_not_promote_stage2_v3": True,
+    }
+    for key, value in expected_recovery.items():
+        if recovery.get(key) != value:
+            raise ShadowGoldContextAlignmentError(f"context-alignment recovery criterion changed: {key}")
+
+    runtime = config.get("runtime") or {}
+    if runtime.get("backend") != "cuda" or runtime.get("kaggle_machine_shape") != "NvidiaTeslaT4":
+        raise ShadowGoldContextAlignmentError("context-alignment CUDA resource changed")
+    if runtime.get("expected_visible_gpu_count") != 2 or runtime.get("per_architecture_world_size") != 1:
+        raise ShadowGoldContextAlignmentError("context-alignment GPU/world size changed")
+    for key in ("distributed_training", "ddp_used", "nccl_used"):
+        if runtime.get(key) is not False:
+            raise ShadowGoldContextAlignmentError(f"context-alignment distributed guard changed: {key}")
+    if runtime.get("automatic_compute_retries") != 0 or runtime.get("notebook_internet") is not False:
+        raise ShadowGoldContextAlignmentError("context-alignment retry/internet contract changed")
+
+    guards = config.get("scientific_guards") or {}
+    for key in (
+        "known_probe_boundary_used",
+        "probe_text_used",
