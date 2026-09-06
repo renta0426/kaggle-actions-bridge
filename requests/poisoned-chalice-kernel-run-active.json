@@ -5,7 +5,7 @@
   "operation": "kernel_run",
   "target": "renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1",
   "launcher_path": "runners/poisoned_chalice/minkpp_paper_pilot_500_v1.py",
-  "launcher_blob_sha": "c280ea74aa39b0e3ff08f66b4b67341e907f882b",
+  "launcher_blob_sha": "b0c3390d2769a67c759be6bd7288608f9e6d997b",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
   "research_commit": "0895502ddb188de5af4ba780eb6f77f2185e64d1",
   "research_files": [
