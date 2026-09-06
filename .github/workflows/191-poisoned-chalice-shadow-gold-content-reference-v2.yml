@@ -1,0 +1,286 @@
+name: Poisoned Chalice Gold content-reference calibration v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-shadow-gold-content-reference-v2.json
+      - scripts/poisoned_chalice_shadow_gold_content_reference_v2.py
+      - materialized/poisoned-chalice-shadow-gold-content-reference-v2/**
+      - .github/workflows/191-poisoned-chalice-shadow-gold-content-reference-v2.yml
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-shadow-gold-content-reference-v2.json
+      - scripts/poisoned_chalice_shadow_gold_content_reference_v2.py
+      - materialized/poisoned-chalice-shadow-gold-content-reference-v2/**
+      - .github/workflows/191-poisoned-chalice-shadow-gold-content-reference-v2.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-shadow-gold-content-reference-v2.json
+  LAUNCHER_PATH: scripts/poisoned_chalice_shadow_gold_content_reference_v2.py
+  BASE_LAUNCHER_PATH: scripts/poisoned_chalice_shadow_gold_content_reference_v1.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL: renta0426/shadow-gold-content-reference-v2
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  MAX_ACTIVE_REMOTE_RUNS: "2"
+
+jobs:
+  validate:
+    name: Validate repaired Gold content-reference bundle without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate exact request, executable writes, and final Notebook
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"; [[ "${EVENT_NAME}" != "pull_request" ]] || source_sha="${PR_HEAD_SHA}"
+          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import ast, hashlib, json, pathlib, ssl, sys, time, urllib.request
+          sha, root_value = sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          expected={
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/controlled_transfer.py":(65536,"09b04c10d934654044817bb9b36fd7358a2aa942"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_corpus.py":(32768,"241e3481f7dc56f5fc7495436f3cfc33274a0823"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_kaggle.py":(65536,"e68eb320605a943bb7d46b0e9ce51bb06142ffef"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_transfer.py":(65536,"1ee969fe852f8a18d00a5c0249f4a8a90d61338a"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_protocol.py":(65536,"1c47b80696050aa2e5e7c62384617df61ecb80da"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_scoring.py":(65536,"6bc2b55bec2a32cbb3b0cfe870e426f80260730d"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training.py":(65536,"2fe3cf2079659ae10e1ebe0d5973f3ce96c26a03"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training_dual_gpu.py":(65536,"c75a5963fa930916024cb16b4fbf562ba4afa818"),
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/stage2_api.py":(65536,"16578d3e01b6471e5bfb2b04cebb99e1b3126c7c"),
+            "materialized/poisoned-chalice-shadow-gold-v2/poisoned_chalice/shadow_gold_kaggle_v2.py":(32768,"df6e67f7d0e67d2585fd6226b9d2592223f808d2"),
+            "materialized/poisoned-chalice-shadow-gold-positive-control-v1/poisoned_chalice/shadow_gold_positive_control.py":(65536,"8b14ba725a939b8a7c21aff93f70165c304fde79"),
+            "materialized/poisoned-chalice-shadow-gold-positive-control-v1/shadow_gold_positive_control_v1.json":(32768,"424fe2674daebc1bba51b560d9ad057dff2b82c2"),
+            "materialized/poisoned-chalice-shadow-gold-positive-control-v2/poisoned_chalice/shadow_gold_positive_control_v2.py":(32768,"374a6197b4238f4ea7279b27f08edb2a6f366e50"),
+            "materialized/poisoned-chalice-shadow-gold-content-reference-v1/poisoned_chalice/shadow_gold_content_reference.py":(65536,"433258dfdb1c10b88062c05ea946579383471638"),
+            "materialized/poisoned-chalice-shadow-gold-content-reference-v1/shadow_gold_content_reference_v1.json":(32768,"3bad0da78840ffb8e3ca72addc45101114fe7761"),
+            "materialized/poisoned-chalice-shadow-gold-content-reference-v2/poisoned_chalice/shadow_gold_content_reference_v2.py":(32768,"0740e0daba743f38349dbac36a303cb441dfae25"),
+            "materialized/poisoned-chalice-shadow-gold-content-reference-v2/shadow_gold_content_reference_v2.json":(32768,"0e6edb478bfca72336e041d5004b802912bb94e9"),
+          }
+          def fetch(path, maximum):
+            url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"; last=None
+            for attempt in range(3):
+              try:
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+                if len(data)>maximum: raise SystemExit(f"file too large: {path}")
+                dst=root/path; dst.parent.mkdir(parents=True,exist_ok=True); dst.write_bytes(data); return data
+              except Exception as exc:
+                last=exc
+                if attempt<2: time.sleep(attempt+1)
+            raise SystemExit(f"read-only fetch failed: {path}: {last}")
+          def blob(data): return hashlib.sha1(b"blob "+str(len(data)).encode()+b"\0"+data).hexdigest()
+          request=json.loads(fetch("requests/poisoned-chalice-shadow-gold-content-reference-v2.json",65536))
+          launcher=fetch("scripts/poisoned_chalice_shadow_gold_content_reference_v2.py",262144)
+          base=fetch("scripts/poisoned_chalice_shadow_gold_content_reference_v1.py",262144)
+          checks={
+            "request_id":"20260906-poisoned-chalice-shadow-gold-content-reference-v2-001",
+            "target":"renta0426/shadow-gold-content-reference-v2",
+            "launcher_blob_sha":"4a411b5c4865fe325a481e47b0be4c67918f2130",
+            "base_launcher_blob_sha":"fff2d72e0a00480ad6cb9d5523dd059c81812da7",
+            "base_science_commit":"d9e1b66d65c7b38a9367aef538b3997cc2d713dc",
+            "repair_commit":"13d062a8fd94a55a42ae428693a7e59271ed239d",
+            "automatic_compute_retries":0,"enable_internet":False,"competition_submission":False,
+          }
+          for key,value in checks.items():
+            if request.get(key)!=value: raise SystemExit(f"request changed: {key}")
+          if blob(launcher)!=request["launcher_blob_sha"] or blob(base)!=request["base_launcher_blob_sha"]: raise SystemExit("launcher identity mismatch")
+          observed={i.get("bridge_path"):(int(i.get("max_bytes",-1)),i.get("git_blob_sha")) for i in request.get("materialized_files") or []}
+          if observed!=expected or len(observed)!=17: raise SystemExit("snapshot contract changed")
+          for path,(maximum,want) in expected.items():
+            if blob(fetch(path,maximum))!=want: raise SystemExit(f"snapshot mismatch: {path}")
+          resource=request.get("resource") or {}
+          if (resource.get("accelerator"),resource.get("machine_shape"),resource.get("expected_visible_gpu_count"),resource.get("max_active_runs")) != ("gpu","NvidiaTeslaT4",2,2): raise SystemExit("resource contract changed")
+          repair=request.get("repair_contract") or {}
+          if repair.get("old_keyword")!="required_name_fragment" or repair.get("new_keyword")!="required_gpu_name_fragment" or any(repair.get(k) is not False for k in ("science_changed","training_protocol_changed","content_reference_changed","candidate_matrix_changed","selection_protocol_changed","recovery_gate_changed","clean_room_changed")): raise SystemExit("repair contract changed")
+          science=request.get("scientific_contract") or {}
+          if science.get("candidate_count")!=7 or science.get("reference_version")!="loo-byte-ngram-difficulty-v1" or science.get("optimizer_steps_per_architecture")!=1280 or science.get("stage2_v3_selection_allowed") is not False: raise SystemExit("science contract changed")
+          tree=ast.parse(launcher.decode())
+          commands=[]
+          for node in ast.walk(tree):
+            if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and isinstance(node.func.value,ast.Name) and node.func.value.id=="subprocess" and node.func.attr=="run" and node.args and isinstance(node.args[0],(ast.List,ast.Tuple)):
+              commands.append(tuple(x.value if isinstance(x,ast.Constant) and isinstance(x.value,str) else "<dynamic>" for x in node.args[0].elts))
+          def pair(cmd,a,b): return any(cmd[i:i+2]==(a,b) for i in range(len(cmd)-1))
+          if sum(pair(c,"kernels","push") for c in commands)!=1: raise SystemExit("launcher write count changed")
+          forbidden=(("competitions","submit"),("datasets","create"),("datasets","version"),("models","create"),("models","version"),("kernels","delete"),("kernels","cancel"))
+          if any(pair(c,*p) for c in commands for p in forbidden): raise SystemExit("forbidden Kaggle write present")
+          print("SHADOW_GOLD_CONTENT_REF_V2_EXACT_REQUEST PASS snapshots=17 write_calls=1 science_changed=0 repair=kwarg-only")
+          PY
+          python3 "${workdir}/${LAUNCHER_PATH}" --materialize --snapshot-root "${workdir}" --kernel-dir "${workdir}/kernel" --base-launcher "${workdir}/${BASE_LAUNCHER_PATH}"
+          python3 - "${workdir}/kernel" <<'PY'
+          import ast,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); nb=json.loads((root/"shadow-gold-content-reference-v2.ipynb").read_text()); meta=json.loads((root/"kernel-metadata.json").read_text()); code="".join(nb["cells"][1]["source"]); compile(code,"notebook","exec")
+          for marker in ("13d062a8fd94a55a42ae428693a7e59271ed239d","shadow_gold_content_reference_v2.py","from poisoned_chalice.shadow_gold_content_reference_v2 import run_content_reference_benchmark","runtime_repair_only","reference_leave_one_file_out","content_reference_metrics.json"): assert marker in code
+          assert "from poisoned_chalice.shadow_gold_content_reference import run_content_reference_benchmark" not in code
+          calls=[n for n in ast.walk(ast.parse(code)) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=="run_content_reference_benchmark"]
+          assert len(calls)==1
+          assert meta.get("id")=="renta0426/shadow-gold-content-reference-v2" and meta.get("title")=="Gold content-reference calibration v2"
+          assert meta.get("enable_gpu") is True and meta.get("enable_tpu") is False and meta.get("enable_internet") is False and meta.get("machine_shape")=="NvidiaTeslaT4"
+          print("SHADOW_GOLD_CONTENT_REF_V2_VALIDATE PASS gpu=2 steps=1280 candidates=7 repair=kwarg-only outputs=4")
+          PY
+
+  launch:
+    name: Launch repaired Gold content-reference T4 x2 calibration
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    concurrency:
+      group: kaggle-resource-gpu-global
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/191-poisoned-chalice-shadow-gold-content-reference-v2.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" && -z "${RESEARCH_REPO_READ_TOKEN-}" ]]
+          echo "SHADOW_GOLD_CONTENT_REF_V2_PROTECTED_BOUNDARY PASS max_active=2 private_repo_access=0"
+
+      - name: Reconstruct approved bundle and locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; kernel_dir="${workdir}/kernel"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"; echo "KERNEL_DIR=${kernel_dir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import hashlib,json,pathlib,re,ssl,sys,time,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          expected={
+            "materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/controlled_transfer.py":(65536,"09b04c10d934654044817bb9b36fd7358a2aa942"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_corpus.py":(32768,"241e3481f7dc56f5fc7495436f3cfc33274a0823"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_kaggle.py":(65536,"e68eb320605a943bb7d46b0e9ce51bb06142ffef"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_gold_transfer.py":(65536,"1ee969fe852f8a18d00a5c0249f4a8a90d61338a"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_protocol.py":(65536,"1c47b80696050aa2e5e7c62384617df61ecb80da"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_scoring.py":(65536,"6bc2b55bec2a32cbb3b0cfe870e426f80260730d"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training.py":(65536,"2fe3cf2079659ae10e1ebe0d5973f3ce96c26a03"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/shadow_training_dual_gpu.py":(65536,"c75a5963fa930916024cb16b4fbf562ba4afa818"),"materialized/poisoned-chalice-shadow-gold-v1/poisoned_chalice/stage2_api.py":(65536,"16578d3e01b6471e5bfb2b04cebb99e1b3126c7c"),"materialized/poisoned-chalice-shadow-gold-v2/poisoned_chalice/shadow_gold_kaggle_v2.py":(32768,"df6e67f7d0e67d2585fd6226b9d2592223f808d2"),"materialized/poisoned-chalice-shadow-gold-positive-control-v1/poisoned_chalice/shadow_gold_positive_control.py":(65536,"8b14ba725a939b8a7c21aff93f70165c304fde79"),"materialized/poisoned-chalice-shadow-gold-positive-control-v1/shadow_gold_positive_control_v1.json":(32768,"424fe2674daebc1bba51b560d9ad057dff2b82c2"),"materialized/poisoned-chalice-shadow-gold-positive-control-v2/poisoned_chalice/shadow_gold_positive_control_v2.py":(32768,"374a6197b4238f4ea7279b27f08edb2a6f366e50"),"materialized/poisoned-chalice-shadow-gold-content-reference-v1/poisoned_chalice/shadow_gold_content_reference.py":(65536,"433258dfdb1c10b88062c05ea946579383471638"),"materialized/poisoned-chalice-shadow-gold-content-reference-v1/shadow_gold_content_reference_v1.json":(32768,"3bad0da78840ffb8e3ca72addc45101114fe7761"),"materialized/poisoned-chalice-shadow-gold-content-reference-v2/poisoned_chalice/shadow_gold_content_reference_v2.py":(32768,"0740e0daba743f38349dbac36a303cb441dfae25"),"materialized/poisoned-chalice-shadow-gold-content-reference-v2/shadow_gold_content_reference_v2.json":(32768,"0e6edb478bfca72336e041d5004b802912bb94e9")}
+          def fetch(path,maximum):
+            url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}"; last=None
+            for attempt in range(3):
+              try:
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+                if len(data)>maximum: raise SystemExit(f"file too large: {path}")
+                dst=root/path; dst.parent.mkdir(parents=True,exist_ok=True); dst.write_bytes(data); return data
+              except Exception as exc:
+                last=exc
+                if attempt<2: time.sleep(attempt+1)
+            raise SystemExit(f"read-only fetch failed: {path}: {last}")
+          def blob(data): return hashlib.sha1(b"blob "+str(len(data)).encode()+b"\0"+data).hexdigest()
+          request=json.loads(fetch("requests/poisoned-chalice-shadow-gold-content-reference-v2.json",65536)); launcher=fetch("scripts/poisoned_chalice_shadow_gold_content_reference_v2.py",262144); base=fetch("scripts/poisoned_chalice_shadow_gold_content_reference_v1.py",262144); lock=fetch("requirements/kaggle-2.2.4.lock",65536)
+          if request.get("request_id")!="20260906-poisoned-chalice-shadow-gold-content-reference-v2-001" or request.get("target")!="renta0426/shadow-gold-content-reference-v2" or request.get("repair_commit")!="13d062a8fd94a55a42ae428693a7e59271ed239d": raise SystemExit("request identity changed")
+          if blob(launcher)!=request.get("launcher_blob_sha") or blob(base)!=request.get("base_launcher_blob_sha"): raise SystemExit("launcher identity mismatch")
+          observed={i.get("bridge_path"):(int(i.get("max_bytes",-1)),i.get("git_blob_sha")) for i in request.get("materialized_files") or []}
+          if observed!=expected or len(observed)!=17: raise SystemExit("snapshot contract changed")
+          for path,(maximum,want) in expected.items():
+            if blob(fetch(path,maximum))!=want: raise SystemExit(f"snapshot mismatch: {path}")
+          lines=[line.strip() for line in lock.decode().splitlines() if line.strip() and not line.lstrip().startswith("#")]; pattern=re.compile(r"^[a-z0-9][a-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]* --hash=sha256:[0-9a-f]{64}$")
+          if len(lines)!=33 or not all(pattern.fullmatch(line) for line in lines): raise SystemExit("Kaggle CLI lock validation failed")
+          print("SHADOW_GOLD_CONTENT_REF_V2_PROTECTED_MATERIAL PASS snapshots=17 repair=kwarg-only")
+          PY
+          python3 "${workdir}/${LAUNCHER_PATH}" --materialize --snapshot-root "${workdir}" --kernel-dir "${kernel_dir}" --base-launcher "${workdir}/${BASE_LAUNCHER_PATH}"
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/${LOCK_PATH}" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Confirm current Kaggle policy pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl,time,urllib.request
+          ctx=ssl.create_default_context()
+          for url in ("https://www.kaggle.com/terms","https://www.kaggle.com/aup","https://www.kaggle.com/community-guidelines","https://www.kaggle.com/docs/api","https://www.kaggle.com/docs/notebooks"):
+            for attempt in range(3):
+              try:
+                req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+                with urllib.request.urlopen(req,timeout=30,context=ctx) as response:
+                  if response.status!=200 or not response.read(65536): raise RuntimeError("empty")
+                break
+              except Exception:
+                if attempt==2: raise
+                time.sleep(attempt+1)
+          print("SHADOW_GOLD_CONTENT_REF_V2_POLICY PASS")
+          PY
+
+      - name: Admit GPU slot and launch exactly once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" && -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          import os,re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api=KaggleApi(); api.authenticate(); target=os.environ["TARGET_KERNEL"]; max_active=int(os.environ["MAX_ACTIVE_REMOTE_RUNS"])
+          pages=api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []; content={}
+          for page in pages:
+            data=page.to_dict() if hasattr(page,"to_dict") else dict(page); name=str(data.get("name") or "").strip().lower()
+            if name: content[name]=str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content or not any("data" in name for name in content): raise SystemExit("live competition pages unavailable")
+          plain=re.sub(r"\s+"," ",re.sub(r"<[^>]+>"," ",content["evaluation"].replace(r"\%","%"))).casefold()
+          if not all(token in plain for token in ("auc","novelty","1%","false-positive")): raise SystemExit("evaluation contract changed")
+          visible=api.kernels_list(user="renta0426",search="shadow-gold-content-reference-v2",page_size=20) or []
+          if any(str(getattr(item,"ref",""))==target for item in visible): raise SystemExit("v2 target already exists")
+          quota=api.quota_view(); gpu=getattr(quota,"gpu_quota",None); used=getattr(gpu,"time_used",None); total=getattr(gpu,"total_time_allowed",None)
+          if used is None or total is None: raise SystemExit("GPU quota unavailable")
+          remaining=max(0.0,(total-used).total_seconds()/3600.0)
+          if remaining<1.0: raise SystemExit(f"insufficient GPU quota: {remaining:.2f}h")
+          recent=(api.kernels_list(user="renta0426",sort_by="dateRun",page_size=25) or [])[:25]; active=0; unknown=0
+          for item in recent:
+            ref=str(getattr(item,"ref","") or "")
+            if not ref: continue
+            try: status=str(getattr(api.kernels_status(ref),"status","")).upper()
+            except Exception: unknown+=1; continue
+            if any(token in status for token in ("RUNNING","QUEUED","PENDING")): active+=1
+          if unknown: raise SystemExit(f"conservative admission refused: active={active} unknown={unknown} max_active={max_active}")
+          if active>=max_active: raise SystemExit(f"concurrency admission refused: active={active} max_active={max_active}")
+          print(f"SHADOW_GOLD_CONTENT_REF_V2_LIVE_PREFLIGHT PASS quota={remaining:.2f} active={active} max_active={max_active} unknown=0")
+          PY
+          "${WORKDIR}/kaggle-venv/bin/python" "${WORKDIR}/${LAUNCHER_PATH}" --execute --kaggle-bin "${WORKDIR}/kaggle-venv/bin/kaggle" --kernel-dir "${KERNEL_DIR}"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "SHADOW_GOLD_CONTENT_REF_V2_CLEANUP PASS retention_days=0"
