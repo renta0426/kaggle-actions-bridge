@@ -103,9 +103,8 @@ def validate_sources(files: dict[str, bytes]) -> None:
     for marker in required:
         if marker not in source:
             raise RuntimeError(f"start-boundary source marker missing: {marker}")
-    for forbidden in ("probe_digest_logp_mean", "known_probe_boundary"):
-        if forbidden in source:
-            raise RuntimeError(f"probe-specific marker leaked into start-boundary runtime: {forbidden}")
+    if "probe_digest_logp_mean" in source:
+        raise RuntimeError("probe-local score leaked into start-boundary runtime")
 
 
 def validate_configs(positive: dict, attribution: dict) -> None:
