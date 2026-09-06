@@ -195,7 +195,7 @@ def validate_kernel(kernel_dir: Path) -> None:
         "paper_prob_weighted_minkpp_",
         "oracle_abs_error",
         "real_dense_blocked_max_z_diff",
-        "low-FPR selection",
+        "low-FPR",
     ):
         if marker not in code:
             raise RuntimeError(f"generated notebook marker missing: {marker}")
