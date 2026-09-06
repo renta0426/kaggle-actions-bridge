@@ -7,3 +7,5 @@ This directory contains bounded, non-sensitive records of resource-consuming or 
 - `cmi-flu-hai-transfer-002.md`: request 002 pre-execution kernel-push failure caused by inconsistent title/slug metadata, plus repair 003's local identity check and bounded push-failure diagnostics.
 - `cmi-flu-hai-transfer-003.md`: request 003 resource-consuming HAI failure caused by the locked organizer strain-sequence CSV using raw headers `Virus`, `Sequence`, and `Status_of_sequence` rather than the science layer's canonical internal names.
 - `cmi-flu-hai-strain-reference-schema-004.md`: credential-free structural diagnosis of the locked organizer strain reference used to define repair 004 without exposing sequence values.
+- `cmi-flu-public-probes-002.md`: controlled Public-probe repair 002 pre-write failure because the current Kaggle token could not read the historical private B2.1 Notebook.
+- `cmi-flu-public-probes-003.md`: request 003 resource-consuming failure caused by a bridge-side-only `sha256_bytes` helper leaking into the generated Kaggle runtime before frozen B2.1 regeneration began.
