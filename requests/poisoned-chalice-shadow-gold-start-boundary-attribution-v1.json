@@ -6,7 +6,7 @@
   "operation": "kernel_run",
   "target": "renta0426/shadow-gold-start-boundary-attribution-v1",
   "launcher_path": "scripts/poisoned_chalice_shadow_gold_start_boundary_attribution_v1.py",
-  "launcher_blob_sha": "a8e9fbf2e8a27dcf93211fce3a8a7637042e82cd",
+  "launcher_blob_sha": "16cf5028a6d09f2aed4c590b69c42c248365a265",
   "research_commit": "6b6f388627dfcf16ab0140337cabe7e93f4a8891",
   "context_decomposition_result_commit": "cf5da228ac0c0ffd7a1e13edfb2835f5a8655015",
   "execution_id": "shadow-gold-start-boundary-attribution-v1",
