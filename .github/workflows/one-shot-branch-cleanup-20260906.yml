@@ -1,0 +1,69 @@
+name: One-shot bridge branch cleanup 20260906
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-shot-branch-cleanup-20260906.yml
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Verify audited repository state and delete every non-main branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_BRANCH_SET_SHA256: 0493be7798b6b23daf2961dabde06897781cb4fc4976693f82b7dfdcc57315b2
+          EXPECTED_BRANCH_COUNT: "131"
+        run: |
+          set -euo pipefail
+
+          git ls-remote --heads origin \
+            | awk '{sub("refs/heads/", "", $2); print $2}' \
+            | sort > /tmp/branches.txt
+
+          actual_count="$(wc -l < /tmp/branches.txt | tr -d ' ')"
+          actual_sha="$(sha256sum /tmp/branches.txt | awk '{print $1}')"
+          [[ "${actual_count}" == "${EXPECTED_BRANCH_COUNT}" ]] || {
+            echo "BRANCH_CLEANUP_REFUSED count_changed expected=${EXPECTED_BRANCH_COUNT} actual=${actual_count}"
+            exit 1
+          }
+          [[ "${actual_sha}" == "${EXPECTED_BRANCH_SET_SHA256}" ]] || {
+            echo "BRANCH_CLEANUP_REFUSED set_changed expected=${EXPECTED_BRANCH_SET_SHA256} actual=${actual_sha}"
+            exit 1
+          }
+
+          open_pr_count="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" --jq '.[].number' | wc -l | tr -d ' ')"
+          [[ "${open_pr_count}" == "0" ]] || {
+            echo "BRANCH_CLEANUP_REFUSED open_prs=${open_pr_count}"
+            exit 1
+          }
+
+          grep -Fxq main /tmp/branches.txt
+          delete_count=0
+          while IFS= read -r branch; do
+            [[ "${branch}" == "main" ]] && continue
+            git push --quiet origin --delete "${branch}"
+            delete_count=$((delete_count + 1))
+          done < /tmp/branches.txt
+
+          git ls-remote --heads origin \
+            | awk '{sub("refs/heads/", "", $2); print $2}' \
+            | sort > /tmp/final-branches.txt
+          [[ "$(cat /tmp/final-branches.txt)" == "main" ]]
+          [[ "${delete_count}" == "130" ]]
+          echo "BRANCH_CLEANUP_COMPLETE deleted=${delete_count} remaining=1 branch=main"
