@@ -1,0 +1,200 @@
+            "name": "same_readout_anchor",
+            "metrics": _metric_summary(anchor, prediction_scale="rank_score"),
+        },
+        "availability_only_negative_control": {
+            "definition": "count of finite non-excluded model fields; no target used to construct score",
+            "metrics": _metric_summary(
+                _compact_availability_frame(dataset),
+                prediction_scale="rank_score",
+            ),
+        },
+        "subject_block_label_shuffle_negative_control": shuffle,
+        "comparisons": comparisons,
+        "sensitivity_28": sensitivity,
+        "split_contract": {
+            "split_count": len(splits),
+            "subject_purge": True,
+            "single_study_repeated_group_cv": int(dataset.train["study_group"].nunique()) < 2,
+        },
+    }
+
+
+def _hai_task_result(
+    task: str,
+    dataset: HAIModelDataset,
+    result: Any,
+    *,
+    config: BaselineConfig,
+    panel_strains: Sequence[str],
+) -> Mapping[str, Any]:
+    expected = EXPECTED_B21_MODELS[task]
+    if result.selected_spec.name != expected:
+        raise DataContractError(
+            f"E01 frozen B2.1 HAI reproduction mismatch for {task}: "
+            f"{result.selected_spec.name} != {expected}"
+        )
+    incumbent = _hai_panel_frame(result, panel_strains=panel_strains)
+    anchor = _hai_anchor_frame(result, panel_strains=panel_strains)
+    availability = _hai_availability_frame(result, panel_strains=panel_strains)
+    spec = _find_spec(config, "hai", expected)
+    return {
+        "incumbent": {
+            "name": f"b21_{expected}",
+            "metrics": _metric_summary(incumbent, prediction_scale="raw_target"),
+        },
+        "anchor_reference": {
+            "name": "pre_hai_panel_geometric_mean_rank",
+            "metrics": _metric_summary(anchor, prediction_scale="rank_score"),
+        },
+        "fixed_panel_proxy": {
+            "coverage": _hai_coverage(result, panel_strains=panel_strains),
+            "rmse_is_historical_proxy_not_2025_target": True,
+        },
+        "availability_only_negative_control": {
+            "definition": "number of observed strains from the fixed task panel",
+            "metrics": _metric_summary(availability, prediction_scale="rank_score"),
+        },
+        "subject_block_label_shuffle_negative_control": _hai_shuffle_oof(
+            dataset,
+            spec=spec,
+            panel_strains=panel_strains,
+        ),
+        "comparisons": {
+            "incumbent_vs_anchor": _paired_comparison(
+                incumbent,
+                anchor,
+                candidate_name=f"b21_{expected}",
+                reference_name="pre_hai_panel_geometric_mean_rank",
+            )
+        },
+        "sensitivity_28": {
+            "incumbent_vs_anchor": _sensitivity_28(
+                incumbent,
+                anchor,
+                candidate_name=f"b21_{expected}",
+                reference_name="pre_hai_panel_geometric_mean_rank",
+            )
+        },
+        "split_contract": {
+            "subject_purged_leave_one_study_out": True,
+            "strain_rows_never_treated_as_independent_split_units": True,
+        },
+    }
+
+
+def run_strategy_e01(
+    config: BaselineConfig,
+    inputs: InputBundle,
+) -> Mapping[str, Any]:
+    """Run the E01 fixed-condition evaluation harness on Competition Data."""
+
+    if config.baseline != "b021_taskwise_robust":
+        raise DataContractError("E01 requires b021_taskwise_robust config")
+    if str(config.section("selection").get("policy", "")) != "robust_v1":
+        raise DataContractError("E01 requires robust_v1 selection policy")
+    flow = config.section("flow")
+    if (
+        str(flow.get("task_12_mode")) != "broad"
+        or str(flow.get("task_13_mode")) != "broad"
+        or bool(flow.get("include_sdy272_asc_proxy"))
+    ):
+        raise DataContractError("E01 requires frozen broad-flow/strict-Task1.3 B2.1 contract")
+
+    datasets = build_b02_datasets(config, inputs)
+    tasks: dict[str, Any] = {}
+    for task, model_set in (
+        ("Task1.1", "task_11"),
+        ("Task1.2", "task_12"),
+        ("Task1.3", "task_13"),
+    ):
+        dataset = datasets[task]
+        if not isinstance(dataset, TaskDataset):
+            raise DataContractError(f"E01 expected TaskDataset for {task}")
+        tasks[task] = _compact_task_result(
+            task,
+            dataset,
+            config=config,
+            model_set=model_set,
+        )
+
+    hai_results = run_hai_compact_for_panels(
+        datasets["HAI_D28"],
+        specs=config.model_specs("hai"),
+        selection_panels={
+            "Task2.1": inputs.vaccine_strains,
+            "Task2.2": inputs.challenge_strains,
+        },
+        selection_policy="robust_v1",
+    )
+    hai_results.update(
+        run_hai_compact_for_panels(
+            datasets["HAI_D365"],
+            specs=config.model_specs("hai"),
+            selection_panels={"Task2.3": inputs.challenge_strains},
+            selection_policy="robust_v1",
+        )
+    )
+    panels = {
+        "Task2.1": inputs.vaccine_strains,
+        "Task2.2": inputs.challenge_strains,
+        "Task2.3": inputs.challenge_strains,
+    }
+    hai_datasets = {
+        "Task2.1": datasets["HAI_D28"],
+        "Task2.2": datasets["HAI_D28"],
+        "Task2.3": datasets["HAI_D365"],
+    }
+    for task in ("Task2.1", "Task2.2", "Task2.3"):
+        tasks[task] = _hai_task_result(
+            task,
+            hai_datasets[task],
+            hai_results[task],
+            config=config,
+            panel_strains=panels[task],
+        )
+
+    return _json_safe(
+        {
+            "schema_version": 1,
+            "experiment": EXPERIMENT,
+            "comparison_contract": "paired_subject_purged_v2",
+            "random_seed": RANDOM_SEED,
+            "subset_sensitivity": {
+                "n": SUBSET_N,
+                "repetitions": SUBSET_REPETITIONS,
+                "without_replacement": True,
+            },
+            "decision_heuristics": {
+                "study_mean_delta_candidate_threshold": CANDIDATE_DELTA_THRESHOLD,
+                "large_study_n_threshold": LARGE_STUDY_N,
+                "large_study_decline_review_threshold": LARGE_STUDY_DECLINE_REVIEW,
+                "not_statistical_significance_tests": True,
+            },
+            "frozen_incumbent": {
+                "Task1.1": f"b21_{EXPECTED_B21_MODELS['Task1.1']}",
+                "Task1.2": "task12_anchor_residual_et_d5_l5_sqrt_lambda0.5",
+                "Task1.3": f"b21_{EXPECTED_B21_MODELS['Task1.3']}",
+                "Task2.1": f"b21_{EXPECTED_B21_MODELS['Task2.1']}",
+                "Task2.2": f"b21_{EXPECTED_B21_MODELS['Task2.2']}",
+                "Task2.3": f"b21_{EXPECTED_B21_MODELS['Task2.3']}",
+            },
+            "tasks": tasks,
+            "negative_controls": [
+                "modality_or_panel_availability_only",
+                "within_study_subject_block_label_shuffle",
+                "same_readout_or_pre_hai_anchor_only",
+                "frozen_no_additional_view_incumbent",
+            ],
+            "rank_calibration_separation": {
+                "rank_scores_are_not_assigned_raw_scale_rmse": True,
+                "raw_target_predictions_report_raw_scale_rmse": True,
+                "hai_panel_rmse_is_historical_proxy": True,
+            },
+            "task14_excluded": True,
+            "task14_reason": "no public supervised AIM labels",
+            "contains_participant_identifiers": False,
+            "contains_row_level_predictions": False,
+            "leaderboard_used_for_selection": False,
+            "competition_submission_attempted": False,
+        }
+    )
