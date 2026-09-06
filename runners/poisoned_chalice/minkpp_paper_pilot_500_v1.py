@@ -31,6 +31,71 @@ PERSISTENT_OUTPUTS = [
     f"{OUTPUT_PREFIX}/REPORT.md",
 ]
 
+# The frozen research builder uses only this small subset of nbformat. Keeping
+# the bridge-side materialization standard-library-only prevents a transient
+# PyPI failure between a green PR validation and the approved main launch.
+NBF_SHIM = r'''from __future__ import annotations
+import hashlib
+import json
+from pathlib import Path
+
+class NotebookNode(dict):
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError as error:
+            raise AttributeError(name) from error
+    def __setattr__(self, name, value):
+        self[name] = value
+
+def _cell_id(kind, source):
+    return hashlib.sha256((kind + "\0" + source).encode("utf-8")).hexdigest()[:16]
+
+class v4:
+    @staticmethod
+    def new_markdown_cell(source=""):
+        return NotebookNode({
+            "cell_type": "markdown",
+            "id": _cell_id("markdown", source),
+            "metadata": NotebookNode(),
+            "source": source,
+        })
+    @staticmethod
+    def new_code_cell(source=""):
+        return NotebookNode({
+            "cell_type": "code",
+            "id": _cell_id("code", source),
+            "execution_count": None,
+            "metadata": NotebookNode(),
+            "outputs": [],
+            "source": source,
+        })
+    @staticmethod
+    def new_notebook():
+        return NotebookNode({
+            "cells": [],
+            "metadata": NotebookNode(),
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        })
+
+def write(notebook, path):
+    seen = set()
+    if notebook.get("nbformat") != 4 or not isinstance(notebook.get("cells"), list):
+        raise ValueError("invalid notebook root")
+    for cell in notebook["cells"]:
+        cell_id = cell.get("id")
+        if not isinstance(cell_id, str) or not cell_id or cell_id in seen:
+            raise ValueError("invalid or duplicate cell id")
+        seen.add(cell_id)
+        if cell.get("cell_type") == "code" and not isinstance(cell.get("outputs"), list):
+            raise ValueError("invalid code cell")
+    Path(path).write_text(
+        json.dumps(notebook, indent=1, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+'''
+
 
 def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -39,6 +104,15 @@ def _load(path: Path) -> dict:
 def _slugify(title: str) -> str:
     value = re.sub(r"[^a-z0-9]+", "-", title.casefold()).strip("-")
     return re.sub(r"-+", "-", value)
+
+
+def _install_nbformat_shim(research_root: Path) -> Path:
+    path = research_root / "scripts/nbformat.py"
+    if path.exists():
+        raise RuntimeError("unexpected pre-existing nbformat shim")
+    path.write_text(NBF_SHIM, encoding="utf-8")
+    compile(path.read_text(encoding="utf-8"), str(path), "exec")
+    return path
 
 
 def validate_request(request: dict) -> None:
@@ -178,8 +252,11 @@ def validate_kernel(kernel_dir: Path) -> None:
         if metadata.get(key) != []:
             raise RuntimeError(f"unexpected attached source: {key}")
     notebook = _load(notebook_path)
-    if notebook.get("nbformat") != 4 or len(notebook.get("cells") or []) != 8:
+    if notebook.get("nbformat") != 4 or notebook.get("nbformat_minor") != 5 or len(notebook.get("cells") or []) != 8:
         raise RuntimeError("unexpected notebook structure")
+    cell_ids = [cell.get("id") for cell in notebook["cells"]]
+    if len(set(cell_ids)) != len(cell_ids) or not all(isinstance(value, str) and value for value in cell_ids):
+        raise RuntimeError("invalid notebook cell ids")
     sources = []
     for cell in notebook["cells"]:
         source = cell.get("source", "")
@@ -209,15 +286,19 @@ def materialize(request_path: Path, research_root: Path, kernel_dir: Path) -> No
     validate_request(request)
     validate_research(research_root)
     builder = research_root / "scripts/build_minkpp_pilot_notebook.py"
-    completed = subprocess.run(
-        [sys.executable, str(builder)],
-        cwd=str(research_root),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        timeout=120,
-        check=False,
-    )
+    shim = _install_nbformat_shim(research_root)
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(builder)],
+            cwd=str(research_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    finally:
+        shim.unlink(missing_ok=True)
     if completed.returncode != 0:
         digest = hashlib.sha256((completed.stdout + completed.stderr).encode("utf-8", errors="replace")).hexdigest()
         raise RuntimeError(f"notebook builder failed rc={completed.returncode} diagnostic_sha256={digest}")
@@ -226,7 +307,7 @@ def materialize(request_path: Path, research_root: Path, kernel_dir: Path) -> No
         shutil.rmtree(kernel_dir)
     shutil.copytree(built_dir, kernel_dir)
     validate_kernel(kernel_dir)
-    print("MINKPP_PAPER_PILOT_500_MATERIALIZE PASS rows=500 files=2 gpu=T4 retries=0 submissions=0")
+    print("MINKPP_PAPER_PILOT_500_MATERIALIZE PASS rows=500 files=2 gpu=T4 retries=0 submissions=0 external_build_deps=0")
 
 
 def execute(request_path: Path, kernel_dir: Path, kaggle_bin: Path) -> None:
