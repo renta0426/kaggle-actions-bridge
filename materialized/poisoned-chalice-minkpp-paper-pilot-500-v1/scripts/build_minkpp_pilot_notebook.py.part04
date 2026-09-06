@@ -1,0 +1,134 @@
+    ),
+    "max_abs_paper_z": float(diag_max_abs_z),
+}
+if diagnostics["valid_target_tokens_from_reducer"] != diagnostics["target_tokens_from_windows"]:
+    raise RuntimeError("paper reducer valid-token accounting mismatch")
+
+runtime = {
+    "data_load_seconds": data_load_seconds,
+    "tokenize_seconds": tokenize_seconds,
+    "model_load_seconds": model_load_seconds,
+    "inference_and_reduction_seconds": run_seconds,
+    "windows": int(len(window_features)),
+    "target_tokens": int(target_tokens),
+    "peak_gpu_memory_bytes": peak_gpu_bytes,
+    "gpu": torch.cuda.get_device_name(0),
+    "torch_version": torch.__version__,
+}
+manifest = {
+    "status": "complete",
+    "config": asdict(CONFIG),
+    "schema": {
+        "legacy": "legacy_uniform_vocab_z (frozen historical definition)",
+        "paper": MINKPP_PAPER_SCHEMA_VERSION,
+    },
+    "bounded_tokenization": {
+        "strategy": "Unicode-safe bounded prefix/middle/suffix character regions",
+        "max_source_chars_per_region": CONFIG.max_source_chars_per_region,
+        "max_model_tokens_per_window": CONFIG.max_length,
+        "positions": window_counts,
+    },
+    "diagnostics": diagnostics,
+    "runtime": runtime,
+    "metrics": metrics,
+}
+
+window_features.to_parquet(OUTPUT / "window_scores.parquet", index=False)
+token_statistics.to_parquet(OUTPUT / "token_statistics.parquet", index=False)
+sample_scores.to_parquet(OUTPUT / "sample_scores.parquet", index=False)
+correlation.to_csv(OUTPUT / "score_spearman.csv")
+(OUTPUT / "metrics.json").write_text(
+    json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+(OUTPUT / "run_manifest.json").write_text(
+    json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+report = f'''# Stage 1 paper-faithful Min-K++ pilot — 500 rows
+
+Status: complete.
+
+This is a definition/runtime pilot, not a low-FPR model-selection experiment.
+All compared scores use the same StarCoder2-3B forward passes and exactly the
+same target tokens/windows.
+
+- rows: {len(sample_scores)}
+- windows: {len(window_features)}
+- target tokens: {target_tokens}
+- CPU-oracle absolute error: {oracle_abs_error:.3g}
+- real dense/blocked max z difference: {real_dense_blocked_max_z_diff:.3g}
+- variance clamps: {diag_variance_clamps}
+- peak GPU memory: {peak_gpu_bytes / 2**30:.3f} GiB
+- inference + reduction: {run_seconds:.1f} s
+
+Exploratory ROC-AUC (not a promotion gate):
+
+```json
+{json.dumps(auc, indent=2, sort_keys=True)}
+```
+'''
+(OUTPUT / "REPORT.md").write_text(report, encoding="utf-8")
+
+# Aggregate-only public log. No sample IDs or source text are printed.
+print(
+    json.dumps(
+        {
+            "status": manifest["status"],
+            "rows": metrics["rows"],
+            "windows": runtime["windows"],
+            "target_tokens": runtime["target_tokens"],
+            "diagnostics": diagnostics,
+            "runtime": runtime,
+            "auc_roc_exploratory": auc,
+            "paper_legacy_spearman": metrics["paper_legacy_spearman"],
+        },
+        indent=2,
+        sort_keys=True,
+    )
+)
+"""
+
+notebook = nbformat.v4.new_notebook()
+notebook.metadata.kernelspec = {
+    "display_name": "Python 3", "language": "python", "name": "python3"
+}
+notebook.metadata.language_info = {"name": "python", "version": "3.12"}
+notebook.cells = [
+    nbformat.v4.new_markdown_cell(
+        "# Stage 1 — paper-faithful Min-K++ pilot (500 fixed rows)\n\n"
+        "Definition/runtime validation. This notebook does not create or submit "
+        "a competition prediction."
+    ),
+    nbformat.v4.new_code_cell(
+        "%pip install -q datasets transformers==5.0.0 accelerate pyarrow scikit-learn"
+    ),
+    nbformat.v4.new_code_cell(MINKPP_SOURCE),
+    nbformat.v4.new_code_cell(textwrap.dedent(config_cell)),
+    nbformat.v4.new_code_cell(textwrap.dedent(data_cell)),
+    nbformat.v4.new_code_cell(textwrap.dedent(model_cell)),
+    nbformat.v4.new_code_cell(textwrap.dedent(run_cell)),
+    nbformat.v4.new_code_cell(textwrap.dedent(aggregate_cell)),
+]
+OUT.parent.mkdir(parents=True, exist_ok=True)
+nbformat.write(notebook, OUT)
+
+metadata = {
+    "id": "renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1",
+    "title": "Poisoned Chalice MinKPP Paper Pilot 500 V1",
+    "code_file": OUT.name,
+    "language": "python",
+    "kernel_type": "notebook",
+    "is_private": True,
+    "enable_gpu": True,
+    "enable_tpu": False,
+    "enable_internet": True,
+    "keywords": ["gpu", "membership-inference", "minkpp", "definition-pilot"],
+    "dataset_sources": [],
+    "kernel_sources": [],
+    "competition_sources": [],
+    "model_sources": [],
+    "machine_shape": "NvidiaTeslaT4",
+}
+(OUT.parent / "kernel-metadata.json").write_text(
+    json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+print(OUT)
