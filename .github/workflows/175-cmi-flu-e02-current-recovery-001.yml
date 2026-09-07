@@ -9,6 +9,7 @@ on:
       - scripts/cmi_flu_e02_recover.py
       - scripts/build_cmi_e02_release.py
       - scripts/test_cmi_e02_contracts.py
+      - scripts/test_cmi_e02_recovery_io.py
       - requests/cmi-flu-e02-current-recovery-001.json
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - scripts/cmi_flu_e02_recover.py
       - scripts/build_cmi_e02_release.py
       - scripts/test_cmi_e02_contracts.py
+      - scripts/test_cmi_e02_recovery_io.py
       - requests/cmi-flu-e02-current-recovery-001.json
 
 permissions: {}
@@ -92,6 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           "${WORK}/venv/bin/python" "${WORK}/bridge/scripts/test_cmi_e02_contracts.py" --original "${WORK}/original.py" --release "${WORK}/release.py"
+          "${WORK}/venv/bin/python" "${WORK}/bridge/scripts/test_cmi_e02_recovery_io.py" --original "${WORK}/original.py"
 
       - name: Cleanup
         if: always()
