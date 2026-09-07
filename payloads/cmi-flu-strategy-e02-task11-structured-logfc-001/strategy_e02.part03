@@ -1,0 +1,139 @@
+                "training_studies": int(train["study_group"].nunique()),
+                "feature_count": int(len(feature_names)),
+                "logB_coefficient": float(coef[log_b_index]),
+                "coefficient_l2_norm": float(np.linalg.norm(coef)),
+                "train_raw_diagnostics": train_raw_diag,
+                "validation_raw_diagnostics": validation_raw_diag,
+                "train_scale_diagnostics": train_scale_diag,
+                "validation_scale_diagnostics": validation_scale_diag,
+            }
+        )
+        parts.append(
+            pd.DataFrame(
+                {
+                    "row_index": split.validation_indices,
+                    "participant_id": validation["participant_id"].astype(str).to_numpy(),
+                    "subject_group": validation["subject_group"].astype(str).to_numpy(),
+                    "study_group": validation["study_group"].astype(str).to_numpy(),
+                    "target": pd.to_numeric(
+                        validation[dataset.target_column], errors="coerce"
+                    ).to_numpy(dtype=float),
+                    "prediction": prediction,
+                }
+            )
+        )
+    frame = pd.concat(parts, ignore_index=True)
+    if frame["row_index"].duplicated().any():
+        raise DataContractError("E02 structured OOF predicts a row more than once")
+    if set(frame["row_index"].astype(int)) != set(range(len(dataset.train))):
+        raise DataContractError("E02 structured OOF coverage mismatch")
+    return frame.sort_values("row_index").reset_index(drop=True), {
+        "model": "ridge",
+        "alpha": RIDGE_ALPHA,
+        "fit_intercept": False,
+        "target": "log(Task1.1_fold_change) centered within each training study",
+        "x_normalization": "study-local median/IQR; held X self-normalization",
+        "held_y_used_for_preprocessing": False,
+        "study_id_used_as_feature": False,
+        "feature_names": feature_names or [],
+        "fold_diagnostics": folds,
+        "label_shuffle": bool(shuffle_labels),
+        "moved_subject_assignments_across_folds": int(moved_total),
+    }
+
+
+def _fit_structured_challenge(
+    dataset: TaskDataset,
+    *,
+    other_columns: Sequence[str],
+    repeat_columns: Sequence[str] = (),
+) -> tuple[pd.DataFrame, Mapping[str, Any]]:
+    train_raw, _ = _raw_structured_features(
+        dataset.train,
+        other_columns=other_columns,
+        repeat_columns=repeat_columns,
+    )
+    challenge_raw, challenge_raw_diag = _raw_structured_features(
+        dataset.challenge,
+        other_columns=other_columns,
+        repeat_columns=repeat_columns,
+    )
+    if list(train_raw.columns) != list(challenge_raw.columns):
+        raise DataContractError("E02 Challenge feature order mismatch")
+    x_train, train_scale = _study_local_robust_scale(dataset.train, train_raw)
+    x_challenge, challenge_scale = _study_local_robust_scale(
+        dataset.challenge, challenge_raw
+    )
+    y_train = _center_logfc_target(dataset.train, target_column=dataset.target_column)
+    model = Ridge(alpha=RIDGE_ALPHA, fit_intercept=False)
+    model.fit(x_train, y_train)
+    prediction = np.asarray(model.predict(x_challenge), dtype=float).reshape(-1)
+    require_finite(prediction, name="E02 structured Challenge score")
+    result = dataset.challenge[["participant_id"]].copy()
+    result["prediction"] = prediction
+    coef = np.asarray(model.coef_, dtype=float).reshape(-1)
+    names = list(train_raw.columns)
+    return result, {
+        "rows": int(len(result)),
+        "prediction_unique": int(pd.Series(prediction).nunique()),
+        "feature_count": int(len(names)),
+        "logB_coefficient": float(coef[names.index("log_baseline_CXCL10")]),
+        "coefficient_l2_norm": float(np.linalg.norm(coef)),
+        "train_scale_diagnostics": train_scale,
+        "challenge_scale_diagnostics": challenge_scale,
+        "challenge_raw_diagnostics": challenge_raw_diag,
+    }
+
+
+def _fixed_anchor_residual_challenge(
+    dataset: TaskDataset,
+    *,
+    config: BaselineConfig,
+) -> pd.DataFrame:
+    spec = _identity_spec(_find_spec(config, "task_11", ANCHOR_RESIDUAL_MODEL))
+    direction_anchor = _oriented_anchor(
+        "Task1.1",
+        dataset.train,
+        dataset.train,
+        anchor_column=ANCHOR_COLUMN,
+        target_column=dataset.target_column,
+    )
+    challenge_anchor = _oriented_anchor(
+        "Task1.1",
+        dataset.train,
+        dataset.challenge,
+        anchor_column=ANCHOR_COLUMN,
+        target_column=dataset.target_column,
+    )
+    train = dataset.train.copy()
+    train[RESIDUAL_TARGET_COLUMN] = (
+        _rank_within(train, dataset.target_column) - direction_anchor
+    )
+    excluded = tuple(dict.fromkeys([*dataset.excluded_columns, dataset.target_column]))
+    _, correction = fit_final_model(
+        train,
+        dataset.challenge,
+        target_column=RESIDUAL_TARGET_COLUMN,
+        spec=spec,
+        excluded_columns=excluded,
+    )
+    score = challenge_anchor + ANCHOR_RESIDUAL_LAMBDA * np.asarray(
+        correction, dtype=float
+    )
+    require_finite(score, name="E02 anchor-residual Challenge score")
+    result = dataset.challenge[["participant_id"]].copy()
+    result["prediction"] = score
+    return result
+
+
+def _challenge_anchor(dataset: TaskDataset) -> pd.DataFrame:
+    score = _oriented_anchor(
+        "Task1.1",
+        dataset.train,
+        dataset.challenge,
+        anchor_column=ANCHOR_COLUMN,
+        target_column=dataset.target_column,
+    )
+    result = dataset.challenge[["participant_id"]].copy()
+    result["prediction"] = score
+    return result
