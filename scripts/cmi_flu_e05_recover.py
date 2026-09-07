@@ -14,6 +14,7 @@ import re
 import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -41,12 +42,21 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def resolve_kaggle_cli() -> str:
+    """Resolve the CLI from PATH or the active venv used to execute recovery."""
+    cli = shutil.which("kaggle")
+    if cli:
+        return cli
+    adjacent = Path(sys.executable).resolve().with_name("kaggle")
+    if adjacent.is_file():
+        return str(adjacent)
+    raise RuntimeError("kaggle_cli_missing")
+
+
 def cli_read(verb: str, folder: Path) -> None:
     if verb not in {"pull", "output"}:
         raise ValueError("read_verb_not_allowed")
-    cli = shutil.which("kaggle")
-    if not cli:
-        raise RuntimeError("kaggle_cli_missing")
+    cli = resolve_kaggle_cli()
     completed = subprocess.run(
         [cli, "kernels", verb, TARGET, "-p", str(folder)],
         capture_output=True, timeout=180, check=False,
