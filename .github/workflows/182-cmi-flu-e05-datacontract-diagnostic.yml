@@ -1,0 +1,15 @@
+name: Retired CMI-Flu E05 DataContract hash diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse retired E05 DataContract diagnostic
+        run: |
+          echo "RETIRED: E05 003 DataContract diagnostic completed in run 34117848167."
+          exit 1
