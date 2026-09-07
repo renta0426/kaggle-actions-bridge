@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "request_id": "20260907-poisoned-chalice-codeparrot-logrank-v3-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_update_run",
+  "target": "renta0426/codeparrot-fresh-pilot-v1",
+  "precondition": {
+    "current_version": 2,
+    "status_contains": "ERROR",
+    "is_private": true,
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4"
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "expected_runtime_minutes": 10,
+    "hard_timeout_minutes": 30,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 50,
+    "poll_interval_seconds": 300,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create exactly one new private notebook version 3 for renta0426/codeparrot-fresh-pilot-v1"
+  ],
+  "repair": {
+    "failure_version": 2,
+    "failure_stage": "post_forward_sample_aggregation",
+    "missing_window_feature": "mean_log_rank",
+    "formula": "mean(log1p(strict_rank))",
+    "strict_rank_definition": "1 + count(logit > target_logit)",
+    "rank_vocab_block_size": 8192,
+    "same_forward_required": true,
+    "first8_historical_fidelity_required": true
+  },
+  "scientific_boundary": {
+    "pilot_rows": 200,
+    "membership_join_allowed": false,
+    "performance_metrics_allowed": false,
+    "full_4000_scoring_authorized": false,
+    "competition_submission_allowed": false
+  },
+  "automatic_compute_retries": 0
+}
