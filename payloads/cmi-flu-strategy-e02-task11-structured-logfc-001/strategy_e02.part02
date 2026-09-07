@@ -1,0 +1,140 @@
+            q25, q75 = np.quantile(observed, [0.25, 0.75])
+            iqr = float(q75 - q25)
+            if not np.isfinite(iqr) or iqr <= 1e-12:
+                zero_iqr += 1
+                continue
+            transformed = np.zeros(len(values), dtype=float)
+            transformed[finite] = (values[finite] - median) / iqr
+            scaled[pos, j] = transformed
+    require_finite(scaled, name="E02 study-local scaled features")
+    return scaled, {
+        "study_blocks": int(work["study_group"].nunique(dropna=False)),
+        "feature_count": int(raw.shape[1]),
+        "zero_iqr_study_features": int(zero_iqr),
+        "all_missing_study_features": int(all_missing),
+        "held_x_self_normalization": True,
+        "missing_after_scaling": 0,
+    }
+
+
+def _center_logfc_target(
+    frame: pd.DataFrame,
+    *,
+    target_column: str,
+    values_override: np.ndarray | None = None,
+) -> np.ndarray:
+    require_columns(frame, ["study_group", target_column], table_name="E02 target frame")
+    if values_override is None:
+        values = pd.to_numeric(frame[target_column], errors="coerce").to_numpy(dtype=float)
+    else:
+        values = np.asarray(values_override, dtype=float)
+        if values.shape != (len(frame),):
+            raise DataContractError("E02 target override shape mismatch")
+    if not np.isfinite(values).all() or (values <= 0.0).any():
+        raise DataContractError("E02 Task1.1 logFC target must be finite and positive")
+    y = np.log(values)
+    centered = np.empty_like(y)
+    work = frame.reset_index(drop=True)
+    for _, positions in work.groupby(
+        "study_group", dropna=False, observed=True, sort=False
+    ).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        centered[pos] = y[pos] - float(np.mean(y[pos]))
+    require_finite(centered, name="E02 centered logFC target")
+    return centered
+
+
+def _shuffle_target_within_study(
+    frame: pd.DataFrame,
+    *,
+    target_column: str,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, int]:
+    require_columns(
+        frame,
+        ["study_group", "subject_group", target_column],
+        table_name="E02 shuffle source",
+    )
+    values = pd.to_numeric(frame[target_column], errors="coerce").to_numpy(dtype=float)
+    require_finite(values, name="E02 shuffle target")
+    shuffled = values.copy()
+    moved = 0
+    work = frame.reset_index(drop=True)
+    for _, positions in work.groupby(
+        "study_group", dropna=False, observed=True, sort=False
+    ).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        subjects = work.iloc[pos]["subject_group"].astype(str)
+        if subjects.duplicated().any():
+            raise DataContractError(
+                "E02 compact shuffle expects one row per subject within study"
+            )
+        perm = rng.permutation(len(pos))
+        shuffled[pos] = values[pos[perm]]
+        moved += int(np.sum(perm != np.arange(len(pos))))
+    return shuffled, moved
+
+
+def _fit_structured_oof(
+    dataset: TaskDataset,
+    *,
+    splits: Sequence[NamedSplit],
+    other_columns: Sequence[str],
+    repeat_columns: Sequence[str] = (),
+    shuffle_labels: bool = False,
+) -> tuple[pd.DataFrame, Mapping[str, Any]]:
+    rng = np.random.default_rng(RANDOM_SEED)
+    parts: list[pd.DataFrame] = []
+    folds: list[dict[str, Any]] = []
+    moved_total = 0
+    feature_names: list[str] | None = None
+    for split in splits:
+        train = dataset.train.iloc[split.train_indices].copy()
+        validation = dataset.train.iloc[split.validation_indices].copy()
+        train_raw, train_raw_diag = _raw_structured_features(
+            train,
+            other_columns=other_columns,
+            repeat_columns=repeat_columns,
+        )
+        validation_raw, validation_raw_diag = _raw_structured_features(
+            validation,
+            other_columns=other_columns,
+            repeat_columns=repeat_columns,
+        )
+        if feature_names is None:
+            feature_names = list(train_raw.columns)
+        if list(train_raw.columns) != feature_names or list(validation_raw.columns) != feature_names:
+            raise DataContractError("E02 structured feature order changed across folds")
+        x_train, train_scale_diag = _study_local_robust_scale(train, train_raw)
+        x_validation, validation_scale_diag = _study_local_robust_scale(
+            validation, validation_raw
+        )
+        if shuffle_labels:
+            shuffled, moved = _shuffle_target_within_study(
+                train,
+                target_column=dataset.target_column,
+                rng=rng,
+            )
+            moved_total += moved
+            y_train = _center_logfc_target(
+                train,
+                target_column=dataset.target_column,
+                values_override=shuffled,
+            )
+        else:
+            y_train = _center_logfc_target(
+                train,
+                target_column=dataset.target_column,
+            )
+        model = Ridge(alpha=RIDGE_ALPHA, fit_intercept=False)
+        model.fit(x_train, y_train)
+        prediction = np.asarray(model.predict(x_validation), dtype=float).reshape(-1)
+        require_finite(prediction, name="E02 structured held-study prediction")
+        coef = np.asarray(model.coef_, dtype=float).reshape(-1)
+        log_b_index = feature_names.index("log_baseline_CXCL10")
+        held = sorted(validation["study_group"].astype(str).unique())
+        folds.append(
+            {
+                "held_studies": held,
+                "validation_rows": int(len(validation)),
+                "training_rows": int(len(train)),
