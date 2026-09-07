@@ -7,6 +7,8 @@ on:
       - docs/OPERATIONS.md
       - docs/OPERATIONAL_LESSONS.md
       - scripts/kaggle_current_output_read.py
+      - scripts/kaggle_exact_identity.py
+      - scripts/test_kaggle_current_output.py
       - .github/workflows/141-bridge-output-contract-regression.yml
   push:
     branches: [main]
@@ -15,10 +17,11 @@ on:
       - docs/OPERATIONS.md
       - docs/OPERATIONAL_LESSONS.md
       - scripts/kaggle_current_output_read.py
+      - scripts/kaggle_exact_identity.py
+      - scripts/test_kaggle_current_output.py
       - .github/workflows/141-bridge-output-contract-regression.yml
 
 permissions: {}
-
 concurrency:
   group: bridge-output-contract-regression-${{ github.ref }}
   cancel-in-progress: false
@@ -45,41 +48,14 @@ jobs:
           git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${EVENT_SHA}"
           git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
 
-      - name: Enforce output-reader invariants
+      - name: Exercise exact output-reader safety behavior
         shell: bash
         run: |
           set -euo pipefail
           repo="${WORKDIR}/repo"
-          script="${repo}/scripts/kaggle_current_output_read.py"
-          python3 -W error::SyntaxWarning -m py_compile "${script}"
-          SCRIPT_PATH="${script}" python3 - <<'PY'
-          import ast
-          import os
-          from pathlib import Path
-
-          source = Path(os.environ["SCRIPT_PATH"]).read_text(encoding="utf-8")
-          tree = ast.parse(source)
-          assert "current_version_number" in source
-          assert "historical output substitution is forbidden" in source
-          assert '"kernels", "output"' in source
-          assert "capture_output=True" in source
-          assert "unexpected saved output files count=" in source
-          assert "TemporaryDirectory" in source
-          assert "shell=True" not in source
-          assert "os.system(" not in source
-          assert "subprocess.Popen" not in source
-          runs = [
-              node for node in ast.walk(tree)
-              if isinstance(node, ast.Call)
-              and isinstance(node.func, ast.Attribute)
-              and isinstance(node.func.value, ast.Name)
-              and node.func.value.id == "subprocess"
-              and node.func.attr == "run"
-          ]
-          if len(runs) != 1:
-              raise SystemExit(f"expected exactly one subprocess.run, got {len(runs)}")
-          print("BRIDGE_OUTPUT_CONTRACT_STATIC PASS current_only=true captured_cli=true writes=0")
-          PY
+          python3 -W error::SyntaxWarning -m py_compile "${repo}/scripts/kaggle_current_output_read.py" "${repo}/scripts/kaggle_exact_identity.py"
+          python3 "${repo}/scripts/test_kaggle_current_output.py"
+          echo 'BRIDGE_OUTPUT_CONTRACT_BEHAVIOR PASS current_only=true captured_cli=true writes=0 version_recheck=true'
 
       - name: Enforce documentation lessons
         shell: bash
