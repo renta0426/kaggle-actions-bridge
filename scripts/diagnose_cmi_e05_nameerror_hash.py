@@ -18,19 +18,16 @@ def tokens_from_source(source: str) -> set[str]:
         for node in ast.walk(tree)
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
     }
-    # Include identifiers appearing only in string literals / generated column names,
-    # because pandas/sklearn expression paths can raise NameError for such names.
     return names | set(TOKEN_RE.findall(source))
 
 
 def possible_messages(name: str) -> tuple[str, ...]:
-    raw = (
+    return (
         f"NameError:name '{name}' is not defined",
         f"NameError:free variable '{name}' referenced before assignment in enclosing scope",
         f"NameError:cannot access free variable '{name}' where it is not associated with a value in enclosing scope",
         f"NameError:cannot access local variable '{name}' where it is not associated with a value",
     )
-    return raw
 
 
 def main() -> int:
@@ -38,14 +35,11 @@ def main() -> int:
     p.add_argument("--runtime", type=Path, required=True)
     p.add_argument("--error-code", required=True)
     a = p.parse_args()
+    runtime_text = a.runtime.read_text(encoding="utf-8")
     ns = runpy.run_path(str(a.runtime), run_name="e05_nameerror_hash_diagnostic")
-    tokens: set[str] = set(TOKEN_RE.findall(a.runtime.read_text(encoding="utf-8")))
+    tokens: set[str] = set(TOKEN_RE.findall(runtime_text))
     for key in (
-        "E05_SOURCE",
-        "HAI_TRANSFER_SOURCE",
-        "E01_SOURCE",
-        "E01_V2_SOURCE",
-        "B21_ADAPTER_SOURCE",
+        "E05_SOURCE", "HAI_TRANSFER_SOURCE", "E01_SOURCE", "E01_V2_SOURCE", "B21_ADAPTER_SOURCE",
     ):
         source = ns.get(key)
         if isinstance(source, str):
@@ -61,13 +55,16 @@ def main() -> int:
             if short_hash(message) == a.error_code:
                 matches.append((token, message))
     if len(matches) != 1:
-        raise SystemExit(
-            f"E05_NAMEERROR_HASH_UNRESOLVED matches={matches} candidate_tokens={len(tokens)}"
-        )
+        raise SystemExit(f"E05_NAMEERROR_HASH_UNRESOLVED matches={matches} candidate_tokens={len(tokens)}")
     token, message = matches[0]
+    definition_count = len(re.findall(rf"(?m)^def\s+{re.escape(token)}\s*\(", runtime_text))
+    bare_load_count = len(re.findall(rf"\b{re.escape(token)}\s*\(", runtime_text))
+    namespace_present = token in ns
     print(
         "CMI_FLU_E05_NAMEERROR_HASH_MATCH "
         f"identifier={token} error_code={a.error_code} "
+        f"definition_count={definition_count} call_token_count={bare_load_count} "
+        f"runtime_namespace_present={str(namespace_present).lower()} "
         f"full_sha256={hashlib.sha256(message.encode()).hexdigest()}"
     )
     return 0
