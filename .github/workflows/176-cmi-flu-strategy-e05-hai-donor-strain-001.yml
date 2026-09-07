@@ -90,7 +90,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for n in 163 164 174 175; do f=$(find "${WORKDIR}/bridge/.github/workflows" -maxdepth 1 -type f -name "${n}-*" | head -1); [[ -n "$f" ]]; ! grep -Eq 'workflow_dispatch|^[[:space:]]+push:|^[[:space:]]+pull_request:|environment:|KAGGLE_API_TOKEN' "$f"; done
+          for n in 163 164 174 175; do
+            f=$(find "${WORKDIR}/bridge/.github/workflows" -maxdepth 1 -type f -name "${n}-*" | head -1)
+            [[ -n "$f" ]]
+            ! grep -Eq '^[[:space:]]+push:|^[[:space:]]+pull_request:|environment:|KAGGLE_API_TOKEN|group:[[:space:]]+kaggle-resource' "$f"
+            grep -Eq 'Retired|RETIRED|retired' "$f"
+          done
       - name: Cleanup validation content
         if: always()
         shell: bash
