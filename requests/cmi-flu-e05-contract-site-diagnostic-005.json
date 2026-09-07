@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "request_id": "20260907-cmi-flu-e05-contract-site-005",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_failed_log_marker_read",
+  "target": "renta0426/cmi-flu-e05-contract-site-20260907-005",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "3bcddeaf4b028795363a6e12f8af06dd23b3bbdf",
+  "parent_failed_target": "renta0426/cmi-flu-e05-hai-donor-strain-20260907-004",
+  "parent_failed_runtime_sha256": "836307e872f29062c2e898ebe3647438c40568a034e8c2e7252286dd966ef135",
+  "expected_exception_type": "DataContractError",
+  "expected_error_code": "74bf25be40ca17429601",
+  "diagnostic_output": "traceback module/function/line only; no locals and no exception message",
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {"accelerator": "cpu", "expected_runtime_minutes": 20, "hard_timeout_minutes": 60, "max_active_runs": 1},
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0
+}
