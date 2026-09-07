@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
-"""Map a sanitized E05 NameError hash to a code identifier without Competition data."""
+"""Map a sanitized E05 NameError hash to a code token without Competition data."""
 from __future__ import annotations
-import argparse, ast, hashlib, io, runpy, zipfile
+import argparse, ast, hashlib, io, re, runpy, zipfile
 from pathlib import Path
+
+TOKEN_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 
 
 def short_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:20]
 
 
-def names_from_source(source: str) -> set[str]:
+def tokens_from_source(source: str) -> set[str]:
     tree = ast.parse(source)
-    return {
+    names = {
         node.id
         for node in ast.walk(tree)
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
     }
+    # Include identifiers appearing only in string literals / generated column names,
+    # because pandas/sklearn expression paths can raise NameError for such names.
+    return names | set(TOKEN_RE.findall(source))
+
+
+def possible_messages(name: str) -> tuple[str, ...]:
+    raw = (
+        f"NameError:name '{name}' is not defined",
+        f"NameError:free variable '{name}' referenced before assignment in enclosing scope",
+        f"NameError:cannot access free variable '{name}' where it is not associated with a value in enclosing scope",
+        f"NameError:cannot access local variable '{name}' where it is not associated with a value",
+    )
+    return raw
 
 
 def main() -> int:
@@ -24,7 +39,7 @@ def main() -> int:
     p.add_argument("--error-code", required=True)
     a = p.parse_args()
     ns = runpy.run_path(str(a.runtime), run_name="e05_nameerror_hash_diagnostic")
-    names: set[str] = set()
+    tokens: set[str] = set(TOKEN_RE.findall(a.runtime.read_text(encoding="utf-8")))
     for key in (
         "E05_SOURCE",
         "HAI_TRANSFER_SOURCE",
@@ -34,29 +49,25 @@ def main() -> int:
     ):
         source = ns.get(key)
         if isinstance(source, str):
-            names.update(names_from_source(source))
+            tokens.update(tokens_from_source(source))
     with zipfile.ZipFile(io.BytesIO(ns["package_bytes"]())) as zf:
         for member in zf.namelist():
             if member.endswith(".py"):
-                names.update(names_from_source(zf.read(member).decode("utf-8")))
+                tokens.update(tokens_from_source(zf.read(member).decode("utf-8")))
 
     matches: list[tuple[str, str]] = []
-    for name in sorted(names):
-        messages = (
-            f"NameError:name '{name}' is not defined",
-            f"NameError:cannot access free variable '{name}' where it is not associated with a value in enclosing scope",
-        )
-        for message in messages:
+    for token in sorted(tokens):
+        for message in possible_messages(token):
             if short_hash(message) == a.error_code:
-                matches.append((name, message))
+                matches.append((token, message))
     if len(matches) != 1:
         raise SystemExit(
-            f"E05_NAMEERROR_HASH_UNRESOLVED matches={matches} candidate_names={len(names)}"
+            f"E05_NAMEERROR_HASH_UNRESOLVED matches={matches} candidate_tokens={len(tokens)}"
         )
-    name, message = matches[0]
+    token, message = matches[0]
     print(
         "CMI_FLU_E05_NAMEERROR_HASH_MATCH "
-        f"identifier={name} error_code={a.error_code} "
+        f"identifier={token} error_code={a.error_code} "
         f"full_sha256={hashlib.sha256(message.encode()).hexdigest()}"
     )
     return 0
