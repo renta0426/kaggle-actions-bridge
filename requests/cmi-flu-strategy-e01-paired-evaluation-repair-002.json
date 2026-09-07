@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "request_id": "20260907-cmi-flu-strategy-e01-paired-evaluation-repair-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e01-paired-eval-repair-20260907-002",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "0b2ecb47eaa09f22450424c9c06dc88cf44bc1fb",
+  "science_transport": "agent_relay_exact_blobs",
+  "strategy_e01_blob_sha": "dd27aea0cf97d41bad3cec64819c4c4269d94cbd",
+  "strategy_e01_v2_blob_sha": "8cc64dc5ab9483d5957cfada18d445188566c56c",
+  "config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9",
+  "repair_marker": "e01_frozen_selection_policy_api_compat_v1",
+  "repair_of": "renta0426/cmi-flu-e01-paired-eval-20260907-001",
+  "repair_of_version": 1,
+  "root_cause": "frozen evaluation.run_compact_task lacks selection_policy while E01 source requires robust_v1",
+  "root_cause_error_code": "a117b10075001dd7887e",
+  "expected_kernel_version": 1,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 12,
+    "initial_poll_schedule_seconds": [30, 60, 120, 300],
+    "steady_poll_interval_seconds": 600,
+    "max_pages": 2
+  },
+  "allowed_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0,
+  "side_effects": [
+    "create one private CPU repair notebook version under a fresh slug",
+    "read current version aggregate outputs only"
+  ]
+}
