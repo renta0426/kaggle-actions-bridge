@@ -1,8 +1,11 @@
 """Read allowlisted successful current output; never substitute historical/latest.
 
-Exact metadata is the identity authority. Search is intentionally not used.
-A second metadata check prevents accepting a different current version after
-the CLI download. Failed-run salvage is a separate approved operation.
+Exact metadata remains the identity authority. Search is intentionally not used.
+Because Kaggle's exact GetKernel endpoint has been observed returning transient
+HTTP 403/404 immediately after a successful private Notebook push, the exact
+checks use the bounded read-only reconciliation helper. A second exact metadata
+check still prevents accepting a different current version after the CLI
+download. Failed-run salvage is a separate approved operation.
 """
 from __future__ import annotations
 
@@ -15,7 +18,12 @@ import shutil
 import subprocess
 import tempfile
 
-from kaggle_exact_identity import REF_RE as KERNEL_RE, exact_metadata, validate_metadata, verify_current
+from kaggle_exact_identity import (
+    REF_RE as KERNEL_RE,
+    exact_metadata_eventually,
+    validate_metadata,
+    verify_current_eventually,
+)
 
 FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 MAX_ALLOWED_FILES = 32
@@ -49,7 +57,7 @@ def _sha256(path: Path) -> str:
 
 
 def _verify_current_kernel(api, kernel: str, expected_version: int) -> str:
-    return verify_current(api, kernel, expected_version)
+    return verify_current_eventually(api, kernel, expected_version)
 
 
 def _is_transport_log(path: Path, root: Path) -> bool:
@@ -67,7 +75,6 @@ def read_current_output(*, kernel: str, expected_version: int, allow: dict[str, 
         raise ValueError("expected version is outside the bounded contract")
     if output_dir.exists():
         raise FileExistsError("output directory already exists")
-    # Validate programmatic callers too, not just CLI arguments.
     allow = _parse_allow([f"{name}:{limit}" for name, limit in allow.items()])
     from kaggle.api.kaggle_api_extended import KaggleApi
     api = KaggleApi()
@@ -86,7 +93,11 @@ def read_current_output(*, kernel: str, expected_version: int, allow: dict[str, 
         if completed.returncode != 0:
             digest = hashlib.sha256((completed.stdout + completed.stderr).encode()).hexdigest()
             raise RuntimeError(f"output_cli_failed rc={completed.returncode} diagnostic_sha256={digest}")
-        validate_metadata(exact_metadata(api, kernel), kernel, expected_version)
+        validate_metadata(
+            exact_metadata_eventually(api, kernel),
+            kernel,
+            expected_version,
+        )
         paths = list(download.rglob("*"))
         if any(path.is_symlink() for path in paths):
             raise RuntimeError("symlink_in_saved_output")

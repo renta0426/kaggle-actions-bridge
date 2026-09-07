@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from kaggle.api.kaggle_api_extended import KaggleApi
-from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+from kaggle_exact_identity import exact_metadata_eventually
 
 REQUEST_ID = "20260907-cmi-flu-strategy-e05-hai-donor-strain-002"
 COMPETITION = "cmi-flu-first-prediction-challenge"
@@ -38,12 +38,10 @@ def plain(text):
 
 
 def kernel_meta(api, ref):
-    owner, slug = ref.split("/", 1)
-    with api.build_kaggle_client() as client:
-        query = ApiGetKernelRequest()
-        query.user_name = owner
-        query.kernel_slug = slug
-        return client.kernels.kernels_api_client.get_kernel(query).metadata
+    # Exact GetKernel remains the identity authority.  The only reconciliation
+    # is bounded repetition of that same read-only endpoint for the observed
+    # transient post-push 403/404 class.  No search result can satisfy identity.
+    return exact_metadata_eventually(api, ref, attempts=8, delay_seconds=3.0)
 
 
 def prewrite_guard(api):
