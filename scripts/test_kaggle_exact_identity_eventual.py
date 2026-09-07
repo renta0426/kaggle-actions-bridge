@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Regression tests for bounded exact GetKernel reconciliation.
 
-No Kaggle credential or network access is used.  These tests encode the
-observed recurrent failure class: a successful write can be followed by a
-transient exact-metadata HTTP 403/404. Only those read failures may be retried;
-429 and all other errors fail immediately, and exact identity is never replaced
-by a search/list result.
+No Kaggle credential, Kaggle package, or network access is used. These tests
+encode the observed recurrent failure class: a successful write can be followed
+by a transient exact-metadata HTTP 403/404. Only those read failures may be
+retried; 429 and all other errors fail immediately, and exact identity is never
+replaced by a search/list result.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import kaggle_exact_identity as identity
 
 KERNEL = "renta0426/example-private-kernel"
+ROOT = Path(__file__).resolve().parent
 
 
 class FakeHttpError(RuntimeError):
@@ -160,21 +162,20 @@ def test_bounds_fail_closed() -> None:
     )
 
 
-def test_e05_executor_uses_common_bounded_exact_helper() -> None:
-    import cmi_flu_strategy_e05_execute_v2 as e05
+def test_e05_executor_is_wired_to_common_bounded_exact_helper() -> None:
+    text = (ROOT / "cmi_flu_strategy_e05_execute_v2.py").read_text(encoding="utf-8")
+    assert "from kaggle_exact_identity import exact_metadata_eventually" in text
+    assert "return exact_metadata_eventually(api, ref, attempts=8, delay_seconds=3.0)" in text
+    # Old direct SDK GetKernel implementation must not remain in the reusable E05 base executor.
+    assert "ApiGetKernelRequest" not in text
+    assert "kernels_api_client.get_kernel" not in text
 
-    original = e05.exact_metadata_eventually
-    captured = []
-    try:
-        def fake(api, ref, *, attempts, delay_seconds):
-            captured.append((ref, attempts, delay_seconds))
-            return metadata()
-        e05.exact_metadata_eventually = fake
-        observed = e05.kernel_meta(object(), KERNEL)
-    finally:
-        e05.exact_metadata_eventually = original
-    assert observed.ref == KERNEL
-    assert captured == [(KERNEL, 8, 3.0)]
+
+def test_current_output_reader_uses_bounded_exact_helper_before_and_after_download() -> None:
+    text = (ROOT / "kaggle_current_output_read.py").read_text(encoding="utf-8")
+    assert "verify_current_eventually" in text
+    assert "exact_metadata_eventually(api, kernel)" in text
+    assert "exact_metadata(api, kernel)" not in text
 
 
 def main() -> int:
@@ -185,13 +186,14 @@ def main() -> int:
         test_429_is_never_retried,
         test_identity_mismatch_after_transient_visibility_still_fails,
         test_bounds_fail_closed,
-        test_e05_executor_uses_common_bounded_exact_helper,
+        test_e05_executor_is_wired_to_common_bounded_exact_helper,
+        test_current_output_reader_uses_bounded_exact_helper_before_and_after_download,
     ):
         test()
     print(
         "KAGGLE_EXACT_IDENTITY_EVENTUAL_PASS "
         "transient_403=true transient_404=true persistent_fail_closed=true "
-        "rate_limit_retry=false identity_fallback=false e05_common_helper=true"
+        "rate_limit_retry=false identity_fallback=false e05_common_helper=true output_common_helper=true"
     )
     return 0
 
