@@ -1,0 +1,108 @@
+            structured_challenge, b21_challenge
+        ),
+        "structured_ridge_diagnostics": structured_challenge_diag,
+    }
+    if repeat_frame is not None and augmented is not None:
+        repeat_challenge, repeat_challenge_diag = _fit_structured_challenge(
+            augmented,
+            other_columns=other_columns,
+            repeat_columns=REPEAT_COLUMNS,
+        )
+        challenge_agreement["structured_ridge_plus_repeat_vs_anchor"] = _challenge_agreement(
+            repeat_challenge, anchor_challenge
+        )
+        challenge_agreement["structured_ridge_plus_repeat_vs_structured_ridge"] = _challenge_agreement(
+            repeat_challenge, structured_challenge
+        )
+        challenge_agreement["structured_ridge_plus_repeat_diagnostics"] = repeat_challenge_diag
+
+    structured_vs_anchor = comparisons["structured_ridge_vs_anchor"]
+    structured_candidate = bool(
+        structured_vs_anchor.get("passes_candidate_delta_heuristic")
+        and not structured_vs_anchor.get("large_studies_requiring_review")
+    )
+    repeat_candidate = None
+    if repeat_frame is not None:
+        comp = comparisons["structured_ridge_plus_repeat_vs_anchor"]
+        repeat_candidate = bool(
+            comp.get("passes_candidate_delta_heuristic")
+            and not comp.get("large_studies_requiring_review")
+        )
+
+    return _json_safe(
+        {
+            "schema_version": 1,
+            "experiment": EXPERIMENT,
+            "random_seed": RANDOM_SEED,
+            "comparison_contract": "paired_subject_purged_v2",
+            "task": "Task1.1",
+            "cohort": {
+                "train_rows": int(len(dataset.train)),
+                "train_studies": int(dataset.train["study_group"].nunique()),
+                "challenge_rows": int(len(dataset.challenge)),
+                "split_count": int(len(splits)),
+            },
+            "fixed_conditions": {
+                "b21_model": B21_MODEL,
+                "anchor_residual_model": ANCHOR_RESIDUAL_MODEL,
+                "anchor_residual_lambda": ANCHOR_RESIDUAL_LAMBDA,
+                "structured_ridge_alpha": RIDGE_ALPHA,
+                "structured_target": "logFC centered within each training study",
+                "other_cytokine_representation": "one log1p column per non-CXCL10 common analyte",
+                "explicit_baseline_term": "log(canonical Pre-vacc CXCL10)",
+                "held_x_self_normalization": True,
+                "held_y_used_for_preprocessing": False,
+                "study_id_used_as_feature": False,
+            },
+            "conditions": condition_payloads,
+            "comparisons": comparisons,
+            "sensitivity_28": sensitivity,
+            "negative_controls": {
+                "availability_only": {
+                    "metrics": _metrics(availability, scale="availability_count"),
+                    "feature_count": int(
+                        len(_raw_structured_features(
+                            dataset.train, other_columns=other_columns
+                        )[0].columns)
+                    ),
+                },
+                "structured_subject_block_label_shuffle": {
+                    "metrics": _metrics(
+                        structured_shuffle,
+                        scale="centered_logfc_score",
+                    ),
+                    "seed": RANDOM_SEED,
+                    "scope": "within_training_study_subject_block",
+                    "moved_subject_assignments_across_folds": int(
+                        shuffle_diag["moved_subject_assignments_across_folds"]
+                    ),
+                },
+            },
+            "repeat_baseline_extension": {
+                "audit": repeat_audit,
+                "condition_executed": repeat_frame is not None,
+                "candidate": repeat_candidate,
+            },
+            "challenge_agreement": challenge_agreement,
+            "decision": {
+                "structured_ridge_candidate_over_anchor": structured_candidate,
+                "repeat_extension_candidate_over_anchor": repeat_candidate,
+                "candidate_delta_threshold": 0.02,
+                "large_study_decline_review_threshold": -0.10,
+                "thresholds_are_decision_heuristics_not_significance_tests": True,
+                "primary_reference_for_new_structure": "same_readout_oriented_anchor",
+            },
+            "contains_participant_identifiers": False,
+            "contains_row_level_predictions": False,
+            "leaderboard_used_for_selection": False,
+            "competition_submission_attempted": False,
+            "notes": [
+                "The canonical Task1.1 fold-change target and denominator are unchanged.",
+                "Held-study X self-normalization is declared transductive preprocessing and uses no held y.",
+                "The structured Ridge does not receive study identity as a prediction feature.",
+                "The repeat-baseline extension is skipped as data_limited unless every outer fold has at least two eligible source studies and the Challenge has paired -14/0 CXCL10 support.",
+                "A single fixed label shuffle is a diagnostic, not an empirical null distribution.",
+                "No model family is rejected solely because one fixed condition is negative.",
+            ],
+        }
+    )
