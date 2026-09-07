@@ -25,7 +25,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="e05-synthetic-package-") as tmp:
         package_path=Path(tmp)/"cmi_flu_bundle.zip"; package_path.write_bytes(runtime.package_bytes()); sys.path.insert(0,str(package_path))
         try:
-            run,e05=runtime.load_e05_module(); assert callable(run)
+            run,_hai=runtime.load_e05_module(); assert callable(run); e05=sys.modules["cmi_flu.strategy_e05"]
             frame=synthetic_frame(); main=e05._e05_design(frame,interactions=False); interaction=e05._e05_design(frame,interactions=True); assert interaction.shape[1]-main.shape[1]==8
             target=3.5+.6*main["g_log2_pre_hai"].to_numpy()+.2*main["z_age_rank"].to_numpy(); train_rows=18; weights=e05._hierarchical_sample_weights(frame.iloc[:train_rows]); _,prediction=e05._fit_ridge(interaction.iloc[:train_rows],target[:train_rows],weights,interaction.iloc[train_rows:],interactions=True); assert len(prediction)==6 and np.isfinite(prediction).all()
             splits=e05._simultaneous_subject_strain_splits(frame,panel_strains=tuple(frame["virus_strain"].unique())); assert splits
