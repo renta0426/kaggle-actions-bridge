@@ -1,164 +1,19 @@
-name: CMI-Flu E02 exact current recovery - NO NEW COMPUTE
+name: Retired CMI-Flu E02 recovery 001 - completed
 
+# Run 34085988392 verified and recovered version 1 on 2026-09-07.
+# Historical implementation remains in commit 4f63facc. No repeat read or write.
 on:
-  pull_request:
-    paths:
-      - .github/workflows/175-cmi-flu-e02-current-recovery-001.yml
-      - scripts/kaggle_exact_identity.py
-      - scripts/kaggle_current_output_read.py
-      - scripts/cmi_flu_e02_recover.py
-      - scripts/build_cmi_e02_release.py
-      - scripts/test_cmi_e02_contracts.py
-      - scripts/test_cmi_e02_recovery_io.py
-      - requests/cmi-flu-e02-current-recovery-001.json
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/175-cmi-flu-e02-current-recovery-001.yml
-      - scripts/kaggle_exact_identity.py
-      - scripts/kaggle_current_output_read.py
-      - scripts/cmi_flu_e02_recover.py
-      - scripts/build_cmi_e02_release.py
-      - scripts/test_cmi_e02_contracts.py
-      - scripts/test_cmi_e02_recovery_io.py
-      - requests/cmi-flu-e02-current-recovery-001.json
+  workflow_dispatch:
 
 permissions: {}
-concurrency:
-  group: cmi-e02-recovery-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
-
-env:
-  BRIDGE_REPO: renta0426/kaggle-actions-bridge
-  PYTHONHASHSEED: '0'
-  PIP_DISABLE_PIP_VERSION_CHECK: '1'
 
 jobs:
-  validate:
+  retired:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 1
     steps:
-      - name: Materialize approved public bridge only - no GitHub credentials
-        env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Refuse replay of a consumed recovery request
         run: |
-          set -euo pipefail
-          for name in KAGGLE_API_TOKEN KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN; do test -z "${!name-}"; done
-          work="$(mktemp -d)"; echo "WORK=${work}" >> "${GITHUB_ENV}"
-          python3 - "${work}" "${SOURCE_SHA}" <<'PY'
-          import io,pathlib,re,sys,tarfile,urllib.request
-          root=pathlib.Path(sys.argv[1])/'bridge'; root.mkdir(); sha=sys.argv[2]
-          assert re.fullmatch('[0-9a-f]{40}',sha)
-          req=urllib.request.Request('https://api.github.com/repos/renta0426/kaggle-actions-bridge/tarball/'+sha,headers={'User-Agent':'kaggle-actions-bridge/1'})
-          with urllib.request.urlopen(req,timeout=45) as r: data=r.read(25000001)
-          assert len(data)<=25000000
-          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
-              for m in archive.getmembers():
-                  if not m.isfile(): continue
-                  rel=pathlib.PurePosixPath(m.name).parts[1:]
-                  assert rel and '..' not in rel
-                  p=root.joinpath(*rel); p.parent.mkdir(parents=True,exist_ok=True); p.write_bytes(archive.extractfile(m).read())
-          PY
-
-      - name: Validate manifest and rebuild original plus repaired runtime
-        run: |
-          set -euo pipefail
-          python3 - "${WORK}/bridge" <<'PY'
-          import hashlib,pathlib,sys
-          root=pathlib.Path(sys.argv[1]); p=root/'requests/cmi-flu-e02-current-recovery-001.json'; b=p.read_bytes()
-          assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()=='955695702340d3c7798b6d0d7323a25e41dc7138'
-          PY
-          python3 "${WORK}/bridge/scripts/cmi_flu_strategy_e02_prepare_v7.py" --repository-root "${WORK}/bridge" --output "${WORK}/original.py"
-          python3 "${WORK}/bridge/scripts/build_cmi_e02_release.py" --original "${WORK}/original.py" --output "${WORK}/release.py"
-
-      - name: Install locked public dependencies without credentials
-        run: |
-          set -euo pipefail
-          python3 -m venv "${WORK}/venv"
-          "${WORK}/venv/bin/python" -m pip install --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORK}/bridge/requirements/kaggle-2.2.4.lock" >/dev/null
-          "${WORK}/venv/bin/python" -m pip install --no-input --only-binary=:all: numpy==2.2.6 pandas==2.3.3 scipy==1.15.3 scikit-learn==1.6.1 PyYAML==6.0.2 joblib==1.5.2 threadpoolctl==3.6.0 python-dateutil==2.9.0.post0 six==1.17.0 pytz==2025.2 tzdata==2025.2 >/dev/null
-          "${WORK}/venv/bin/python" -m pip check
-          "${WORK}/venv/bin/python" - <<'PY'
-          import ast,importlib.metadata
-          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
-          assert importlib.metadata.version('kaggle')=='2.2.4'
-          r=ApiGetKernelRequest(); r.user_name='synthetic-owner'; r.kernel_slug='synthetic-notebook'
-          assert r.user_name=='synthetic-owner' and r.kernel_slug=='synthetic-notebook'
-          p=importlib.metadata.distribution('kaggle').locate_file('kaggle/api/kaggle_api_extended.py')
-          tree=ast.parse(p.read_text()); f=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='kernels_list')
-          assert {'mine','user','search'} <= {a.arg for a in f.args.args}
-          print('LOCKED_KAGGLE_SDK_CONTRACT PASS exact_metadata_request=true')
-          PY
-
-      - name: Run end-to-end synthetic contracts - no competition data
-        run: |
-          set -euo pipefail
-          "${WORK}/venv/bin/python" "${WORK}/bridge/scripts/test_cmi_e02_contracts.py" --original "${WORK}/original.py" --release "${WORK}/release.py"
-          "${WORK}/venv/bin/python" "${WORK}/bridge/scripts/test_cmi_e02_recovery_io.py" --original "${WORK}/original.py"
-
-      - name: Cleanup
-        if: always()
-        run: if [[ -n "${WORK-}" ]]; then rm -rf "${WORK}"; fi
-
-  recover:
-    needs: validate
-    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
-    environment: kaggle-readonry
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    concurrency:
-      group: kaggle-resource-global
-      cancel-in-progress: false
-    steps:
-      - name: Enforce approved execution identity
-        env:
-          REPO_ID: ${{ github.event.repository.id }}
-          SENDER_ID: ${{ github.event.sender.id }}
-          SOURCE_SHA: ${{ github.sha }}
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-        run: |
-          set -euo pipefail
-          test "${REPO_ID}" = '1354356687'; test "${SENDER_ID}" = '71638068'
-          test "${SOURCE_SHA}" = "${WORKFLOW_SHA}"
-          test "${WORKFLOW_REF}" = 'renta0426/kaggle-actions-bridge/.github/workflows/175-cmi-flu-e02-current-recovery-001.yml@refs/heads/main'
-          work="$(mktemp -d)"; echo "WORK=${work}" >> "${GITHUB_ENV}"
-          python3 - "${work}" "${SOURCE_SHA}" <<'PY'
-          import io,pathlib,re,sys,tarfile,urllib.request
-          root=pathlib.Path(sys.argv[1])/'bridge'; root.mkdir(); sha=sys.argv[2]
-          assert re.fullmatch('[0-9a-f]{40}',sha)
-          req=urllib.request.Request('https://api.github.com/repos/renta0426/kaggle-actions-bridge/tarball/'+sha,headers={'User-Agent':'kaggle-actions-bridge/1'})
-          with urllib.request.urlopen(req,timeout=45) as r: data=r.read(25000001)
-          assert len(data)<=25000000
-          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
-              for m in archive.getmembers():
-                  if not m.isfile(): continue
-                  rel=pathlib.PurePosixPath(m.name).parts[1:]; assert rel and '..' not in rel
-                  p=root.joinpath(*rel); p.parent.mkdir(parents=True,exist_ok=True); p.write_bytes(archive.extractfile(m).read())
-          PY
-
-      - name: Rebuild original provenance and install locked CLI before secrets
-        run: |
-          set -euo pipefail
-          python3 - "${WORK}/bridge/requests/cmi-flu-e02-current-recovery-001.json" <<'PY'
-          import hashlib,pathlib,sys
-          b=pathlib.Path(sys.argv[1]).read_bytes()
-          assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()=='955695702340d3c7798b6d0d7323a25e41dc7138'
-          PY
-          python3 "${WORK}/bridge/scripts/cmi_flu_strategy_e02_prepare_v7.py" --repository-root "${WORK}/bridge" --output "${WORK}/original.py"
-          python3 -m venv "${WORK}/venv"
-          "${WORK}/venv/bin/python" -m pip install --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORK}/bridge/requirements/kaggle-2.2.4.lock" >/dev/null
-          "${WORK}/venv/bin/python" -m pip check >/dev/null
-          echo "${WORK}/venv/bin" >> "${GITHUB_PATH}"
-
-      - name: Read exact existing version and salvage validated aggregates only
-        env:
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          test "${KAGGLE_API_TOKEN:0:5}" = 'KGAT_'
-          "${WORK}/venv/bin/python" "${WORK}/bridge/scripts/cmi_flu_e02_recover.py" --runtime "${WORK}/original.py" --output "${WORK}/recovered"
-
-      - name: Unconditional cleanup - no artifact or cache
-        if: always()
-        run: if [[ -n "${WORK-}" ]]; then rm -rf "${WORK}"; fi
+          echo 'E02_RECOVERY_001_RETIRED: the approved recovery completed successfully.'
+          echo 'Use the recorded aggregates; a new operation requires a new reviewed request.'
+          exit 1
