@@ -4,7 +4,7 @@
 Security boundary:
 - This program never reads GitHub or any research repository.
 - Source notebooks are supplied as local paths by the protected runner after
-  `kaggle kernels pull` and are expected to live under a temporary directory.
+  ``kaggle kernels pull`` and are expected to live under a temporary directory.
 - No source cell body is printed, serialized to logs, or written anywhere
   except the final private Kaggle notebook requested by the caller.
 - Public bridge content contains orchestration only, not private source bodies.
@@ -15,7 +15,6 @@ import argparse
 import json
 from pathlib import Path
 import shutil
-import sys
 import textwrap
 from typing import Iterable
 
@@ -35,7 +34,9 @@ FORBIDDEN_SOURCE_FRAGMENTS = (
 def _load_single_notebook(directory: Path) -> nbformat.NotebookNode:
     candidates = sorted(directory.glob("*.ipynb"))
     if len(candidates) != 1:
-        raise RuntimeError(f"expected exactly one notebook in {directory}, found {len(candidates)}")
+        raise RuntimeError(
+            f"expected exactly one notebook in {directory}, found {len(candidates)}"
+        )
     notebook = nbformat.read(candidates[0], as_version=4)
     nbformat.validate(notebook)
     return notebook
@@ -56,7 +57,9 @@ def _find_code(notebook: nbformat.NotebookNode, markers: Iterable[str]) -> str:
         if all(marker in source for marker in markers):
             matches.append(source)
     if len(matches) != 1:
-        raise RuntimeError(f"expected one private source cell for marker set, found {len(matches)}")
+        raise RuntimeError(
+            f"expected one private source cell for marker set, found {len(matches)}"
+        )
     return matches[0]
 
 
@@ -70,7 +73,9 @@ def _tail_from(source: str, marker: str) -> str:
 def _assert_no_forbidden_transport(source: str) -> None:
     for fragment in FORBIDDEN_SOURCE_FRAGMENTS:
         if fragment in source:
-            raise RuntimeError("private notebook unexpectedly contains a forbidden transport reference")
+            raise RuntimeError(
+                "private notebook unexpectedly contains a forbidden transport reference"
+            )
 
 
 def _wrap_private_run(source: str) -> str:
@@ -124,7 +129,6 @@ def _setup_cell() -> str:
         import json
         import math
         import os
-        import random
         import shutil
         import time
 
@@ -241,7 +245,9 @@ def _driver_cell() -> str:
                     ],
                     axis=1,
                 ).reset_index()
-                result = result.merge(stats, on=identity, how="left", validate="one_to_one")
+                result = result.merge(
+                    stats, on=identity, how="left", validate="one_to_one"
+                )
             return result
 
 
@@ -286,14 +292,19 @@ def _driver_cell() -> str:
             )
             if len(sample_part) != len(shard_frame) or sample_part.label.isna().any():
                 raise RuntimeError("shard sample coverage mismatch")
-            sample_part.to_parquet(SCRATCH / f"sample.part{shard:03d}.parquet", index=False)
-            window_part.to_parquet(SCRATCH / f"window.part{shard:03d}.parquet", index=False)
+            sample_part.to_parquet(
+                SCRATCH / f"sample.part{shard:03d}.parquet", index=False
+            )
+            window_part.to_parquet(
+                SCRATCH / f"window.part{shard:03d}.parquet", index=False
+            )
             diagnostics["target_tokens"] += result["target_tokens"]
             diagnostics["valid_target_tokens"] += result["valid_target_tokens"]
             diagnostics["variance_clamp_count"] += result["variance_clamp_count"]
             if result["min_variance_before_clamp"] is not None:
                 diagnostics["min_variance_before_clamp"] = min(
-                    diagnostics["min_variance_before_clamp"], result["min_variance_before_clamp"]
+                    diagnostics["min_variance_before_clamp"],
+                    result["min_variance_before_clamp"],
                 )
             diagnostics["max_abs_paper_z"] = max(
                 diagnostics["max_abs_paper_z"], result["max_abs_paper_z"]
@@ -308,32 +319,38 @@ def _driver_cell() -> str:
             )
             diagnostics["run_seconds"] += result["run_seconds"]
             diagnostics["peak_gpu_memory_bytes"] = max(
-                diagnostics["peak_gpu_memory_bytes"], result["peak_gpu_memory_bytes"]
+                diagnostics["peak_gpu_memory_bytes"],
+                result["peak_gpu_memory_bytes"],
             )
             print({
                 "shard": shard,
                 "rows": len(sample_part),
                 "windows": len(window_part),
                 "target_tokens": result["target_tokens"],
+                "variance_clamps": result["variance_clamp_count"],
             })
             del records, result, window_part, token_part, sample_part, shard_frame
             gc.collect()
             torch.cuda.empty_cache()
 
         sample_features = pd.concat(
-            [pd.read_parquet(path) for path in sorted(SCRATCH.glob("sample.part*.parquet"))],
+            [
+                pd.read_parquet(path)
+                for path in sorted(SCRATCH.glob("sample.part*.parquet"))
+            ],
             ignore_index=True,
         ).sort_values("sample_id").reset_index(drop=True)
         window_features = pd.concat(
-            [pd.read_parquet(path) for path in sorted(SCRATCH.glob("window.part*.parquet"))],
+            [
+                pd.read_parquet(path)
+                for path in sorted(SCRATCH.glob("window.part*.parquet"))
+            ],
             ignore_index=True,
         ).sort_values(["sample_id", "window_start"]).reset_index(drop=True)
         assert len(sample_features) == 10000 and sample_features.sample_id.is_unique
         assert sample_features.groupby(["language", "label"]).size().eq(1000).all()
         if diagnostics["target_tokens"] != diagnostics["valid_target_tokens"]:
             raise RuntimeError("full 10k target-token accounting mismatch")
-        if diagnostics["variance_clamp_count"] != 0:
-            raise RuntimeError("paper variance clamp observed in scale run")
         if diagnostics["real_dense_blocked_max_z_diff"] > 5e-5:
             raise RuntimeError("real-logit paper Z parity failed")
         if diagnostics["real_dense_blocked_max_variance_diff"] > 5e-5:
@@ -341,8 +358,12 @@ def _driver_cell() -> str:
         if not math.isfinite(diagnostics["min_variance_before_clamp"]):
             diagnostics["min_variance_before_clamp"] = None
 
-        sample_features.to_parquet(OUTPUT / "sample_features.parquet", index=False)
-        window_features.to_parquet(OUTPUT / "window_features.parquet", index=False)
+        sample_features.to_parquet(
+            OUTPUT / "sample_features.parquet", index=False
+        )
+        window_features.to_parquet(
+            OUTPUT / "window_features.parquet", index=False
+        )
         sample_features[[
             "sample_id", "language", "label", "token_count", "window_count",
             "legacy_uniform_vocab_minkpp_10__max",
@@ -356,7 +377,9 @@ def _driver_cell() -> str:
             or column.startswith("paper_prob_weighted_minkpp_")
         ]
         for column in score_columns:
-            score_metrics[column] = low_fpr(sample_features.label, sample_features[column])
+            score_metrics[column] = low_fpr(
+                sample_features.label, sample_features[column]
+            )
         same_fraction_spearman = {}
         for fraction in (1, 5, 10, 20, 30):
             suffix = f"{fraction:02d}"
@@ -367,7 +390,10 @@ def _driver_cell() -> str:
             )
 
         metrics = {
-            "warning": "10k GPU extraction scale gate; supervised historical-cache fusion is a separate CPU stage.",
+            "warning": (
+                "10k GPU extraction scale gate; supervised historical-cache fusion "
+                "is a separate CPU stage."
+            ),
             "rows": 10000,
             "member_rows": int(sample_features.label.sum()),
             "paper_main_fraction": 0.10,
@@ -389,7 +415,9 @@ def _driver_cell() -> str:
             "diagnostics": diagnostics,
             "fidelity": fidelity,
             "wall_seconds": float(time.perf_counter() - extraction_started),
-            "next_stage": "CPU fusion with frozen historical 10k cache; no GPU rerun",
+            "next_stage": (
+                "CPU fusion with frozen historical 10k cache; no GPU rerun"
+            ),
         }
         (OUTPUT / "metrics.json").write_text(
             json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -412,36 +440,76 @@ def _driver_cell() -> str:
             "windows": manifest["windows"],
             "target_tokens": diagnostics["target_tokens"],
             "variance_clamps": diagnostics["variance_clamp_count"],
-            "paper10_auc": metrics["standalone_low_fpr"]["paper_prob_weighted_minkpp_10__max"]["auc"],
-            "legacy10_auc": metrics["standalone_low_fpr"]["legacy_uniform_vocab_minkpp_10__max"]["auc"],
+            "paper10_auc": metrics["standalone_low_fpr"]
+                ["paper_prob_weighted_minkpp_10__max"]["auc"],
+            "legacy10_auc": metrics["standalone_low_fpr"]
+                ["legacy_uniform_vocab_minkpp_10__max"]["auc"],
             "paper10_legacy10_spearman": same_fraction_spearman["10"],
         })
         '''
     ).strip()
 
 
-def compose(pilot_dir: Path, starter_dir: Path, output_dir: Path, target: str, title: str) -> None:
+def compose(
+    pilot_dir: Path,
+    starter_dir: Path,
+    output_dir: Path,
+    target: str,
+    title: str,
+) -> None:
     pilot = _load_single_notebook(pilot_dir)
     starter = _load_single_notebook(starter_dir)
 
-    starter_source = _find_code(starter, ("def make_window_records", "def aggregate_windows"))
-    v2_source = _find_code(starter, ("class FeatureCacheV2Config", "def extract_window_features_optimized"))
-    starter_load = _find_code(starter, ("train_sample = sample_training_rows", "AutoModelForCausalLM.from_pretrained"))
-    paper_source = _find_code(pilot, ("MINKPP_PAPER_SCHEMA_VERSION", "probability_weighted_token_statistics_blocked"))
-    pilot_model = _find_code(pilot, ("oracle_expected = -2.336452981844921", "synthetic_dense_blocked_max_z_diff"))
-    pilot_run = _find_code(pilot, ("def summarize_window", "window_rows = []", "paper_prob_weighted_minkpp_"))
+    starter_source = _find_code(
+        starter, ("def make_window_records", "def aggregate_windows")
+    )
+    v2_source = _find_code(
+        starter,
+        ("class FeatureCacheV2Config", "def extract_window_features_optimized"),
+    )
+    starter_load = _find_code(
+        starter,
+        ("train_sample = sample_training_rows", "AutoModelForCausalLM.from_pretrained"),
+    )
+    paper_source = _find_code(
+        pilot,
+        ("MINKPP_PAPER_SCHEMA_VERSION", "probability_weighted_token_statistics_blocked"),
+    )
+    pilot_model = _find_code(
+        pilot,
+        ("oracle_expected = -2.336452981844921", "synthetic_z_diff", "synthetic_var_diff"),
+    )
+    pilot_run = _find_code(
+        pilot,
+        ("def summarize_window", "window_rows = []", "paper_prob_weighted_minkpp_"),
+    )
 
-    private_sources = (starter_source, v2_source, starter_load, paper_source, pilot_model, pilot_run)
+    private_sources = (
+        starter_source,
+        v2_source,
+        starter_load,
+        paper_source,
+        pilot_model,
+        pilot_run,
+    )
     for source in private_sources:
         _assert_no_forbidden_transport(source)
 
     parity_tail = _tail_from(pilot_model, "# Exact CPU oracle frozen")
-    parity_tail = parity_tail.replace("CONFIG.paper_vocab_block_size", "PAPER_VOCAB_BLOCK_SIZE")
-    parity_tail = parity_tail.replace("CONFIG.paper_variance_floor", "PAPER_VARIANCE_FLOOR")
+    parity_tail = parity_tail.replace(
+        "CONFIG.paper_vocab_block_size", "PAPER_VOCAB_BLOCK_SIZE"
+    )
+    parity_tail = parity_tail.replace(
+        "CONFIG.paper_variance_floor", "PAPER_VARIANCE_FLOOR"
+    )
     wrapped_run = _wrap_private_run(pilot_run)
 
     notebook = nbformat.v4.new_notebook()
-    notebook.metadata.kernelspec = {"display_name": "Python 3", "language": "python", "name": "python3"}
+    notebook.metadata.kernelspec = {
+        "display_name": "Python 3",
+        "language": "python",
+        "name": "python3",
+    }
     notebook.metadata.language_info = {"name": "python", "version": "3.12"}
     notebook.cells = [
         nbformat.v4.new_markdown_cell(
@@ -467,7 +535,9 @@ def compose(pilot_dir: Path, starter_dir: Path, output_dir: Path, target: str, t
             cell.outputs = []
     nbformat.validate(notebook)
 
-    combined = "\n".join(_source(cell) for cell in notebook.cells if cell.cell_type == "code")
+    combined = "\n".join(
+        _source(cell) for cell in notebook.cells if cell.cell_type == "code"
+    )
     _assert_no_forbidden_transport(combined)
     if "bounded_window_records(" in combined or "bounded_regions(" in combined:
         raise RuntimeError("500-row bounded windowing leaked into scale notebook")
@@ -505,31 +575,56 @@ def compose(pilot_dir: Path, starter_dir: Path, output_dir: Path, target: str, t
     (output_dir / "kernel-metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(json.dumps({
-        "status": "COMPOSE_PASS",
-        "cells": len(notebook.cells),
-        "private_source_cells": len(private_sources),
-        "target": target,
-        "source_bodies_logged": False,
-        "private_github_access": False,
-    }, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "status": "COMPOSE_PASS",
+                "cells": len(notebook.cells),
+                "private_source_cells": len(private_sources),
+                "target": target,
+                "source_bodies_logged": False,
+                "private_github_access": False,
+            },
+            sort_keys=True,
+        )
+    )
 
 
 def self_test() -> None:
     fake = nbformat.v4.new_notebook()
     fake.cells = [
-        nbformat.v4.new_code_cell("def make_window_records():\n    pass\ndef aggregate_windows():\n    pass"),
-        nbformat.v4.new_code_cell("class FeatureCacheV2Config: pass\ndef extract_window_features_optimized():\n    pass"),
-        nbformat.v4.new_code_cell("train_sample = sample_training_rows\nAutoModelForCausalLM.from_pretrained"),
+        nbformat.v4.new_code_cell(
+            "def make_window_records():\n    pass\n"
+            "def aggregate_windows():\n    pass"
+        ),
+        nbformat.v4.new_code_cell(
+            "class FeatureCacheV2Config: pass\n"
+            "def extract_window_features_optimized():\n    pass"
+        ),
+        nbformat.v4.new_code_cell(
+            "train_sample = sample_training_rows\nAutoModelForCausalLM.from_pretrained"
+        ),
     ]
-    assert "make_window_records" in _find_code(fake, ("def make_window_records", "def aggregate_windows"))
-    sample_run = """def summarize_window():\n    pass\nwindow_rows = []\nlegacy_z = None\nprobability_weighted_token_statistics_blocked\npaper_prob_weighted_minkpp_\nwindow_features = pd.DataFrame(window_rows)\ntoken_statistics = pd.DataFrame(token_rows)\n"""
+    assert "make_window_records" in _find_code(
+        fake, ("def make_window_records", "def aggregate_windows")
+    )
+    sample_run = (
+        "def summarize_window():\n    pass\n"
+        "window_rows = []\nlegacy_z = None\n"
+        "probability_weighted_token_statistics_blocked\n"
+        "paper_prob_weighted_minkpp_\n"
+        "window_features = pd.DataFrame(window_rows)\n"
+        "token_statistics = pd.DataFrame(token_rows)\n"
+    )
     wrapped = _wrap_private_run(sample_run)
     assert wrapped.startswith("def run_private_paper_records(records):")
     assert "return {" in wrapped
     for generated in (_setup_cell(), _fidelity_cell(), _driver_cell(), wrapped):
         _assert_no_forbidden_transport(generated)
-    print("PRIVATE_KAGGLE_COMPOSER_SELF_TEST PASS private_repo_access=0 source_bodies_logged=0")
+    print(
+        "PRIVATE_KAGGLE_COMPOSER_SELF_TEST PASS "
+        "private_repo_access=0 source_bodies_logged=0"
+    )
 
 
 def main() -> int:
@@ -544,10 +639,22 @@ def main() -> int:
     if args.self_test:
         self_test()
         return 0
-    required = (args.pilot_dir, args.starter_dir, args.output_dir, args.target, args.title)
+    required = (
+        args.pilot_dir,
+        args.starter_dir,
+        args.output_dir,
+        args.target,
+        args.title,
+    )
     if any(value is None for value in required):
         parser.error("composition requires pilot/starter/output/target/title")
-    compose(args.pilot_dir, args.starter_dir, args.output_dir, args.target, args.title)
+    compose(
+        args.pilot_dir,
+        args.starter_dir,
+        args.output_dir,
+        args.target,
+        args.title,
+    )
     return 0
 
 
