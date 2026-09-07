@@ -1,0 +1,299 @@
+name: CodeParrot fresh frozen 4k full v1
+
+on:
+  pull_request:
+    paths:
+      - scripts/patch_codeparrot_full_v1.py
+      - scripts/kaggle_policy_preflight.py
+      - requirements/kaggle-2.2.4.lock
+      - .github/workflows/208-codeparrot-fresh-full-v1.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/patch_codeparrot_full_v1.py
+      - .github/workflows/208-codeparrot-fresh-full-v1.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  PILOT_KERNEL: renta0426/codeparrot-fresh-pilot-v1
+  COHORT_KERNEL: renta0426/codeparrot-fresh-cohort-v1
+  TARGET_KERNEL: renta0426/codeparrot-fresh-full-v1
+  TARGET_SLUG: codeparrot-fresh-full-v1
+  PATCH_PATH: scripts/patch_codeparrot_full_v1.py
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  AUDITED_COHORT_SHA256: b664e368f9380e230c9cfc0616327d829424749c5473f87575678525db1998fc
+
+jobs:
+  validate:
+    name: Validate frozen 4k transformation without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Validate public full-run patch and policy
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          for remote,maximum,local in (
+              ("scripts/patch_codeparrot_full_v1.py",65536,"patch.py"),
+              ("scripts/kaggle_policy_preflight.py",65536,"policy.py"),
+          ):
+              url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}"
+              req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response:
+                  data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"public source byte budget failed: {remote}")
+              path=root/local; path.write_bytes(data); compile(data,str(path),"exec")
+          patch=(root/"patch.py").read_text(encoding="utf-8")
+          required=(
+              "codeparrot-fresh-full-v1",
+              "b664e368f9380e230c9cfc0616327d829424749c5473f87575678525db1998fc",
+              "all_4000_sample_ids_from_frozen_label_free_prediction_input",
+              '"full_4000_scoring_authorized": True',
+              '"performance_metrics_computed": False',
+              '"membership_join_performed": False',
+          )
+          if not all(token in patch for token in required): raise SystemExit("full-run patch contract marker missing")
+          print("CODEPARROT_FULL_4K_STATIC PASS labels=0 metrics=0 submissions=0 retries=0")
+          PY
+          python3 "${workdir}/policy.py"
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input -q 'nbformat==5.10.4'
+          "${workdir}/venv/bin/python" "${workdir}/patch.py" --self-test
+
+  launch:
+    name: Launch authorized frozen CodeParrot 4k T4 scoring exactly once
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    concurrency:
+      group: kaggle-resource-gpu-global
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce protected full-run boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/208-codeparrot-fresh-full-v1.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "forbidden credential variable: ${name}"; exit 1; }
+          done
+          echo "CODEPARROT_FULL_4K_BOUNDARY PASS source=sealed_pilot_v2 rows=4000 gpu=t4x1 retries=0 submissions=0 label_join=0"
+
+      - name: Prepare patch, policy, nbformat, and locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          for remote,maximum,local in (
+              ("scripts/patch_codeparrot_full_v1.py",65536,"patch.py"),
+              ("scripts/kaggle_policy_preflight.py",65536,"policy.py"),
+              ("requirements/kaggle-2.2.4.lock",262144,"kaggle.lock"),
+          ):
+              url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}"
+              req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response:
+                  data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"public material byte budget failed: {remote}")
+              path=root/local; path.write_bytes(data)
+              if path.suffix==".py": compile(data,str(path),"exec")
+          PY
+          python3 "${workdir}/policy.py"
+          python3 -m venv "${workdir}/patch-venv"
+          "${workdir}/patch-venv/bin/python" -m pip install --disable-pip-version-check --no-input -q 'nbformat==5.10.4'
+          "${workdir}/patch-venv/bin/python" "${workdir}/patch.py" --self-test
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "CODEPARROT_FULL_4K_PREP PASS locked_cli=2.2.4"
+
+      - name: Authenticate and admit frozen full run
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          mkdir -p "${HOME}/.kaggle"; umask 077
+          printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"
+          unset KAGGLE_API_TOKEN
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os,re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []
+          content={}
+          for page in pages:
+              data=page.to_dict() if hasattr(page,"to_dict") else dict(page)
+              name=str(data.get("name") or "").strip().lower()
+              if name: content[name]=str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content or not any("data" in name for name in content):
+              raise SystemExit("live Poisoned Chalice Rules/Evaluation/Data pages unavailable")
+          evaluation=re.sub(r"\s+"," ",re.sub(r"<[^>]+>"," ",content["evaluation"].replace(r"\%","%"))).casefold()
+          if not all(token in evaluation for token in ("auc","novelty","1%","false-positive")):
+              raise SystemExit("live Poisoned Chalice evaluation contract changed")
+
+          pilot=os.environ["PILOT_KERNEL"]; owner,slug=pilot.split("/",1)
+          status=str(getattr(api.kernels_status(pilot),"status","") or "").upper()
+          if "COMPLETE" not in status: raise SystemExit(f"sealed pilot source is not complete: {status}")
+          with api.build_kaggle_client() as client:
+              req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+              metadata=client.kernels.kernels_api_client.get_kernel(req).metadata
+          version=int(getattr(metadata,"current_version_number",0) or 0)
+          if version != 2: raise SystemExit(f"sealed pilot version changed: {version}")
+          if not bool(getattr(metadata,"enable_gpu",False)) or bool(getattr(metadata,"enable_tpu",False)):
+              raise SystemExit("sealed pilot accelerator metadata changed")
+
+          cohort=os.environ["COHORT_KERNEL"]
+          cohort_status=str(getattr(api.kernels_status(cohort),"status","") or "").upper()
+          if "COMPLETE" not in cohort_status: raise SystemExit(f"frozen cohort source is not complete: {cohort_status}")
+
+          target=os.environ["TARGET_KERNEL"]; target_slug=os.environ["TARGET_SLUG"]
+          visible=api.kernels_list(user="renta0426",search=target_slug,page_size=20) or []
+          if any(str(getattr(item,"ref","") or "")==target for item in visible):
+              raise SystemExit("full target already exists; refusing overwrite/re-run")
+
+          quota=api.quota_view(); gpu=getattr(quota,"gpu_quota",None)
+          used=getattr(gpu,"time_used",None); total=getattr(gpu,"total_time_allowed",None)
+          if used is None or total is None: raise SystemExit("GPU quota unavailable")
+          remaining=max(0.0,(total-used).total_seconds()/3600.0)
+          if remaining < 0.75: raise SystemExit(f"insufficient GPU quota: {remaining:.2f}h")
+
+          active_refs=[]; unknown=0
+          for item in (api.kernels_list(user="renta0426",sort_by="dateRun",page_size=25) or [])[:25]:
+              ref=str(getattr(item,"ref","") or "")
+              if not ref: continue
+              try: item_status=str(getattr(api.kernels_status(ref),"status","") or "").upper()
+              except Exception: unknown+=1; continue
+              if any(token in item_status for token in ("RUNNING","QUEUED","PENDING")): active_refs.append(ref)
+          active_gpu=0; active_unknown=unknown
+          with api.build_kaggle_client() as client:
+              for ref in active_refs:
+                  try:
+                      ref_owner,ref_slug=ref.split("/",1); req=ApiGetKernelRequest(); req.user_name=ref_owner; req.kernel_slug=ref_slug
+                      ref_meta=client.kernels.kernels_api_client.get_kernel(req).metadata
+                      if bool(getattr(ref_meta,"enable_gpu",False)): active_gpu+=1
+                  except Exception: active_unknown+=1
+          if active_unknown: raise SystemExit(f"GPU admission unknown resource state: {active_unknown}")
+          if active_gpu: raise SystemExit(f"GPU admission refused: active_gpu={active_gpu}")
+          print(f"CODEPARROT_FULL_4K_LIVE_PREFLIGHT PASS pilot_version=2 pilot_status=COMPLETE cohort_status=COMPLETE quota={remaining:.2f}h active_gpu=0 target_absent=1")
+          PY
+
+      - name: Pull sealed pilot source, transform to frozen full scorer, and push exactly once
+        shell: bash
+        run: |
+          set -euo pipefail
+          kaggle_bin="${WORKDIR}/kaggle-venv/bin/kaggle"
+          target_dir="${WORKDIR}/private-target"; mkdir -p "${target_dir}"
+          if ! "${kaggle_bin}" kernels pull "${PILOT_KERNEL}" -m -p "${target_dir}" >/dev/null 2>&1; then
+            echo "sealed private pilot source pull failed"; exit 1
+          fi
+          "${WORKDIR}/patch-venv/bin/python" "${WORKDIR}/patch.py" --notebook-dir "${target_dir}"
+          "${WORKDIR}/patch-venv/bin/python" - "${target_dir}" "${AUDITED_COHORT_SHA256}" <<'PY'
+          import json,pathlib,sys
+          import nbformat
+          root=pathlib.Path(sys.argv[1]); audited=sys.argv[2]
+          metadata=json.loads((root/"kernel-metadata.json").read_text())
+          assert metadata["id"]=="renta0426/codeparrot-fresh-full-v1"
+          assert metadata["is_private"] is True and metadata["enable_gpu"] is True and metadata["enable_tpu"] is False
+          assert metadata["machine_shape"]=="NvidiaTeslaT4"
+          assert metadata["kernel_sources"]==["renta0426/codeparrot-fresh-cohort-v1"]
+          notebook=nbformat.read(next(root.glob("*.ipynb")),as_version=4); nbformat.validate(notebook)
+          code="\n".join(cell.source for cell in notebook.cells if cell.cell_type=="code")
+          required=(
+              "CODEPARROT_PRIVATE_SNAPSHOT_COMPAT_V3",
+              audited,
+              'EXPERIMENT_ID = "codeparrot-fresh-full-v1"',
+              "private_input = scorer_frame(full)",
+              "aggregate_private_features(window_features, 4000)",
+              'OUTPUT / "full_predictions.parquet"',
+              '"full_4000_scoring_authorized": True',
+              '"performance_metrics_computed": False',
+              '"membership_join_performed": False',
+              '"competition_submission": False',
+          )
+          if not all(token in code for token in required): raise SystemExit("private full bundle contract incomplete")
+          forbidden=("competitions submit","submission.csv","RESEARCH_REPO_READ_TOKEN","GH_TOKEN","GITHUB_PAT","SSH_PRIVATE_KEY",'private_input = scorer_frame(pilot)','OUTPUT / "pilot_predictions.parquet"')
+          if any(token in code for token in forbidden): raise SystemExit("private full bundle contains forbidden transport/side effect")
+          print("CODEPARROT_FULL_4K_PRIVATE_BUNDLE PASS rows=4000 labels=0 metrics=0 submission=0 audited_cohort_sha=1")
+          PY
+
+          set +e
+          "${kaggle_bin}" kernels push -p "${target_dir}" >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          stdout_bytes="$(wc -c <"${WORKDIR}/push.stdout")"; stderr_bytes="$(wc -c <"${WORKDIR}/push.stderr")"
+          stdout_sha="$(sha256sum "${WORKDIR}/push.stdout" | awk '{print $1}')"; stderr_sha="$(sha256sum "${WORKDIR}/push.stderr" | awk '{print $1}')"
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "CODEPARROT_FULL_4K_PUSH_FAILED rc=${rc} stdout_bytes=${stdout_bytes} stderr_bytes=${stderr_bytes} stdout_sha256=${stdout_sha} stderr_sha256=${stderr_sha} ambiguous_write=1 retry=0"; exit 1
+          fi
+          echo "CODEPARROT_FULL_4K_KERNEL_PUSH PASS requested_version=1 count=1 retry=0 submission=0"
+          echo "No automatic status polling, output readout, metric join, or re-push is permitted in this launch workflow."
+
+      - name: Cleanup credentials and private runner-local source
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "CODEPARROT_FULL_4K_CLEANUP PASS private_source_persisted=0"
