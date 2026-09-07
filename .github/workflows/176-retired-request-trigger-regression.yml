@@ -1,0 +1,56 @@
+name: Retired one-shot request trigger regression
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/163-cmi-flu-public-probes-launch.yml
+      - .github/workflows/164-cmi-flu-public-probes-repair-002.yml
+      - .github/workflows/174-cmi-flu-strategy-e02-task11-structured-logfc-001.yml
+      - .github/workflows/176-retired-request-trigger-regression.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/163-cmi-flu-public-probes-launch.yml
+      - .github/workflows/164-cmi-flu-public-probes-repair-002.yml
+      - .github/workflows/174-cmi-flu-strategy-e02-task11-structured-logfc-001.yml
+      - .github/workflows/176-retired-request-trigger-regression.yml
+
+permissions: {}
+
+jobs:
+  trigger-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prove retired requests have no automatic or protected compute path
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "${work}"' EXIT
+          for name in KAGGLE_API_TOKEN KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN; do test -z "${!name-}"; done
+          python3 -m venv "${work}/venv"
+          "${work}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --only-binary=:all: PyYAML==6.0.2 >/dev/null
+          "${work}/venv/bin/python" - <<'PY'
+          import os,re,urllib.request,yaml
+          sha=os.environ['SOURCE_SHA']; assert re.fullmatch('[0-9a-f]{40}',sha)
+          names=('163-cmi-flu-public-probes-launch.yml','164-cmi-flu-public-probes-repair-002.yml','174-cmi-flu-strategy-e02-task11-structured-logfc-001.yml')
+          for name in names:
+              url=f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/.github/workflows/{name}'
+              with urllib.request.urlopen(url,timeout=30) as r: raw=r.read(16385)
+              assert len(raw)<=16384
+              source=raw.decode(); workflow=yaml.load(source,Loader=yaml.BaseLoader)
+              assert set(workflow['on'])=={'workflow_dispatch'}, 'retired request has automatic trigger'
+              assert workflow['permissions']=={}, 'retired request has permissions'
+              assert 'concurrency' not in workflow, 'retired request takes a compute lock'
+              for job in workflow['jobs'].values():
+                  assert 'environment' not in job and 'concurrency' not in job
+                  for step in job.get('steps',[]):
+                      assert 'uses' not in step
+                      commands=step.get('run','')
+                      assert commands.strip().endswith('exit 1')
+                      assert all(line.strip().startswith(('echo ', 'exit 1')) for line in commands.splitlines() if line.strip())
+              assert 'secrets.' not in source
+          print('RETIRED_TRIGGER_CONTRACT PASS retired_requests=3 automatic_triggers=0 protected_jobs=0 compute_locks=0')
+          PY
