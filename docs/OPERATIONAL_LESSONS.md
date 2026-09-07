@@ -2,16 +2,6 @@
 
 This file records failures already observed in bridge runs and converts them into durable operating rules.
 
-## 2026-09-07: E02 incident and required test ladder
-
-Read [CMI_E02_INCIDENT_AND_RUNBOOK.md](CMI_E02_INCIDENT_AND_RUNBOOK.md) before the next experiment. The E02 push returned zero, then the bridge failed at a search-based identity check. Search/list is not an exact-resource identity or existence proof. Use direct metadata; recheck current version after output download. Do not repeat an unconfirmed write. Recover the already-pushed version read-only first.
-
-A separate E02 output-writer defect was reproduced with synthetic data: inherited E01 keys were accessed after E02 metrics had already been written. The new tests execute the frozen scientific entry and the complete validation/serialization/cleanup lifecycle, not only syntax checks. The shared output regression now exercises wrong versions, failed CLI calls, unexpected/duplicate/missing/oversized files and symlinks instead of depending on incidental source phrases.
-
-The science repository remains private and MUST NOT be read from CI. The agent uses the user's GitHub tool to relay reviewed, publication-safe source/config blobs into this public bridge. No research-repository PAT, SSH key, installation token or private checkout is requested or permitted. Verify a single exact Git blob and generated runtime SHA-256; do not reconstruct source by hand-slicing displayed lines. Scope runtime edits to named top-level AST nodes and prove embedded scientific sources remain unchanged.
-
-Workflow 174 is retired after its post-write failure. Workflow 175 requests only exact current-version code hashing and aggregate recovery: zero new writes, compute or submissions, with a fresh protected approval. Missing original receipts are never fabricated. See the linked runbook for the strict salvage exception and evidence boundaries.
-
 ## Private research inputs
 
 Two SmolLM2 launch attempts failed before any Kaggle write because the public bridge expected material from a private research repository that was not available in the protected execution context.
@@ -106,6 +96,3 @@ Public logs should contain only bounded operational metadata such as request IDs
 - [ ] Verbose CLI/API diagnostics are captured and sanitized rather than streamed or silently discarded.
 - [ ] Cleanup is unconditional.
 - [ ] Failures emit enough non-sensitive metadata to avoid another blind probe.
-- [ ] Direct metadata proves identity independently of list/search visibility.
-- [ ] Full runtime serialization and cleanup are exercised with synthetic E02-shaped results.
-- [ ] CI has no private science repository access; agent-mediated relay hashes are fixed.
