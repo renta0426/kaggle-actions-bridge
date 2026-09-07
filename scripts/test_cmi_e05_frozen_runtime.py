@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Execute the frozen E05 scientific module on synthetic Challenge-shaped HAI rows."""
 from __future__ import annotations
-import argparse, hashlib, importlib.util, json
+import argparse, hashlib, importlib.util, json, sys, tempfile
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -21,10 +21,16 @@ def synthetic_frame():
 
 def main():
     parser=argparse.ArgumentParser(); parser.add_argument("--runtime",type=Path,required=True); parser.add_argument("--output-dir",type=Path,required=True); args=parser.parse_args()
-    out=args.output_dir.resolve(); out.mkdir(parents=True,exist_ok=False); runtime=load_runtime(args.runtime.resolve()); run,e05=runtime.load_e05_module(); assert callable(run)
-    frame=synthetic_frame(); main=e05._e05_design(frame,interactions=False); interaction=e05._e05_design(frame,interactions=True); assert interaction.shape[1]-main.shape[1]==8
-    target=3.5+.6*main["g_log2_pre_hai"].to_numpy()+.2*main["z_age_rank"].to_numpy(); train_rows=18; weights=e05._hierarchical_sample_weights(frame.iloc[:train_rows]); _,prediction=e05._fit_ridge(interaction.iloc[:train_rows],target[:train_rows],weights,interaction.iloc[train_rows:],interactions=True); assert len(prediction)==6 and np.isfinite(prediction).all()
-    splits=e05._simultaneous_subject_strain_splits(frame,panel_strains=tuple(frame["virus_strain"].unique())); assert splits
+    out=args.output_dir.resolve(); out.mkdir(parents=True,exist_ok=False); runtime=load_runtime(args.runtime.resolve())
+    with tempfile.TemporaryDirectory(prefix="e05-synthetic-package-") as tmp:
+        package_path=Path(tmp)/"cmi_flu_bundle.zip"; package_path.write_bytes(runtime.package_bytes()); sys.path.insert(0,str(package_path))
+        try:
+            run,e05=runtime.load_e05_module(); assert callable(run)
+            frame=synthetic_frame(); main=e05._e05_design(frame,interactions=False); interaction=e05._e05_design(frame,interactions=True); assert interaction.shape[1]-main.shape[1]==8
+            target=3.5+.6*main["g_log2_pre_hai"].to_numpy()+.2*main["z_age_rank"].to_numpy(); train_rows=18; weights=e05._hierarchical_sample_weights(frame.iloc[:train_rows]); _,prediction=e05._fit_ridge(interaction.iloc[:train_rows],target[:train_rows],weights,interaction.iloc[train_rows:],interactions=True); assert len(prediction)==6 and np.isfinite(prediction).all()
+            splits=e05._simultaneous_subject_strain_splits(frame,panel_strains=tuple(frame["virus_strain"].unique())); assert splits
+        finally:
+            sys.path.remove(str(package_path))
     result={"schema_version":1,"experiment":"strategy_v2_e05_hai_donor_strain","science_commit":runtime.SCIENCE_COMMIT,"e05_blob":runtime.E05_BLOB,"rows":len(frame),"interaction_count":8,"prediction_rows":len(prediction),"prediction_finite":True,"split_count":len(splits),"competition_submission_attempted":False,"leaderboard_used_for_selection":False}
     (out/"synthetic-result.json").write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
     manifest={"final_files":["synthetic-result.json","runtime-manifest.json","release-receipt.json"],"runtime_sha256":hashlib.sha256(args.runtime.read_bytes()).hexdigest(),"science_commit":runtime.SCIENCE_COMMIT}; (out/"runtime-manifest.json").write_text(json.dumps(manifest,sort_keys=True,indent=2)+"\n")
