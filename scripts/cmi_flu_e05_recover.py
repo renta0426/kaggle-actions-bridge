@@ -47,7 +47,9 @@ def resolve_kaggle_cli() -> str:
     cli = shutil.which("kaggle")
     if cli:
         return cli
-    adjacent = Path(sys.executable).resolve().with_name("kaggle")
+    # Keep the invoked interpreter path intact. venv/bin/python is commonly a
+    # symlink; resolving it first would jump to /usr/bin and lose venv/bin/kaggle.
+    adjacent = Path(sys.executable).with_name("kaggle")
     if adjacent.is_file():
         return str(adjacent)
     raise RuntimeError("kaggle_cli_missing")
