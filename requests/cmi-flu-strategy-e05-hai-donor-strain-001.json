@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "request_id": "20260907-cmi-flu-strategy-e05-hai-donor-strain-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e05-hai-donor-strain-20260907-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "e02a601f38250480b526e548a48cf7f2526c00ca",
+  "science_transport": "agent_relay_exact_blobs",
+  "strategy_e01_blob_sha": "dd27aea0cf97d41bad3cec64819c4c4269d94cbd",
+  "strategy_e01_v2_blob_sha": "8cc64dc5ab9483d5957cfada18d445188566c56c",
+  "hai_transfer_blob_sha": "b671d8bf7f10bebbd65aca2a5bad42e267ee78d5",
+  "strategy_e05_blob_sha": "78cde9e3a6b6e3b332352218c4b4545f769aa6c4",
+  "config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9",
+  "locked_reference_sha256": {
+    "strain_sequences.csv": "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887",
+    "vaccine_strains_per_season.txt": "8f6c7116f37f29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35"
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 1
+  },
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md", "release-receipt.json"],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0
+}
