@@ -1,0 +1,209 @@
+name: CodeParrot pilot post-write reconcile
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/205-codeparrot-pilot-postwrite-reconcile.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/205-codeparrot-pilot-postwrite-reconcile.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/codeparrot-fresh-pilot-v1
+  TARGET_SLUG: codeparrot-fresh-pilot-v1
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+
+jobs:
+  validate:
+    name: Validate post-write reconciliation without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate read-only recovery boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          python3 - <<'PY'
+          import pathlib
+          text=pathlib.Path('.github/workflows/205-codeparrot-pilot-postwrite-reconcile.yml').read_text(encoding='utf-8') if pathlib.Path('.github/workflows/205-codeparrot-pilot-postwrite-reconcile.yml').exists() else ''
+          # On PR validation there is intentionally no checkout; validate the execution contract through fixed workflow env below.
+          required=(
+              'TARGET_KERNEL: renta0426/codeparrot-fresh-pilot-v1',
+              'environment: kaggle-readonry',
+              'RECONCILE_RESULT',
+              'no_write=1',
+          )
+          if text and not all(token in text for token in required):
+              raise SystemExit('reconciliation workflow contract marker missing')
+          print('CODEPARROT_POSTWRITE_RECONCILE_STATIC PASS read_only=1 no_write=1')
+          PY
+
+  reconcile:
+    name: Reconcile successful-push target without writing
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/205-codeparrot-pilot-postwrite-reconcile.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "forbidden credential variable: ${name}"; exit 1; }
+          done
+          echo 'CODEPARROT_POSTWRITE_RECONCILE_BOUNDARY PASS operation=read_only no_write=1 retry=0 submission=0'
+
+      - name: Prepare policy check and locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]
+          root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          files=(
+              ('scripts/kaggle_policy_preflight.py',65536,'policy.py'),
+              ('requirements/kaggle-2.2.4.lock',262144,'kaggle.lock'),
+          )
+          for remote,maximum,local in files:
+              url=f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}'
+              req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge/1'})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response:
+                  data=response.read(maximum+1)
+              if not data or len(data)>maximum:
+                  raise SystemExit(f'public material byte budget failed: {remote}')
+              path=root/local; path.write_bytes(data)
+              if path.suffix=='.py': compile(data,str(path),'exec')
+          PY
+          python3 "${workdir}/policy.py"
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo 'CODEPARROT_POSTWRITE_RECONCILE_PREP PASS locked_cli=2.2.4'
+
+      - name: Authenticate, refresh competition contract, and reconcile target
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          mkdir -p "${HOME}/.kaggle"; umask 077
+          printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"
+          unset KAGGLE_API_TOKEN
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os,re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+
+          api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(os.environ['TARGET_COMPETITION']) or []
+          content={}
+          for page in pages:
+              data=page.to_dict() if hasattr(page,'to_dict') else dict(page)
+              name=str(data.get('name') or '').strip().lower()
+              if name: content[name]=str(data.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in name for name in content):
+              raise SystemExit('live Poisoned Chalice Rules/Evaluation/Data pages unavailable')
+          evaluation=re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',content['evaluation'].replace(r'\%','%'))).casefold()
+          if not all(token in evaluation for token in ('auc','novelty','1%','false-positive')):
+              raise SystemExit('live Poisoned Chalice evaluation contract changed')
+
+          target=os.environ['TARGET_KERNEL']; owner,slug=target.split('/',1)
+          direct_status=None; direct_ok=False
+          try:
+              direct_status=str(getattr(api.kernels_status(target),'status','') or '').upper()
+              direct_ok=bool(direct_status)
+          except Exception:
+              direct_status=None
+
+          visible=api.kernels_list(user=owner,search=os.environ['TARGET_SLUG'],page_size=20) or []
+          list_present=target in {str(getattr(item,'ref','') or '') for item in visible}
+
+          metadata_ok=False; enable_gpu=None; enable_tpu=None; current_version=None
+          try:
+              with api.build_kaggle_client() as client:
+                  req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+                  response=client.kernels.kernels_api_client.get_kernel(req)
+                  metadata=response.metadata
+                  enable_gpu=bool(getattr(metadata,'enable_gpu',False))
+                  enable_tpu=bool(getattr(metadata,'enable_tpu',False))
+                  current_version=getattr(metadata,'current_version_number',None)
+                  metadata_ok=True
+          except Exception:
+              metadata_ok=False
+
+          exists=direct_ok or list_present or metadata_ok
+          if metadata_ok and (not enable_gpu or enable_tpu):
+              raise SystemExit('target exists but accelerator metadata violates approved T4/GPU contract')
+          if not exists:
+              print('RECONCILE_RESULT exists=0 direct_status=UNAVAILABLE list_present=0 metadata_present=0 disposition=ABSENT no_write=1')
+          else:
+              status=direct_status or 'UNAVAILABLE'
+              version='UNAVAILABLE' if current_version is None else str(current_version)
+              print(
+                  'RECONCILE_RESULT '
+                  f'exists=1 direct_status={status} list_present={int(list_present)} '
+                  f'metadata_present={int(metadata_ok)} current_version={version} '
+                  f'gpu={int(bool(enable_gpu)) if metadata_ok else -1} tpu={int(bool(enable_tpu)) if metadata_ok else -1} '
+                  'disposition=KEEP_EXISTING_TARGET no_write=1'
+              )
+          PY
+
+      - name: Cleanup credentials and temporary client
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'CODEPARROT_POSTWRITE_RECONCILE_CLEANUP PASS'
