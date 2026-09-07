@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print only the schema of hash-verified locked HAI organizer references.
+"""Validate only the schema of hash-verified locked HAI organizer references.
 
 This is intentionally row-free and credential-free. It exists to prevent model
 runtimes from assuming a reference-file column contract that CI never checked.
@@ -16,6 +16,7 @@ EXPECTED_SHA256 = {
     "strain_sequences.csv": "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887",
     "vaccine_strains_per_season.txt": "8f6c7116f37f29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35",
 }
+EXPECTED_STRAIN_SEQUENCE_COLUMNS = ("Virus", "Sequence", "Status_of_sequence")
 
 
 def digest(path: Path) -> str:
@@ -31,11 +32,14 @@ def main() -> int:
         path = root / name
         if not path.is_file() or digest(path) != expected:
             raise SystemExit(f"locked reference integrity mismatch:{name}")
-    columns = pd.read_csv(root / "strain_sequences.csv", nrows=0).columns.tolist()
-    if not columns or any(not str(column).strip() for column in columns):
-        raise SystemExit("strain sequence reference has invalid header")
-    print("CMI_FLU_HAI_REFERENCE_SCHEMA name=strain_sequences.csv columns=" + ",".join(map(str, columns)))
-    print("CMI_FLU_HAI_REFERENCE_SCHEMA_PASS row_data_emitted=false hash_verified=true")
+    columns = tuple(map(str, pd.read_csv(root / "strain_sequences.csv", nrows=0).columns.tolist()))
+    if columns != EXPECTED_STRAIN_SEQUENCE_COLUMNS:
+        raise SystemExit(
+            "strain sequence reference header changed: "
+            f"expected={EXPECTED_STRAIN_SEQUENCE_COLUMNS}, actual={columns}"
+        )
+    print("CMI_FLU_HAI_REFERENCE_SCHEMA name=strain_sequences.csv columns=" + ",".join(columns))
+    print("CMI_FLU_HAI_REFERENCE_SCHEMA_PASS row_data_emitted=false hash_verified=true exact_header=true")
     return 0
 
 
