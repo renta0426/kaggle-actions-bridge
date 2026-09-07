@@ -47,7 +47,7 @@
     "max_active_runs": 1
   },
   "api_budget": {
-    "max_calls": 80,
+    "max_calls": 150,
     "poll_interval_seconds": 120,
     "max_polls": 65,
     "max_pages": 2
