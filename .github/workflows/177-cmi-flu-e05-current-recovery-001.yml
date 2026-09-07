@@ -92,11 +92,22 @@ jobs:
           ! grep -Eq 'kernels[[:space:]]+push|competitions[[:space:]]+submit|kernel_push|kernels_push' "${WORKDIR}/bridge/scripts/cmi_flu_e05_recover.py"
           grep -F 'verb not in {"pull", "output"}' "${WORKDIR}/bridge/scripts/cmi_flu_e05_recover.py" >/dev/null
           python3 - "${WORKDIR}/bridge/scripts/cmi_flu_e05_recover.py" <<'PY'
-          import importlib.util,sys
+          import importlib.util,pathlib,sys,tempfile
           p=sys.argv[1]; spec=importlib.util.spec_from_file_location('recover',p); m=importlib.util.module_from_spec(spec)
           sys.path.insert(0,p.rsplit('/',1)[0]); spec.loader.exec_module(m)
           x='CMI_FLU_E05_FAILED stage=run_e05 exception_type=DataContractError error_code=0123456789abcdef0123'
           assert m.SIG_RE.findall(x)==[('run_e05','DataContractError','0123456789abcdef0123')]
+          old_which=m.shutil.which; old_exec=m.sys.executable
+          try:
+            with tempfile.TemporaryDirectory() as tmp:
+              bindir=pathlib.Path(tmp)/'venv'/'bin'; bindir.mkdir(parents=True)
+              (bindir/'python').symlink_to(pathlib.Path(sys.executable))
+              (bindir/'kaggle').write_text('#!/bin/sh\nexit 0\n'); (bindir/'kaggle').chmod(0o755)
+              m.shutil.which=lambda _: None
+              m.sys.executable=str(bindir/'python')
+              assert m.resolve_kaggle_cli()==str(bindir/'kaggle')
+          finally:
+            m.shutil.which=old_which; m.sys.executable=old_exec
           PY
           echo CMI_FLU_E05_RECOVERY_VALIDATE_PASS
       - name: Cleanup validation content
@@ -157,6 +168,7 @@ jobs:
           python3 -m venv "${WORKDIR}/venv"
           "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
           "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          test -x "${WORKDIR}/venv/bin/kaggle"
       - name: Read exact failed current version and sanitize evidence
         shell: bash
         env:
