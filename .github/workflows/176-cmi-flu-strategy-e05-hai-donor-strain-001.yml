@@ -10,6 +10,7 @@ on:
       - scripts/cmi_flu_strategy_e05_execute.py
       - scripts/cmi_flu_strategy_e05_sanitize.py
       - scripts/test_cmi_e05_frozen_runtime.py
+      - scripts/test_cmi_e05_prewrite_contract.py
       - payloads/cmi-flu-strategy-e05-hai-donor-strain-001/**
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - scripts/cmi_flu_strategy_e05_execute.py
       - scripts/cmi_flu_strategy_e05_sanitize.py
       - scripts/test_cmi_e05_frozen_runtime.py
+      - scripts/test_cmi_e05_prewrite_contract.py
       - payloads/cmi-flu-strategy-e05-hai-donor-strain-001/**
 
 permissions: {}
@@ -78,6 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e05_prewrite_contract.py" --source "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e05_execute.py"
           python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e05_prepare.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/script.py"
           python3 "${WORKDIR}/script.py" --self-test
           python3 "${WORKDIR}/bridge/scripts/test_cmi_e05_frozen_runtime.py" --runtime "${WORKDIR}/script.py" --output-dir "${WORKDIR}/synthetic-final"
