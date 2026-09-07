@@ -18,13 +18,8 @@
   },
   "expected_kernel_version": 1,
   "enable_internet": false,
-  "resource": {
-    "accelerator": "cpu",
-    "expected_runtime_minutes": 30,
-    "hard_timeout_minutes": 60,
-    "max_active_runs": 1
-  },
-  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md", "release-receipt.json"],
+  "resource": {"accelerator": "cpu", "expected_runtime_minutes": 30, "hard_timeout_minutes": 60, "max_active_runs": 1},
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
   "competition_submission_attempted": false,
   "leaderboard_used_for_selection": false,
   "automatic_compute_retries": 0
