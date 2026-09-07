@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "request_id": "20260907-cmi-flu-e05-current-recovery-001",
+  "original_request_id": "20260907-cmi-flu-strategy-e05-hai-donor-strain-001",
+  "operation": "kernel_current_failed_recovery_read",
+  "target": "renta0426/cmi-flu-e05-hai-donor-strain-20260907-001",
+  "expected_kernel_version": 1,
+  "expected_runtime_sha256": "bb295cce54a89cd2b2181629b1c47f0474e044a250c26a3048fc4f11f435162b",
+  "science_commit": "e02a601f38250480b526e548a48cf7f2526c00ca",
+  "new_write_attempted": false,
+  "new_compute_requested": false,
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "allow_failed_terminal_state": true,
+  "allowed_reads": ["exact_metadata", "current_code", "current_output"],
+  "allowed_output_paths": ["recovery.json", "aggregate.json"],
+  "privacy": "aggregate-or-sanitized-failure-signature-only"
+}
