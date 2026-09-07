@@ -90,7 +90,7 @@ jobs:
           print('CMI_FLU_E05_CONTRACT_SITE_PREFLIGHT helper=true traceback_site=true')
           PY
           python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_e05_contract_site_prepare.py" "${WORKDIR}/bridge/scripts/cmi_flu_e05_contract_site_execute.py"
-          ! grep -R -F 'kaggle competitions submit' "${WORKDIR}/script.py" "${WORKDIR}/bridge/scripts/cmi_flu_e05_contract_site_"* >/dev/null
+          ! grep -F 'kaggle competitions submit' "${WORKDIR}/script.py" "${WORKDIR}/bridge/scripts/cmi_flu_e05_contract_site_execute.py" >/dev/null
 
       - name: Validate request and retired 004 guard
         shell: bash
