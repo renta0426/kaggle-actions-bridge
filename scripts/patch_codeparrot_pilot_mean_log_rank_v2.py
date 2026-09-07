@@ -159,7 +159,7 @@ def patch_notebook(root: Path) -> Path:
         'accum[index]["rank"].append(host_rank[index][mask])',
         'summary["mean_log_rank"] = float(np.log1p(rank_integer).mean())',
         'first8_compare["mean_log_rank"]',
-        '"neg_mean_log_rank": float(-group.mean_log_rank.mean())',
+        "group.mean_log_rank.mean()",
         "synthetic_legacy_rank_exact_match",
         "performance_metrics_computed",
         "membership_join_performed",
