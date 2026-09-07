@@ -1,0 +1,140 @@
+                "feature_scope": "CXCL10-only log1p difference and two-point variance",
+                "min_paired_subjects_per_study": REPEAT_MIN_PAIRED_PER_STUDY,
+                "min_source_studies_per_outer_fold": REPEAT_MIN_SOURCE_STUDIES_PER_FOLD,
+                "paired_subjects_by_historical_study": counts,
+                "eligible_historical_studies": supported,
+                "fold_support": fold_support,
+                "challenge_paired_subjects": challenge_paired,
+                "challenge_gate_passed": challenge_ok,
+                "full_outer_contract_gate_passed": full_gate,
+            }
+        ),
+        train_repeat,
+        challenge_repeat,
+    )
+
+
+def _augment_with_repeat(
+    dataset: TaskDataset,
+    train_repeat: pd.DataFrame,
+    challenge_repeat: pd.DataFrame,
+) -> TaskDataset:
+    train = dataset.train.merge(
+        train_repeat,
+        on=["participant_id", "study_group"],
+        how="left",
+        validate="one_to_one",
+    )
+    challenge = dataset.challenge.merge(
+        challenge_repeat,
+        on=["participant_id", "study_group"],
+        how="left",
+        validate="one_to_one",
+    )
+    augmented = TaskDataset(
+        task=dataset.task,
+        train=train,
+        challenge=challenge,
+        target_column=dataset.target_column,
+        excluded_columns=dataset.excluded_columns,
+        metadata={
+            **dict(dataset.metadata),
+            "e02_repeat_features": list(REPEAT_COLUMNS),
+        },
+    )
+    augmented.validate()
+    return augmented
+
+
+def _availability_frame(
+    dataset: TaskDataset,
+    *,
+    other_columns: Sequence[str],
+    repeat_columns: Sequence[str] = (),
+) -> pd.DataFrame:
+    raw, _ = _raw_structured_features(
+        dataset.train,
+        other_columns=other_columns,
+        repeat_columns=repeat_columns,
+    )
+    available = raw.notna().sum(axis=1).to_numpy(dtype=float)
+    return pd.DataFrame(
+        {
+            "participant_id": dataset.train["participant_id"].astype(str).to_numpy(),
+            "subject_group": dataset.train["subject_group"].astype(str).to_numpy(),
+            "study_group": dataset.train["study_group"].astype(str).to_numpy(),
+            "target": pd.to_numeric(
+                dataset.train[dataset.target_column], errors="coerce"
+            ).to_numpy(dtype=float),
+            "prediction": available,
+        }
+    )
+
+
+def _metrics(frame: pd.DataFrame, *, scale: str) -> Mapping[str, Any]:
+    return _metric_summary(frame, prediction_scale=scale)
+
+
+def _condition_payload(
+    *,
+    name: str,
+    frame: pd.DataFrame,
+    scale: str,
+    diagnostics: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
+    return _json_safe(
+        {
+            "name": name,
+            "metrics": _metrics(frame, scale=scale),
+            "diagnostics": diagnostics or {},
+        }
+    )
+
+
+def _comparison_bundle(
+    conditions: Mapping[str, pd.DataFrame],
+    *,
+    candidate_names: Sequence[str],
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    comparisons: dict[str, Any] = {}
+    sensitivity: dict[str, Any] = {}
+    references = ("anchor", "b21")
+    for candidate in candidate_names:
+        for reference in references:
+            key = f"{candidate}_vs_{reference}"
+            comparisons[key] = _paired_comparison(
+                conditions[candidate],
+                conditions[reference],
+                candidate_name=candidate,
+                reference_name=reference,
+            )
+            sensitivity[key] = _sensitivity_28(
+                conditions[candidate],
+                conditions[reference],
+                candidate_name=candidate,
+                reference_name=reference,
+            )
+    comparisons["b21_vs_anchor"] = _paired_comparison(
+        conditions["b21"],
+        conditions["anchor"],
+        candidate_name="b21",
+        reference_name="anchor",
+    )
+    sensitivity["b21_vs_anchor"] = _sensitivity_28(
+        conditions["b21"],
+        conditions["anchor"],
+        candidate_name="b21",
+        reference_name="anchor",
+    )
+    return _json_safe(comparisons), _json_safe(sensitivity)
+
+
+def run_strategy_e02(
+    config: BaselineConfig,
+    inputs: InputBundle,
+) -> Mapping[str, Any]:
+    """Run E02 fixed-condition Task1.1 structured logFC evaluation."""
+
+    if config.baseline != "b021_taskwise_robust":
+        raise DataContractError("E02 requires the B2.1 robust configuration")
+    if str(config.section("selection").get("policy", "")) != "robust_v1":

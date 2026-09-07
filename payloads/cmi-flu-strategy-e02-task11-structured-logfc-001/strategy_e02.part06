@@ -1,0 +1,140 @@
+        raise DataContractError("E02 requires selection.policy=robust_v1")
+    datasets = build_b02_datasets(config, inputs)
+    dataset = datasets["Task1.1"]
+    if not isinstance(dataset, TaskDataset):
+        raise DataContractError("E02 Task1.1 dataset type mismatch")
+    _validate_task11_contract(dataset)
+    splits = default_splits_for_task(dataset, random_state=config.random_state)
+
+    anchor = _anchor_frame(dataset, splits)
+    b21, b21_result = _fixed_b21(
+        dataset,
+        config=config,
+        splits=splits,
+    )
+    anchor_residual = _fixed_anchor_residual(
+        dataset,
+        config=config,
+        splits=splits,
+    )
+    other_columns = _structured_other_columns(dataset)
+    structured, structured_diag = _fit_structured_oof(
+        dataset,
+        splits=splits,
+        other_columns=other_columns,
+    )
+    structured_shuffle, shuffle_diag = _fit_structured_oof(
+        dataset,
+        splits=splits,
+        other_columns=other_columns,
+        shuffle_labels=True,
+    )
+    availability = _availability_frame(
+        dataset,
+        other_columns=other_columns,
+    )
+
+    conditions: dict[str, pd.DataFrame] = {
+        "anchor": anchor,
+        "b21": b21,
+        "anchor_residual": anchor_residual,
+        "structured_ridge": structured,
+    }
+    condition_payloads: dict[str, Any] = {
+        "anchor": _condition_payload(
+            name="same_readout_oriented_anchor",
+            frame=anchor,
+            scale="rank_score",
+        ),
+        "b21": _condition_payload(
+            name="b21_pls_2",
+            frame=b21,
+            scale="raw_target",
+            diagnostics={
+                "selected_model": b21_result.selected_spec.name,
+                "reproduced": b21_result.selected_spec.name == B21_MODEL,
+            },
+        ),
+        "anchor_residual": _condition_payload(
+            name="anchor_residual_pls_1_lambda0.25",
+            frame=anchor_residual,
+            scale="rank_score",
+            diagnostics={
+                "model": ANCHOR_RESIDUAL_MODEL,
+                "lambda": ANCHOR_RESIDUAL_LAMBDA,
+                "frozen_reference_source": "phase_a_anchor_residual_task11_task12",
+            },
+        ),
+        "structured_ridge": _condition_payload(
+            name="study_centered_shared_logfc_ridge_alpha10",
+            frame=structured,
+            scale="centered_logfc_score",
+            diagnostics=structured_diag,
+        ),
+    }
+
+    repeat_audit, train_repeat, challenge_repeat = _repeat_support_audit(
+        inputs,
+        dataset=dataset,
+        splits=splits,
+    )
+    repeat_frame: pd.DataFrame | None = None
+    repeat_diag: Mapping[str, Any] | None = None
+    augmented: TaskDataset | None = None
+    if repeat_audit["status"] == "ready":
+        augmented = _augment_with_repeat(dataset, train_repeat, challenge_repeat)
+        repeat_frame, repeat_diag = _fit_structured_oof(
+            augmented,
+            splits=splits,
+            other_columns=other_columns,
+            repeat_columns=REPEAT_COLUMNS,
+        )
+        conditions["structured_ridge_plus_repeat"] = repeat_frame
+        condition_payloads["structured_ridge_plus_repeat"] = _condition_payload(
+            name="study_centered_shared_logfc_ridge_alpha10_plus_repeat",
+            frame=repeat_frame,
+            scale="centered_logfc_score",
+            diagnostics=repeat_diag,
+        )
+
+    candidate_names = ["anchor_residual", "structured_ridge"]
+    if repeat_frame is not None:
+        candidate_names.append("structured_ridge_plus_repeat")
+    comparisons, sensitivity = _comparison_bundle(
+        conditions,
+        candidate_names=candidate_names,
+    )
+    if repeat_frame is not None:
+        comparisons["structured_ridge_plus_repeat_vs_structured_ridge"] = _paired_comparison(
+            repeat_frame,
+            structured,
+            candidate_name="structured_ridge_plus_repeat",
+            reference_name="structured_ridge",
+        )
+        sensitivity["structured_ridge_plus_repeat_vs_structured_ridge"] = _sensitivity_28(
+            repeat_frame,
+            structured,
+            candidate_name="structured_ridge_plus_repeat",
+            reference_name="structured_ridge",
+        )
+
+    anchor_challenge = _challenge_anchor(dataset)
+    b21_challenge = b21_result.challenge_predictions[
+        ["participant_id", "prediction"]
+    ].copy()
+    ar_challenge = _fixed_anchor_residual_challenge(dataset, config=config)
+    structured_challenge, structured_challenge_diag = _fit_structured_challenge(
+        dataset,
+        other_columns=other_columns,
+    )
+    challenge_agreement: dict[str, Any] = {
+        "anchor_residual_vs_anchor": _challenge_agreement(
+            ar_challenge, anchor_challenge
+        ),
+        "anchor_residual_vs_b21": _challenge_agreement(
+            ar_challenge, b21_challenge
+        ),
+        "structured_ridge_vs_anchor": _challenge_agreement(
+            structured_challenge, anchor_challenge
+        ),
+        "structured_ridge_vs_b21": _challenge_agreement(

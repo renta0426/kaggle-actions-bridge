@@ -1,0 +1,140 @@
+def _fixed_anchor_residual(
+    dataset: TaskDataset,
+    *,
+    config: BaselineConfig,
+    splits: Sequence[NamedSplit],
+) -> pd.DataFrame:
+    """Regenerate the frozen Task1.1 PLS1/lambda=.25 anchor-residual reference."""
+
+    spec = _identity_spec(_find_spec(config, "task_11", ANCHOR_RESIDUAL_MODEL))
+    excluded = tuple(dict.fromkeys([*dataset.excluded_columns, dataset.target_column]))
+    parts: list[pd.DataFrame] = []
+    for split in splits:
+        train = dataset.train.iloc[split.train_indices].copy()
+        validation = dataset.train.iloc[split.validation_indices].copy()
+        train_anchor = _oriented_anchor(
+            "Task1.1",
+            train,
+            train,
+            anchor_column=ANCHOR_COLUMN,
+            target_column=dataset.target_column,
+        )
+        validation_anchor = _oriented_anchor(
+            "Task1.1",
+            train,
+            validation,
+            anchor_column=ANCHOR_COLUMN,
+            target_column=dataset.target_column,
+        )
+        train[RESIDUAL_TARGET_COLUMN] = (
+            _rank_within(train, dataset.target_column) - train_anchor
+        )
+        _, correction = fit_final_model(
+            train,
+            validation,
+            target_column=RESIDUAL_TARGET_COLUMN,
+            spec=spec,
+            excluded_columns=excluded,
+        )
+        correction = np.asarray(correction, dtype=float)
+        require_finite(correction, name="E02.Task1.1.anchor_residual_correction")
+        score = validation_anchor + ANCHOR_RESIDUAL_LAMBDA * correction
+        parts.append(
+            pd.DataFrame(
+                {
+                    "row_index": split.validation_indices,
+                    "participant_id": validation["participant_id"].astype(str).to_numpy(),
+                    "subject_group": validation["subject_group"].astype(str).to_numpy(),
+                    "study_group": validation["study_group"].astype(str).to_numpy(),
+                    "target": pd.to_numeric(
+                        validation[dataset.target_column], errors="coerce"
+                    ).to_numpy(dtype=float),
+                    "prediction": score,
+                }
+            )
+        )
+    frame = pd.concat(parts, ignore_index=True)
+    if frame["row_index"].duplicated().any():
+        raise DataContractError("E02 anchor-residual OOF predicts a row more than once")
+    if set(frame["row_index"].astype(int)) != set(range(len(dataset.train))):
+        raise DataContractError("E02 anchor-residual OOF coverage mismatch")
+    return frame.sort_values("row_index").reset_index(drop=True)
+
+
+def _structured_other_columns(dataset: TaskDataset) -> list[str]:
+    """Freeze one log1p representation for every non-CXCL10 common cytokine."""
+
+    train = set(dataset.train.columns)
+    challenge = set(dataset.challenge.columns)
+    common = train & challenge
+    columns = sorted(
+        c
+        for c in common
+        if c.startswith("cytokine_log1p__") and c != LOG1P_BASELINE_COLUMN
+    )
+    if not columns:
+        raise DataContractError("E02 found no common non-CXCL10 log1p cytokines")
+    return columns
+
+
+def _raw_structured_features(
+    frame: pd.DataFrame,
+    *,
+    other_columns: Sequence[str],
+    repeat_columns: Sequence[str] = (),
+) -> tuple[pd.DataFrame, Mapping[str, int]]:
+    require_columns(
+        frame,
+        ["study_group", RAW_BASELINE_COLUMN, *other_columns, *repeat_columns],
+        table_name="E02 structured feature source",
+    )
+    raw = pd.to_numeric(frame[RAW_BASELINE_COLUMN], errors="coerce").to_numpy(dtype=float)
+    valid_baseline = np.isfinite(raw) & (raw > 0.0)
+    log_b = np.full(len(frame), np.nan, dtype=float)
+    log_b[valid_baseline] = np.log(raw[valid_baseline])
+    data: dict[str, np.ndarray] = {"log_baseline_CXCL10": log_b}
+    for column in other_columns:
+        name = "state__" + column.split("__", 1)[1]
+        data[name] = pd.to_numeric(frame[column], errors="coerce").to_numpy(dtype=float)
+    for column in repeat_columns:
+        data[column] = pd.to_numeric(frame[column], errors="coerce").to_numpy(dtype=float)
+    features = pd.DataFrame(data)
+    return features, {
+        "rows": int(len(frame)),
+        "nonpositive_or_missing_logB": int((~valid_baseline).sum()),
+        "raw_feature_missing_cells": int(features.isna().sum().sum()),
+    }
+
+
+def _study_local_robust_scale(
+    frame: pd.DataFrame,
+    raw_features: pd.DataFrame,
+) -> tuple[np.ndarray, Mapping[str, Any]]:
+    """X-only study-local median/IQR scaling.
+
+    This deliberately self-normalizes each held study using held X only.  It is
+    therefore a declared transductive preprocessing step; held y is never used.
+    Missing values are mapped to zero after centering, equivalent to the local
+    median.  IQR-zero features are fixed to zero.
+    """
+
+    if len(frame) != len(raw_features):
+        raise DataContractError("E02 feature/frame row count mismatch")
+    work = frame.reset_index(drop=True)
+    raw = raw_features.reset_index(drop=True)
+    scaled = np.zeros((len(raw), raw.shape[1]), dtype=float)
+    zero_iqr = 0
+    all_missing = 0
+    for _, positions in work.groupby(
+        "study_group", dropna=False, observed=True, sort=False
+    ).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        block = raw.iloc[pos].to_numpy(dtype=float)
+        for j in range(block.shape[1]):
+            values = block[:, j]
+            finite = np.isfinite(values)
+            if not finite.any():
+                all_missing += 1
+                continue
+            observed = values[finite]
+            median = float(np.median(observed))
