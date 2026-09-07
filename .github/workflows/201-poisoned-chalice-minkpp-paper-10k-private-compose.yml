@@ -77,7 +77,6 @@ jobs:
           compile(data,str(path),"exec")
           text=data.decode("utf-8")
           forbidden=(
-              "The-Poisoned-Chalice-of-LLM-Evaluation",
               "RESEARCH_REPOSITORY =",
               "RESEARCH_REPOSITORY:",
               "private_repo_access=1",
@@ -243,10 +242,10 @@ jobs:
               for cell in notebook.get("cells",[]) if cell.get("cell_type")=="code"
           )
           forbidden=(
-              "The-Poisoned-Chalice-of-LLM-Evaluation",
-              "raw.githubusercontent.com/renta0426/The-",
-              "api.github.com/repos/renta0426/The-",
+              "raw.githubusercontent.com",
+              "api.github.com/repos/",
               "RESEARCH_REPO_READ_TOKEN",
+              "GH_TOKEN",
               "GITHUB_PAT",
               "SSH_PRIVATE_KEY",
               "submission.csv",
