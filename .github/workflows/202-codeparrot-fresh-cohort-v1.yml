@@ -1,0 +1,275 @@
+name: CodeParrot fresh cohort v1
+
+on:
+  pull_request:
+    paths:
+      - scripts/compose_public_codecorpus_cohort.py
+      - scripts/kaggle_policy_preflight.py
+      - requirements/kaggle-2.2.4.lock
+      - .github/workflows/202-codeparrot-fresh-cohort-v1.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/compose_public_codecorpus_cohort.py
+      - scripts/kaggle_policy_preflight.py
+      - requirements/kaggle-2.2.4.lock
+      - .github/workflows/202-codeparrot-fresh-cohort-v1.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET_COMPETITION: poisoned-chalice-icse27
+  TARGET_KERNEL: renta0426/codeparrot-fresh-cohort-v1
+  TARGET_SLUG: codeparrot-fresh-cohort-v1
+  TARGET_TITLE: CodeParrot Fresh Cohort V1
+  COMPOSER_PATH: scripts/compose_public_codecorpus_cohort.py
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate public-only CodeParrot cohort bundle without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Rebuild and validate public cohort bundle
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          files=(
+              ("scripts/compose_public_codecorpus_cohort.py",131072,"composer.py"),
+              ("scripts/kaggle_policy_preflight.py",65536,"policy.py"),
+          )
+          for remote,maximum,local in files:
+              url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}"
+              req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response:
+                  data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"public source byte budget failed: {remote}")
+              path=root/local; path.write_bytes(data); compile(data,str(path),"exec")
+          PY
+          python3 "${workdir}/policy.py"
+          python3 -m venv "${workdir}/compose-venv"
+          "${workdir}/compose-venv/bin/python" -m pip install --disable-pip-version-check --no-input -q 'nbformat==5.10.4'
+          "${workdir}/compose-venv/bin/python" "${workdir}/composer.py" --self-test
+          "${workdir}/compose-venv/bin/python" "${workdir}/composer.py" --output-dir "${workdir}/kernel"
+          "${workdir}/compose-venv/bin/python" - "${workdir}/kernel" <<'PY'
+          import json,pathlib,re,sys
+          import nbformat
+          root=pathlib.Path(sys.argv[1])
+          metadata=json.loads((root/"kernel-metadata.json").read_text())
+          assert metadata["id"]=="renta0426/codeparrot-fresh-cohort-v1"
+          assert metadata["title"]=="CodeParrot Fresh Cohort V1"
+          assert metadata["is_private"] is True and metadata["enable_gpu"] is False and metadata["enable_tpu"] is False
+          assert metadata["enable_internet"] is True
+          assert not metadata["dataset_sources"] and not metadata["kernel_sources"] and not metadata["competition_sources"] and not metadata["model_sources"]
+          notebooks=list(root.glob("*.ipynb")); assert len(notebooks)==1
+          notebook=nbformat.read(notebooks[0],as_version=4); nbformat.validate(notebook)
+          code="\n".join(cell.source for cell in notebook.cells if cell.cell_type=="code")
+          required=(
+              "codeparrot/codeparrot-clean-train",
+              "3e6ab65f2864931e041f6a82db9b5a6ec2b71ab4",
+              "codeparrot/codeparrot-clean-valid",
+              "4db92d2ec0c1b4c41eeb439cfae16854511d9dcd",
+              "ROWS_PER_LABEL = 2000",
+              "TRAIN_SCAN_ROWS = 500000",
+              "prediction_input.parquet",
+              '"membership_exported_to_gpu_input": False',
+              '"private_github_access": False',
+          )
+          if not all(marker in code for marker in required): raise SystemExit("public CodeParrot cohort bundle marker missing")
+          forbidden=("api.github.com/repos/","raw.githubusercontent.com/","RESEARCH_REPO_READ_TOKEN","GITHUB_PAT","SSH_PRIVATE_KEY","evaluation_manifest.parquet","submission.csv")
+          if any(marker in code for marker in forbidden): raise SystemExit("public CodeParrot cohort bundle contains forbidden transport/output")
+          slug=re.sub(r"[^a-z0-9]+","-",metadata["title"].casefold()).strip("-")
+          if slug != "codeparrot-fresh-cohort-v1": raise SystemExit(f"title-derived slug mismatch: {slug}")
+          print("CODEPARROT_COHORT_CREDENTIAL_FREE PASS private_repo_access=0 membership_exported=0 cpu=1")
+          PY
+
+  launch:
+    name: Launch approved CodeParrot public-data CPU cohort exactly once
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    concurrency:
+      group: kaggle-resource-cpu-global
+      cancel-in-progress: false
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce protected CPU execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/202-codeparrot-fresh-cohort-v1.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "forbidden private-repository credential variable: ${name}"; exit 1; }
+          done
+          echo "CODEPARROT_COHORT_BOUNDARY PASS private_repo_access=0 cpu=1 retries=0 submissions=0"
+
+      - name: Rebuild public cohort Notebook and locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; kernel_dir="${workdir}/kernel"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"; echo "KERNEL_DIR=${kernel_dir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          files=(
+              ("scripts/compose_public_codecorpus_cohort.py",131072,"composer.py"),
+              ("scripts/kaggle_policy_preflight.py",65536,"policy.py"),
+              ("requirements/kaggle-2.2.4.lock",262144,"kaggle.lock"),
+          )
+          for remote,maximum,local in files:
+              url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}"
+              req=urllib.request.Request(url,headers={"User-Agent":"kaggle-actions-bridge/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response:
+                  data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"public material byte budget failed: {remote}")
+              path=root/local; path.write_bytes(data)
+              if path.suffix==".py": compile(data,str(path),"exec")
+          PY
+          python3 "${workdir}/policy.py"
+          python3 -m venv "${workdir}/compose-venv"
+          "${workdir}/compose-venv/bin/python" -m pip install --disable-pip-version-check --no-input -q 'nbformat==5.10.4'
+          "${workdir}/compose-venv/bin/python" "${workdir}/composer.py" --self-test
+          "${workdir}/compose-venv/bin/python" "${workdir}/composer.py" --output-dir "${kernel_dir}"
+          python3 -m venv "${workdir}/kaggle-venv"
+          "${workdir}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/kaggle.lock" >/dev/null
+          "${workdir}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${workdir}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "CODEPARROT_COHORT_PUBLIC_MATERIAL PASS locked_cli=2.2.4 private_repo_access=0"
+
+      - name: Confirm live competition state and CPU admission
+        id: admission
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          [[ -z "${RESEARCH_REPO_READ_TOKEN-}" && -z "${GH_TOKEN-}" && -z "${GITHUB_PAT-}" && -z "${SSH_PRIVATE_KEY-}" ]]
+          mkdir -p "${HOME}/.kaggle"; umask 077; printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"; unset KAGGLE_API_TOKEN
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          import os,re
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(os.environ["TARGET_COMPETITION"]) or []; content={}
+          for page in pages:
+              data=page.to_dict() if hasattr(page,"to_dict") else dict(page); name=str(data.get("name") or "").strip().lower()
+              if name: content[name]=str(data.get("content") or "")
+          if "rules" not in content or "evaluation" not in content or not any("data" in name for name in content):
+              raise SystemExit("live Poisoned Chalice policy pages unavailable")
+          evaluation=re.sub(r"\s+"," ",re.sub(r"<[^>]+>"," ",content["evaluation"].replace(r"\%","%"))).casefold()
+          if not all(token in evaluation for token in ("auc","novelty","1%","false-positive")):
+              raise SystemExit("live Poisoned Chalice evaluation contract changed")
+          target=os.environ["TARGET_KERNEL"]
+          existing=api.kernels_list(user="renta0426",search=os.environ["TARGET_SLUG"],page_size=10) or []
+          if target in {str(getattr(item,"ref","") or "") for item in existing}:
+              raise SystemExit("approved CodeParrot cohort target already exists; refusing overwrite")
+          active_refs=[]; unknown_status=0
+          for item in (api.kernels_list(user="renta0426",sort_by="dateRun",page_size=20) or [])[:20]:
+              ref=str(getattr(item,"ref","") or "")
+              if not ref: continue
+              try: status=str(getattr(api.kernels_status(ref),"status","")).upper()
+              except Exception: unknown_status+=1; continue
+              if any(token in status for token in ("RUNNING","QUEUED","PENDING")): active_refs.append(ref)
+          active={"cpu":[],"gpu":[],"tpu":[],"unknown":[]}
+          if unknown_status or len(active_refs)>5:
+              active["unknown"].extend(active_refs or ["status-read-failure"])
+          else:
+              with api.build_kaggle_client() as client:
+                  for ref in active_refs:
+                      resource="unknown"
+                      try:
+                          owner,slug=ref.split("/",1); req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+                          metadata=client.kernels.kernels_api_client.get_kernel(req).metadata
+                          resource="tpu" if bool(getattr(metadata,"enable_tpu",False)) else ("gpu" if bool(getattr(metadata,"enable_gpu",False)) else "cpu")
+                      except Exception: resource="unknown"
+                      active[resource].append(ref)
+          can_launch=(len(active["cpu"])==0 and len(active["unknown"])==0)
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as handle:
+              handle.write(f"can_launch={'true' if can_launch else 'false'}\n")
+          print(f"CODEPARROT_COHORT_LIVE_PREFLIGHT can_launch={str(can_launch).lower()} active_cpu={len(active['cpu'])} active_gpu={len(active['gpu'])} active_tpu={len(active['tpu'])} active_unknown={len(active['unknown'])} target_exists=0")
+          PY
+
+      - name: Record deferred CPU admission
+        if: steps.admission.outputs.can_launch != 'true'
+        shell: bash
+        run: echo 'CODEPARROT_COHORT_DEFERRED before_write=1 reason=cpu_or_unknown_active'
+
+      - name: Push one private CPU cohort Notebook
+        if: steps.admission.outputs.can_launch == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          "${WORKDIR}/kaggle-venv/bin/kaggle" kernels push -p "${KERNEL_DIR}" >"${WORKDIR}/push.stdout" 2>"${WORKDIR}/push.stderr"
+          rc=$?
+          set -e
+          stdout_bytes="$(wc -c <"${WORKDIR}/push.stdout")"; stderr_bytes="$(wc -c <"${WORKDIR}/push.stderr")"
+          stdout_sha="$(sha256sum "${WORKDIR}/push.stdout" | awk '{print $1}')"; stderr_sha="$(sha256sum "${WORKDIR}/push.stderr" | awk '{print $1}')"
+          rm -f "${WORKDIR}/push.stdout" "${WORKDIR}/push.stderr"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "CODEPARROT_COHORT_PUSH_FAILED rc=${rc} stdout_bytes=${stdout_bytes} stderr_bytes=${stderr_bytes} stdout_sha256=${stdout_sha} stderr_sha256=${stderr_sha} ambiguous_write=1 retry=0"
+            exit 1
+          fi
+          echo "CODEPARROT_COHORT_KERNEL_PUSH PASS count=1 retry=0 submission=0 private_repo_access=0 accelerator=cpu"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo "CODEPARROT_COHORT_CLEANUP PASS retention_days=0 private_material=0"
