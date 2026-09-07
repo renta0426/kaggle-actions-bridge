@@ -1,4 +1,4 @@
-name: CMI-Flu HAI locked reference schema guard
+name: CMI-Flu HAI reference and exact-identity regression guard
 
 on:
   pull_request:
@@ -6,11 +6,15 @@ on:
       - .github/workflows/185-cmi-flu-hai-reference-schema.yml
       - scripts/cmi_flu_inspect_locked_hai_reference_schema.py
       - scripts/cmi_flu_fetch_locked_hai_references.py
+      - scripts/kaggle_exact_identity.py
+      - scripts/kaggle_current_output_read.py
+      - scripts/cmi_flu_strategy_e05_execute_v2.py
+      - scripts/test_kaggle_exact_identity_eventual.py
 
 permissions: {}
 
 jobs:
-  schema:
+  regression:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -42,7 +46,16 @@ jobs:
               if not m.name.startswith(prefix) or '..' in rel.parts:raise SystemExit('unsafe archive')
               out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
           PY
-      - name: Fetch hash-locked references and inspect header only
+      - name: Exercise bounded exact-metadata recurrence contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/test_kaggle_exact_identity_eventual.py"
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/kaggle_exact_identity.py" \
+            "${WORKDIR}/bridge/scripts/kaggle_current_output_read.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e05_execute_v2.py"
+      - name: Fetch hash-locked references and inspect exact header only
         shell: bash
         run: |
           set -euo pipefail
