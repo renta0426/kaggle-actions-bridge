@@ -1,62 +1,15 @@
-name: CMI-Flu E05 DataContract hash diagnostic
+name: Retired CMI-Flu E05 DataContract hash diagnostic
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/182-cmi-flu-e05-datacontract-diagnostic.yml
-      - scripts/diagnose_cmi_e05_datacontract_hash.py
-      - scripts/cmi_flu_strategy_e05_prepare_v3.py
+  workflow_dispatch:
 
 permissions: {}
 
 jobs:
-  diagnose:
+  retired:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
     steps:
-      - name: Enforce secret-free diagnostic boundary
-        shell: bash
+      - name: Refuse retired E05 DataContract diagnostic
         run: |
-          set -euo pipefail
-          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]] || exit 1; done
-
-      - name: Materialize exact PR head
-        shell: bash
-        env:
-          REPO: renta0426/kaggle-actions-bridge
-          REF: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
-          python3 - "${workdir}/bridge" "${REPO}" "${REF}" <<'PY'
-          import io,pathlib,ssl,sys,tarfile,urllib.request
-          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"e05-datacontract-diagnostic/1"})
-          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(25_000_001)
-          if len(data)>25_000_000:raise SystemExit('bridge archive too large')
-          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
-            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
-            if len(prefixes)!=1:raise SystemExit('archive layout')
-            prefix=next(iter(prefixes))+'/'
-            for m in files:
-              rel=pathlib.PurePosixPath(m.name[len(prefix):])
-              if not m.name.startswith(prefix) or '..' in rel.parts:raise SystemExit('unsafe archive')
-              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
-          PY
-
-      - name: Rebuild exact failed 003 runtime and inspect DataContract raises
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m venv "${WORKDIR}/refs-venv"
-          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
-          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
-          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e05_prepare_v3.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/script.py"
-          python3 "${WORKDIR}/bridge/scripts/diagnose_cmi_e05_datacontract_hash.py" --runtime "${WORKDIR}/script.py" --error-code 74bf25be40ca17429601
-          echo CMI_FLU_E05_DATACONTRACT_DIAGNOSTIC_PASS
-
-      - name: Cleanup
-        if: always()
-        shell: bash
-        run: |
-          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+          echo "RETIRED: E05 003 DataContract diagnostic completed in run 34117848167."
+          exit 1
