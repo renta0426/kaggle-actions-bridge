@@ -40,13 +40,22 @@ def _e06a_safe_failure_site(exc: BaseException) -> tuple[str, str]:
 '''
     runtime = runtime.replace(helper_anchor, "\n" + helper.rstrip() + helper_anchor, 1)
 
-    old = '''    except Exception as exc:\n        shutil.rmtree(runtime_root, ignore_errors=True)\n        code = hashlib.sha256(f"{type(exc).__name__}:{str(exc)}".encode("utf-8", errors="replace")).hexdigest()[:20]\n        print(f"CMI_FLU_E06A_FAILED stage={stage} exception_type={type(exc).__name__} error_code={code}", file=sys.stderr)\n        return 2\n'''
-    if runtime.count(old) != 1:
-        raise SystemExit(f"E06a safe-site failure block count changed:{runtime.count(old)}")
-    new = '''    except Exception as exc:\n        shutil.rmtree(runtime_root, ignore_errors=True)\n        code = hashlib.sha256(f"{type(exc).__name__}:{str(exc)}".encode("utf-8", errors="replace")).hexdigest()[:20]\n        sites, sites_sha = _e06a_safe_failure_site(exc)\n        print(f"CMI_FLU_E06A_SAFE_FAILURE_SITE stage={stage} exception_type={type(exc).__name__} error_code={code} sites={sites} sites_sha256={sites_sha}", file=sys.stderr)\n        return 2\n'''
-    runtime = runtime.replace(old, new, 1)
-    if runtime.count("CMI_FLU_E06A_SAFE_FAILURE_SITE") != 1 or runtime.count("def _e06a_safe_failure_site") != 1:
+    execute_old = '''    except Exception as exc:\n        shutil.rmtree(runtime_root, ignore_errors=True)\n        code = hashlib.sha256(f"{type(exc).__name__}:{str(exc)}".encode("utf-8", errors="replace")).hexdigest()[:20]\n        print(f"CMI_FLU_E06A_FAILED stage={stage} exception_type={type(exc).__name__} error_code={code}", file=sys.stderr)\n        return 2\n'''
+    if runtime.count(execute_old) != 1:
+        raise SystemExit(f"E06a safe-site execute failure block count changed:{runtime.count(execute_old)}")
+    execute_new = '''    except Exception as exc:\n        shutil.rmtree(runtime_root, ignore_errors=True)\n        code = hashlib.sha256(f"{type(exc).__name__}:{str(exc)}".encode("utf-8", errors="replace")).hexdigest()[:20]\n        sites, sites_sha = _e06a_safe_failure_site(exc)\n        print(f"CMI_FLU_E06A_SAFE_FAILURE_SITE stage={stage} exception_type={type(exc).__name__} error_code={code} sites={sites} sites_sha256={sites_sha}", file=sys.stderr)\n        return 2\n'''
+    runtime = runtime.replace(execute_old, execute_new, 1)
+
+    locate_old = '''    except Exception as exc:\n        code = hashlib.sha256(f"{type(exc).__name__}:{str(exc)}".encode()).hexdigest()[:20]\n        print(f"CMI_FLU_E06A_FAILED stage=locate_competition_data exception_type={type(exc).__name__} error_code={code}", file=sys.stderr)\n        return 2\n'''
+    if runtime.count(locate_old) != 1:
+        raise SystemExit(f"E06a safe-site locate failure block count changed:{runtime.count(locate_old)}")
+    locate_new = '''    except Exception as exc:\n        code = hashlib.sha256(f"{type(exc).__name__}:{str(exc)}".encode()).hexdigest()[:20]\n        sites, sites_sha = _e06a_safe_failure_site(exc)\n        print(f"CMI_FLU_E06A_SAFE_FAILURE_SITE stage=locate_competition_data exception_type={type(exc).__name__} error_code={code} sites={sites} sites_sha256={sites_sha}", file=sys.stderr)\n        return 2\n'''
+    runtime = runtime.replace(locate_old, locate_new, 1)
+
+    if runtime.count("CMI_FLU_E06A_SAFE_FAILURE_SITE") != 2 or runtime.count("def _e06a_safe_failure_site") != 1:
         raise SystemExit("E06a safe-site marker/helper contract failed")
+    if "CMI_FLU_E06A_FAILED stage=" in runtime:
+        raise SystemExit("E06a uninstrumented failure marker remains")
     if "competition_submit" in runtime or "kaggle competitions submit" in runtime:
         raise SystemExit("E06a safe-site runtime contains submission path")
     compile(runtime, "generated_e06a_safe_failure_site.py", "exec")
@@ -63,7 +72,7 @@ def main() -> int:
     print(
         "CMI_FLU_E06A_SAFE_FAILURE_SITE_BUILD PASS "
         f"runtime_sha256={hashlib.sha256(patched.encode()).hexdigest()} "
-        "message=false locals=false row_data=false"
+        "execute_site=true locate_site=true message=false locals=false row_data=false"
     )
     return 0
 
