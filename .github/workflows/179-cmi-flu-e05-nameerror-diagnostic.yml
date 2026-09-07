@@ -1,0 +1,15 @@
+name: Retired CMI-Flu E05 NameError hash diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse consumed E05 diagnostic
+        run: |
+          echo "RETIRED: diagnostic completed; error hash mapped to missing json_safe runtime binding."
+          exit 1

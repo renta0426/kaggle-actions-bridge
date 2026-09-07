@@ -1,0 +1,15 @@
+name: Retired draft CMI-Flu E05 HAI donor strain CPU 003 preflight
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse superseded draft preflight
+        run: |
+          echo "RETIRED: superseded before any production write; use the final E05 003 workflow."
+          exit 1
