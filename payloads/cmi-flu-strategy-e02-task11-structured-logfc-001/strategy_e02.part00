@@ -1,0 +1,139 @@
+"""Strategy v2 E02: Task1.1 denominator-aware structured logFC transfer.
+
+E02 keeps the canonical Task1.1 target (D1 CXCL10 / canonical Pre-vacc
+CXCL10) unchanged.  It evaluates fixed references and one predeclared small
+shared-slope Ridge that removes study-specific response offsets and uses only
+one representation per baseline cytokine.
+
+The module returns aggregate diagnostics only.  Participant-level OOF and
+Challenge predictions are used transiently inside the process and are never
+included in the returned payload.
+"""
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import Ridge
+
+from .aliases import canonicalize_cytokine, canonicalize_timepoint
+from .configuration import BaselineConfig
+from .contracts import DataContractError, require_columns, require_finite
+from .cv import NamedSplit
+from .datasets import TaskDataset
+from .evaluation import default_splits_for_task, run_compact_task
+from .metrics import percentile_rank, safe_spearman
+from .models import ModelSpec, fit_final_model
+from .runner import InputBundle, build_b02_datasets
+from .strategy_e01 import (
+    _anchor_frame,
+    _compact_base_frame,
+    _oriented_anchor,
+    _rank_within,
+)
+from .strategy_e01_v2 import _metric_summary, _paired_comparison, _sensitivity_28
+
+
+EXPERIMENT = "strategy_v2_e02_task11_structured_logfc"
+RANDOM_SEED = 20260907
+EXPECTED_TRAIN_ROWS = 127
+EXPECTED_TRAIN_STUDIES = 4
+EXPECTED_CHALLENGE_ROWS = 40
+ANCHOR_COLUMN = "cytokine_rank__CXCL10"
+RAW_BASELINE_COLUMN = "cytokine_raw__CXCL10"
+LOG1P_BASELINE_COLUMN = "cytokine_log1p__CXCL10"
+B21_MODEL = "pls_2"
+ANCHOR_RESIDUAL_MODEL = "pls_1"
+ANCHOR_RESIDUAL_LAMBDA = 0.25
+RIDGE_ALPHA = 10.0
+REPEAT_TIMEPOINTS = ("-14", "0")
+REPEAT_MIN_PAIRED_PER_STUDY = 3
+REPEAT_MIN_SOURCE_STUDIES_PER_FOLD = 2
+REPEAT_COLUMNS = (
+    "__e02_cxcl10_repeat_delta_log1p",
+    "__e02_cxcl10_repeat_variance_log1p",
+)
+RESIDUAL_TARGET_COLUMN = "__e02_task11_anchor_residual"
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if isinstance(value, Mapping):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    return value
+
+
+def _find_spec(config: BaselineConfig, model_set: str, name: str) -> ModelSpec:
+    matches = [spec for spec in config.model_specs(model_set) if spec.name == name]
+    if len(matches) != 1:
+        raise DataContractError(
+            f"E02 expected exactly one {model_set}/{name} spec; found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _identity_spec(spec: ModelSpec) -> ModelSpec:
+    return replace(spec, target_transform="identity", clip_min=None)
+
+
+def _validate_task11_contract(dataset: TaskDataset) -> None:
+    dataset.validate()
+    if dataset.task != "Task1.1":
+        raise DataContractError(f"E02 requires Task1.1, found {dataset.task}")
+    if len(dataset.train) != EXPECTED_TRAIN_ROWS:
+        raise DataContractError(
+            f"E02 fixed Task1.1 cohort expected {EXPECTED_TRAIN_ROWS} rows; "
+            f"found {len(dataset.train)}"
+        )
+    if int(dataset.train["study_group"].nunique()) != EXPECTED_TRAIN_STUDIES:
+        raise DataContractError(
+            f"E02 fixed Task1.1 cohort expected {EXPECTED_TRAIN_STUDIES} studies"
+        )
+    if len(dataset.challenge) != EXPECTED_CHALLENGE_ROWS:
+        raise DataContractError(
+            f"E02 fixed Challenge cohort expected {EXPECTED_CHALLENGE_ROWS} rows; "
+            f"found {len(dataset.challenge)}"
+        )
+    require_columns(
+        dataset.train,
+        [ANCHOR_COLUMN, RAW_BASELINE_COLUMN, LOG1P_BASELINE_COLUMN],
+        table_name="E02 Task1.1 train",
+    )
+    require_columns(
+        dataset.challenge,
+        [ANCHOR_COLUMN, RAW_BASELINE_COLUMN, LOG1P_BASELINE_COLUMN],
+        table_name="E02 Task1.1 challenge",
+    )
+
+
+def _fixed_b21(
+    dataset: TaskDataset,
+    *,
+    config: BaselineConfig,
+    splits: Sequence[NamedSplit],
+) -> tuple[pd.DataFrame, Any]:
+    """Regenerate frozen B2.1 PLS2 under the exact E02 split contract."""
+
+    spec = _find_spec(config, "task_11", B21_MODEL)
+    result = run_compact_task(
+        dataset,
+        specs=[spec],
+        splits=splits,
+        random_state=config.random_state,
+        selection_policy="robust_v1",
+    )
+    if result.selected_spec.name != B21_MODEL:
+        raise DataContractError(
+            f"E02 B2.1 identity mismatch: {result.selected_spec.name}"
+        )
+    return _compact_base_frame(dataset, result), result
+
