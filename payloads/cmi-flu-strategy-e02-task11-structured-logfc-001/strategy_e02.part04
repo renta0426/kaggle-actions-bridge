@@ -1,0 +1,140 @@
+
+def _challenge_agreement(
+    candidate: pd.DataFrame,
+    reference: pd.DataFrame,
+) -> Mapping[str, Any]:
+    merged = candidate.merge(
+        reference,
+        on="participant_id",
+        how="inner",
+        suffixes=("_candidate", "_reference"),
+        validate="one_to_one",
+    )
+    if len(merged) != len(candidate) or len(merged) != len(reference):
+        raise DataContractError("E02 Challenge agreement does not align all rows")
+    c = pd.to_numeric(merged["prediction_candidate"], errors="coerce").to_numpy(dtype=float)
+    r = pd.to_numeric(merged["prediction_reference"], errors="coerce").to_numpy(dtype=float)
+    require_finite(c, name="E02 Challenge candidate score")
+    require_finite(r, name="E02 Challenge reference score")
+    c_rank = percentile_rank(c)
+    r_rank = percentile_rank(r)
+    return _json_safe(
+        {
+            "rows": int(len(merged)),
+            "rank_spearman": safe_spearman(c_rank, r_rank).to_dict(),
+            "mean_absolute_percentile_rank_difference": float(
+                np.mean(np.abs(c_rank - r_rank))
+            ),
+            "max_absolute_percentile_rank_difference": float(
+                np.max(np.abs(c_rank - r_rank))
+            ),
+        }
+    )
+
+
+def _repeat_feature_table(cytokine: pd.DataFrame) -> pd.DataFrame:
+    require_columns(
+        cytokine,
+        ["participant_id", "study_accession", "timepoint", "analyte", "value"],
+        table_name="E02 repeat cytokine",
+    )
+    work = cytokine[
+        ["participant_id", "study_accession", "timepoint", "analyte", "value"]
+    ].copy()
+    work["analyte"] = work["analyte"].map(canonicalize_cytokine)
+    work["timepoint"] = work["timepoint"].map(canonicalize_timepoint)
+    work = work.loc[
+        work["analyte"].eq("CXCL10") & work["timepoint"].isin(REPEAT_TIMEPOINTS)
+    ].copy()
+    work["value"] = pd.to_numeric(work["value"], errors="coerce")
+    work.loc[work["value"] < 0.0, "value"] = np.nan
+    work = work.dropna(subset=["value"])
+    if work.empty:
+        return pd.DataFrame(
+            columns=["participant_id", "study_group", *REPEAT_COLUMNS]
+        )
+    grouped = (
+        work.groupby(
+            ["participant_id", "study_accession", "timepoint"],
+            dropna=False,
+            observed=True,
+        )["value"]
+        .mean()
+        .reset_index()
+    )
+    pivot = grouped.pivot(
+        index=["participant_id", "study_accession"],
+        columns="timepoint",
+        values="value",
+    )
+    for timepoint in REPEAT_TIMEPOINTS:
+        if timepoint not in pivot:
+            pivot[timepoint] = np.nan
+    paired = pivot.dropna(subset=list(REPEAT_TIMEPOINTS)).reset_index()
+    if paired.empty:
+        return pd.DataFrame(
+            columns=["participant_id", "study_group", *REPEAT_COLUMNS]
+        )
+    left = np.log1p(paired[REPEAT_TIMEPOINTS[0]].to_numpy(dtype=float))
+    right = np.log1p(paired[REPEAT_TIMEPOINTS[1]].to_numpy(dtype=float))
+    paired[REPEAT_COLUMNS[0]] = right - left
+    paired[REPEAT_COLUMNS[1]] = np.var(
+        np.column_stack([left, right]), axis=1, ddof=0
+    )
+    return paired[
+        ["participant_id", "study_accession", *REPEAT_COLUMNS]
+    ].rename(columns={"study_accession": "study_group"})
+
+
+def _repeat_support_audit(
+    inputs: InputBundle,
+    *,
+    dataset: TaskDataset,
+    splits: Sequence[NamedSplit],
+) -> tuple[Mapping[str, Any], pd.DataFrame, pd.DataFrame]:
+    train_repeat = _repeat_feature_table(inputs.tables["public_cytokine"])
+    challenge_repeat = _repeat_feature_table(inputs.tables["challenge_cytokine"])
+    counts_series = (
+        train_repeat.groupby("study_group", observed=True)["participant_id"]
+        .nunique()
+        if not train_repeat.empty
+        else pd.Series(dtype=int)
+    )
+    counts = {str(k): int(v) for k, v in counts_series.items()}
+    supported = sorted(
+        study
+        for study, count in counts.items()
+        if count >= REPEAT_MIN_PAIRED_PER_STUDY
+    )
+    fold_support = []
+    full_gate = True
+    for split in splits:
+        train_studies = set(
+            dataset.train.iloc[split.train_indices]["study_group"].astype(str)
+        )
+        source = sorted(train_studies.intersection(supported))
+        ok = len(source) >= REPEAT_MIN_SOURCE_STUDIES_PER_FOLD
+        full_gate = full_gate and ok
+        fold_support.append(
+            {
+                "held_out_group": None
+                if split.held_out_group is None
+                else str(split.held_out_group),
+                "eligible_source_studies": source,
+                "eligible_source_study_count": int(len(source)),
+                "gate_passed": bool(ok),
+            }
+        )
+    challenge_paired = int(challenge_repeat["participant_id"].nunique()) if not challenge_repeat.empty else 0
+    challenge_ok = challenge_paired >= REPEAT_MIN_PAIRED_PER_STUDY
+    gate = bool(
+        len(supported) >= 2
+        and full_gate
+        and challenge_ok
+    )
+    status = "ready" if gate else "data_limited"
+    return (
+        _json_safe(
+            {
+                "status": status,
+                "required_timepoints": list(REPEAT_TIMEPOINTS),
