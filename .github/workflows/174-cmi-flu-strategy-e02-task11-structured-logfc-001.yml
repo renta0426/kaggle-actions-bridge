@@ -9,6 +9,7 @@ on:
       - scripts/cmi_flu_strategy_e02_prepare.py
       - scripts/cmi_flu_strategy_e02_prepare_v2.py
       - scripts/cmi_flu_strategy_e02_prepare_v3.py
+      - scripts/cmi_flu_strategy_e02_prepare_v4.py
       - scripts/cmi_flu_strategy_e02_execute.py
       - scripts/cmi_flu_strategy_e02_sanitize.py
       - payloads/cmi-flu-strategy-e02-task11-structured-logfc-001/**
@@ -19,6 +20,7 @@ on:
       - scripts/cmi_flu_strategy_e02_prepare.py
       - scripts/cmi_flu_strategy_e02_prepare_v2.py
       - scripts/cmi_flu_strategy_e02_prepare_v3.py
+      - scripts/cmi_flu_strategy_e02_prepare_v4.py
       - scripts/cmi_flu_strategy_e02_execute.py
       - scripts/cmi_flu_strategy_e02_sanitize.py
       - payloads/cmi-flu-strategy-e02-task11-structured-logfc-001/**
@@ -89,9 +91,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare_v3.py" --repository-root "${VALIDATE_WORKDIR}/bridge" --output "${VALIDATE_WORKDIR}/script.py"
+          python3 "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare_v4.py" --repository-root "${VALIDATE_WORKDIR}/bridge" --output "${VALIDATE_WORKDIR}/script.py"
           python3 "${VALIDATE_WORKDIR}/script.py" --self-test
-          python3 -m py_compile "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare_v2.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare_v3.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_execute.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_sanitize.py" "${VALIDATE_WORKDIR}/script.py"
+          python3 -m py_compile "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare_v2.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare_v3.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_prepare_v4.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_execute.py" "${VALIDATE_WORKDIR}/bridge/scripts/cmi_flu_strategy_e02_sanitize.py" "${VALIDATE_WORKDIR}/script.py"
           grep -F "SCIENCE_COMMIT = \"${SCIENCE_COMMIT}\"" "${VALIDATE_WORKDIR}/script.py" >/dev/null
           grep -F "E02_BLOB = \"${E02_BLOB}\"" "${VALIDATE_WORKDIR}/script.py" >/dev/null
           grep -F "E02_V2_BLOB = \"${E02_V2_BLOB}\"" "${VALIDATE_WORKDIR}/script.py" >/dev/null
@@ -173,7 +175,7 @@ jobs:
                   if not member.name.startswith(prefix) or not rel.parts or '..' in rel.parts: raise SystemExit("unsafe bridge archive")
                   payload=tf.extractfile(member).read(); out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(payload)
           PY
-          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e02_prepare_v3.py" --repository-root "${workdir}/bridge" --output "${workdir}/script.py"
+          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e02_prepare_v4.py" --repository-root "${workdir}/bridge" --output "${workdir}/script.py"
           python3 "${workdir}/script.py" --self-test
 
       - name: Install locked Kaggle CLI
