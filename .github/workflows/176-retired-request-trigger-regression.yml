@@ -6,6 +6,7 @@ on:
       - .github/workflows/163-cmi-flu-public-probes-launch.yml
       - .github/workflows/164-cmi-flu-public-probes-repair-002.yml
       - .github/workflows/174-cmi-flu-strategy-e02-task11-structured-logfc-001.yml
+      - .github/workflows/175-cmi-flu-e02-current-recovery-001.yml
       - .github/workflows/176-retired-request-trigger-regression.yml
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - .github/workflows/163-cmi-flu-public-probes-launch.yml
       - .github/workflows/164-cmi-flu-public-probes-repair-002.yml
       - .github/workflows/174-cmi-flu-strategy-e02-task11-structured-logfc-001.yml
+      - .github/workflows/175-cmi-flu-e02-current-recovery-001.yml
       - .github/workflows/176-retired-request-trigger-regression.yml
 
 permissions: {}
@@ -35,7 +37,7 @@ jobs:
           "${work}/venv/bin/python" - <<'PY'
           import os,re,urllib.request,yaml
           sha=os.environ['SOURCE_SHA']; assert re.fullmatch('[0-9a-f]{40}',sha)
-          names=('163-cmi-flu-public-probes-launch.yml','164-cmi-flu-public-probes-repair-002.yml','174-cmi-flu-strategy-e02-task11-structured-logfc-001.yml')
+          names=('163-cmi-flu-public-probes-launch.yml','164-cmi-flu-public-probes-repair-002.yml','174-cmi-flu-strategy-e02-task11-structured-logfc-001.yml','175-cmi-flu-e02-current-recovery-001.yml')
           for name in names:
               url=f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/.github/workflows/{name}'
               with urllib.request.urlopen(url,timeout=30) as r: raw=r.read(16385)
@@ -52,5 +54,5 @@ jobs:
                       assert commands.strip().endswith('exit 1')
                       assert all(line.strip().startswith(('echo ', 'exit 1')) for line in commands.splitlines() if line.strip())
               assert 'secrets.' not in source
-          print('RETIRED_TRIGGER_CONTRACT PASS retired_requests=3 automatic_triggers=0 protected_jobs=0 compute_locks=0')
+          print('RETIRED_TRIGGER_CONTRACT PASS retired_requests=4 automatic_triggers=0 protected_jobs=0 compute_locks=0')
           PY

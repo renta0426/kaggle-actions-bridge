@@ -1,7 +1,7 @@
-name: Retired CMI-Flu E02 launch 001 - use current recovery
+name: Retired CMI-Flu E02 launch 001 - completed by recovery
 
-# Version 1 was already pushed by run 34079658937. No automatic push trigger
-# remains at this path. Historical code is retained in commit 2010e1cec.
+# Version 1 was pushed by run 34079658937 and recovered by run 34085988392.
+# Original Notebook remains ERROR; validated scientific aggregates are accepted.
 on:
   workflow_dispatch:
 
@@ -14,6 +14,6 @@ jobs:
     steps:
       - name: Refuse a duplicate compute request
         run: |
-          echo 'E02_LAUNCH_001_RETIRED: version 1 may already contain completed science outputs.'
-          echo 'Use workflow 175 current recovery; do not rerun the historical compute workflow.'
+          echo 'E02_LAUNCH_001_RETIRED: the existing scientific result was recovered and recorded.'
+          echo 'Do not rerun historical launch 174 or consumed recovery 175.'
           exit 1
