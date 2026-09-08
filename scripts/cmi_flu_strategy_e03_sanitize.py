@@ -13,7 +13,7 @@ SCIENCE_COMMIT = "2eaf8fac9a632c67f32c4a0ed37b64eeac571387"
 E03_BLOB = "e38fe01606dc5653ad3d1542f722726c1374b278"
 TASK11_PRIOR_BLOB = "50d9a43604d2b75479b8f873a86a8daf9d5bd7a9"
 CONFIG_BLOB = "170d3211e2795c0730e481056c7bb068accf97c9"
-PACKAGE_SHA256 = "87c317789b3b8fcbd5fce2ff8f74663d23c19d0fcdce0e05ba1e809ea7728cb2"
+PACKAGE_SHA256 = "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3"
 ALLOWED = {"bridge-result.json", "metrics.json", "summary.md"}
 CONDITIONS = (
     "b21",
@@ -59,7 +59,7 @@ def main() -> int:
     if (root / "bridge-result.json").stat().st_size > 1_048_576:
         raise SystemExit("E03 bridge result exceeds size budget")
     if (root / "metrics.json").stat().st_size > 10_485_760:
-        raise SystemExit("E03 metrics exceed size budget")
+        raise SystemExit("E03 metrics exceeds size budget")
     if (root / "summary.md").stat().st_size > 1_048_576:
         raise SystemExit("E03 summary exceeds size budget")
 
