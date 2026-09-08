@@ -1,0 +1,87 @@
+{
+  "experiment_id": "matched-target-context-contrast-v1-pilot-500",
+  "task_id": "P2-01",
+  "status": "implementation_complete_execution_pending",
+  "base_commit": "9ac9c75a09150471c6dd14c8a1e67da9359f7316",
+  "purpose": "Runtime and numerical-fidelity gate only. Performance evaluation is explicitly forbidden in this 500-row run.",
+  "model": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928"
+  },
+  "data": {
+    "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "split": "train",
+    "rows": 500,
+    "sampling": "exact P1-01 selector: 50 member + 50 non-member per language; seed=2027; final order sorted by sample_id",
+    "selection_labels_removed_before_model_scoring": true,
+    "validation_rows_used": false,
+    "codeparrot_rows_or_labels_used": false
+  },
+  "context_contract": {
+    "context_budgets": [32, 128, 512],
+    "target_tokens": 256,
+    "min_target_tokens": 64,
+    "spans_per_file": 3,
+    "anchor_fractions": [0.25, 0.5, 0.75],
+    "anchor_coordinate": "utf8_byte",
+    "tokenize_once": true,
+    "shared_target_identity_required": true,
+    "bos_eos_inserted": false,
+    "max_input_tokens": 768,
+    "primary_delta": "512_minus_32",
+    "fallback_delta": "128_minus_32",
+    "delta_orientation": "long_minus_short"
+  },
+  "scoring": {
+    "condition_metrics": ["mean_logp", "paper_minkpp10", "local64"],
+    "paper_schema": "prob_weighted_minkpp_v1",
+    "paper_fraction": 0.1,
+    "paper_vocab_block_size": 8192,
+    "paper_variance_floor": 1e-12,
+    "local_width": 64,
+    "same_forward_per_condition": true,
+    "float_accumulation": "float32"
+  },
+  "fidelity_gates": {
+    "shared_target_identity_failures": 0,
+    "cpu_gpu_reduction_max_abs_error_lte": 0.00002,
+    "paper_cpu_oracle_abs_error_lte": 0.00002,
+    "synthetic_dense_blocked_max_abs_error_lte": 0.00003,
+    "real_dense_blocked_max_abs_error_lte": 0.00005,
+    "valid_target_accounting_exact": true,
+    "all_condition_scores_finite": true,
+    "max_window_tokens_lte": 768,
+    "coverage_reported_not_imputed": true
+  },
+  "runtime_contract": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "automatic_compute_retries": 0,
+    "record_wall_time": true,
+    "record_peak_gpu_memory": true
+  },
+  "forbidden_in_this_pilot": [
+    "AUC",
+    "TPR",
+    "pAUC",
+    "threshold selection",
+    "promotion decision",
+    "validation rows",
+    "CodeParrot rows or labels",
+    "Public-LB feedback",
+    "competition submission"
+  ],
+  "outputs": [
+    "sample_manifest.parquet",
+    "span_manifest.parquet",
+    "condition_scores.parquet",
+    "span_contrasts.parquet",
+    "file_features.parquet",
+    "fidelity.json",
+    "runtime.json",
+    "run_manifest.json",
+    "REPORT.md"
+  ]
+}
