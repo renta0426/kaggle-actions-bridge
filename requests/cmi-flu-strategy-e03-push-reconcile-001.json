@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "request_id": "20260908-cmi-flu-strategy-e03-push-reconcile-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "exact_private_kernel_reconcile_read_only",
+  "target": "renta0426/cmi-flu-e03-task11-optional-view-fusion-20260908-001",
+  "expected_version_if_present": 1,
+  "prior_bridge_commit": "197ae4dea652bda8d3fb74cbbc2d5824cba7dadd",
+  "prior_workflow_run_id": 34193867697,
+  "prior_push_result": {
+    "return_code": 1,
+    "category": "unknown",
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 102,
+    "stderr_sha256": "ef812bc9f178b83f556046dfa3dc61b4d05a90e4003989ea212e7552cf7b8f2c"
+  },
+  "api_budget": {
+    "exact_metadata_attempts": 6,
+    "exact_metadata_delay_seconds": 5,
+    "list_page_size": 10,
+    "max_total_calls": 10
+  },
+  "side_effects": [],
+  "competition_submission_attempted": false,
+  "kaggle_write_attempted": false,
+  "automatic_compute_retries": 0
+}
