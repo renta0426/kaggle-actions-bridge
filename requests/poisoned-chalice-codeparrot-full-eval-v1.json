@@ -41,9 +41,11 @@
     "historical_output_fallback": false,
     "allow_failed_run_salvage": false,
     "max_selected_files": 5,
-    "max_total_download_bytes": 2097152,
-    "automatic_read_retries": 0,
-    "bounded_transient_exact_metadata_reconciliation_only": true
+    "max_total_download_bytes": 134217728,
+    "output_download_attempts": 1,
+    "exact_metadata_transient_http_statuses": [403, 404],
+    "exact_metadata_reconciliation_attempts_max": 6,
+    "write_calls": 0
   },
   "evaluation_contract": {
     "resource": "github_hosted_cpu",
