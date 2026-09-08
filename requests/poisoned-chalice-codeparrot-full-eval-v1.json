@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "request_id": "20260908-poisoned-chalice-codeparrot-full-eval-v1",
+  "request_id": "20260908-poisoned-chalice-codeparrot-full-eval-basename-repair-001",
   "competition": "poisoned-chalice-icse27",
   "operation": "current_output_read_and_cpu_evaluate",
   "target": "renta0426/codeparrot-fresh-full-v1",
