@@ -64,18 +64,24 @@ def main() -> int:
         1,
     )
 
-    # The frozen B2.1 adapter patches evaluation.run_compact_task. E04's exact
-    # science source deliberately resolves the callable through cmi_flu.runner,
-    # so bind that alias to the same patched function after adapter install.
+    # The frozen B2.1 adapter installs a robust selector on cmi_flu.runner,
+    # but that historical wrapper predates the explicit selection_policy
+    # parameter now required by E04's science-side provenance check. Preserve
+    # the already-installed robust implementation and expose only the explicit
+    # robust_v1 compatibility signature expected by the exact E04 blob.
     install_anchor = '        install()\n        from cmi_flu.configuration import load_baseline_config\n'
     if runtime.count(install_anchor) != 1:
         raise SystemExit("E04 B2.1 adapter install anchor changed")
     runtime = runtime.replace(
         install_anchor,
         '        install()\n'
-        '        from cmi_flu import evaluation as _e04_evaluation\n'
         '        from cmi_flu import runner as _e04_runner\n'
-        '        _e04_runner.run_compact_task = _e04_evaluation.run_compact_task\n'
+        '        _e04_frozen_robust_compact = _e04_runner.run_compact_task\n'
+        '        def _e04_run_compact_task(dataset, *, specs, splits=None, random_state=42, selection_policy="robust_v1"):\n'
+        '            if selection_policy != "robust_v1":\n'
+        '                raise BundleContractError("E04 requires robust_v1 selection policy")\n'
+        '            return _e04_frozen_robust_compact(dataset, specs=specs, splits=splits, random_state=random_state)\n'
+        '        _e04_runner.run_compact_task = _e04_run_compact_task\n'
         '        from cmi_flu.configuration import load_baseline_config\n',
         1,
     )
