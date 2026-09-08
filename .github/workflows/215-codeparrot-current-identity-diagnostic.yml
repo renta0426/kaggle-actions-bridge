@@ -1,0 +1,137 @@
+name: CodeParrot exact current identity diagnostic only
+
+on:
+  pull_request:
+    paths:
+      - 'requests/poisoned-chalice-codeparrot-current-identity-v1.json'
+      - 'scripts/codeparrot_current_identity_diagnostic.py'
+      - 'scripts/check_codeparrot_workflow_contexts.py'
+      - 'scripts/kaggle_exact_identity.py'
+      - '.github/workflows/215-codeparrot-current-identity-diagnostic.yml'
+  push:
+    branches: [main, diagnose/codeparrot-current-version-20260908]
+    paths:
+      - 'requests/poisoned-chalice-codeparrot-current-identity-v1.json'
+
+permissions: {}
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: '1354356687'
+  EXPECTED_ACTOR_ID: '71638068'
+
+jobs:
+  validate:
+    name: Validate metadata-only diagnostic without credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Materialize public sources and test fixed metadata contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/codeparrot-identity-validate"; [[ ! -e "${workdir}" ]]; mkdir -p "${workdir}"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import json,pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]; assert re.fullmatch(r'[0-9a-f]{40}',sha); root=pathlib.Path(root)
+          paths=['requests/poisoned-chalice-codeparrot-current-identity-v1.json','scripts/codeparrot_current_identity_diagnostic.py','scripts/kaggle_exact_identity.py','scripts/check_codeparrot_workflow_contexts.py','.github/workflows/215-codeparrot-current-identity-diagnostic.yml']
+          for rel in paths:
+              with urllib.request.urlopen(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',timeout=30) as response: data=response.read(131073)
+              assert 0<len(data)<=131072; (root/rel.split('/')[-1]).write_bytes(data)
+          request=json.loads((root/'poisoned-chalice-codeparrot-current-identity-v1.json').read_text())
+          assert request['operation']=='read_exact_metadata_only' and request['target']=='renta0426/codeparrot-fresh-full-v1'
+          assert request['expected_current_version']==1 and request['exact_get_kernel_invocations']==1
+          for key in ['output_download_invocations','automatic_retries','kaggle_write_calls']: assert request[key]==0
+          for key in ['kaggle_compute_started','membership_sources_allowed','performance_evaluation_allowed','version_substitution_allowed']: assert request[key] is False
+          assert request['environment']=='kaggle-readonry'
+          PY
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/codeparrot_current_identity_diagnostic.py" "${workdir}/kaggle_exact_identity.py"
+          python3 "${workdir}/codeparrot_current_identity_diagnostic.py" --self-test
+          python3 "${workdir}/check_codeparrot_workflow_contexts.py" --workflow "${workdir}/215-codeparrot-current-identity-diagnostic.yml"
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/codeparrot-identity-validate"
+
+  diagnose:
+    name: Observe exact current version only; no output download
+    needs: validate
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.repository_id == '1354356687' && github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EVENT_SHA: ${{ github.sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      WORKFLOW_REF: ${{ github.workflow_ref }}
+      EVENT_REPOSITORY: ${{ github.repository }}
+      EVENT_REPOSITORY_ID: ${{ github.repository_id }}
+      EVENT_ACTOR: ${{ github.actor }}
+      EVENT_ACTOR_ID: ${{ github.actor_id }}
+      EVENT_SENDER_ID: ${{ github.event.sender.id }}
+    steps:
+      - name: Enforce approved public read-only boundary
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == renta0426 && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == 'renta0426/kaggle-actions-bridge/.github/workflows/215-codeparrot-current-identity-diagnostic.yml@refs/heads/main' ]]
+          [[ "${RUNNER_ENVIRONMENT}" == github-hosted ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]]; done
+      - name: Materialize exact public source; preflight; install locked SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/codeparrot-identity-diagnostic"; [[ ! -e "${workdir}" ]]; mkdir -p "${workdir}/bridge"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import json,pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]; assert re.fullmatch(r'[0-9a-f]{40}',sha); root=pathlib.Path(root)
+          paths=['requests/poisoned-chalice-codeparrot-current-identity-v1.json','scripts/codeparrot_current_identity_diagnostic.py','scripts/kaggle_exact_identity.py','scripts/kaggle_policy_preflight.py','requirements/kaggle-2.2.4.lock']
+          for rel in paths:
+              with urllib.request.urlopen(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',timeout=30) as response: data=response.read(262145)
+              assert 0<len(data)<=262144; (root/rel.split('/')[-1]).write_bytes(data)
+          request=json.loads((root/'poisoned-chalice-codeparrot-current-identity-v1.json').read_text())
+          assert request['operation']=='read_exact_metadata_only' and request['target']=='renta0426/codeparrot-fresh-full-v1'
+          assert request['expected_current_version']==1 and request['exact_get_kernel_invocations']==1
+          for key in ['output_download_invocations','automatic_retries','kaggle_write_calls']: assert request[key]==0
+          for key in ['kaggle_compute_started','membership_sources_allowed','performance_evaluation_allowed','version_substitution_allowed']: assert request[key] is False
+          assert request['environment']=='kaggle-readonry'
+          PY
+          python3 "${workdir}/bridge/codeparrot_current_identity_diagnostic.py" --self-test
+          python3 "${workdir}/bridge/kaggle_policy_preflight.py"
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/bridge/kaggle-2.2.4.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+      - name: Read one exact metadata projection and remove credential
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          trap 'rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"' EXIT
+          mkdir -p "${HOME}/.kaggle"; umask 077; printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"; unset KAGGLE_API_TOKEN
+          PYTHONPATH="${WORKDIR}/bridge" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/codeparrot_current_identity_diagnostic.py"
+      - name: Cleanup all local diagnostic materials
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          rm -rf "${RUNNER_TEMP}/codeparrot-identity-diagnostic"
+          echo 'CODEPARROT_IDENTITY_DIAGNOSTIC_CLEANUP PASS credentials_retained=0 output_downloads=0 raw_predictions=0 label_join=0'
