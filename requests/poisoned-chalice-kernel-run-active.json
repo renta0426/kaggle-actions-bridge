@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "request_id": "20260908-poisoned-chalice-context-contrast-pilot-500-v1-001",
+  "request_id": "20260908-poisoned-chalice-context-contrast-10k-v1-001",
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
-  "target": "renta0426/poisoned-chalice-context-contrast-pilot-500-v1",
-  "launcher_path": "runners/poisoned_chalice/context_contrast_pilot_500_v1.py",
-  "launcher_blob_sha": "846e2e44ada8757f31f7d9fc2062c948ea6ec95a",
+  "target": "renta0426/poisoned-chalice-context-contrast-10k-v1",
+  "launcher_path": "runners/poisoned_chalice/context_contrast_10k_v1.py",
+  "launcher_blob_sha": "2c0a4ad541dcd8971033412020c849c2b167a3e3",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-  "research_commit": "74d04a7f16d7ec1403ae859217e65a7adc3e40d6",
+  "research_commit": "7492fc68784c505cce409bd5f1e1072cc0e44511",
   "research_files": [
     {
       "path": "src/poisoned_chalice/context_contrast.py",
@@ -22,14 +22,20 @@
       "snapshot_parts": 1
     },
     {
-      "path": "scripts/build_context_contrast_pilot_notebook.py",
-      "git_blob_sha": "222e98b80ed92baf5dc9f5eafecabb721739cb2a",
-      "max_bytes": 131072,
+      "path": "src/poisoned_chalice/evaluation.py",
+      "git_blob_sha": "cb3afd4f3e3ecafe0e0677eda4fda30e93b04ba8",
+      "max_bytes": 65536,
       "snapshot_parts": 1
     },
     {
-      "path": "experiments/matched-target-context-contrast-v1-pilot-500/experiment.json",
-      "git_blob_sha": "95d0fd4150f3f415fa462fb82dc32ffe07175584",
+      "path": "scripts/build_context_contrast_10k_notebook.py",
+      "git_blob_sha": "efaf92327ad2f71fa1c67cd3317a40a05c7b529a",
+      "max_bytes": 65536,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "experiments/matched-target-context-contrast-v1-10k/experiment.json",
+      "git_blob_sha": "50e53418a99abf800528ed818650acb03f920795",
       "max_bytes": 32768,
       "snapshot_parts": 1
     }
@@ -38,10 +44,10 @@
     "accelerator": "gpu",
     "machine_shape": "NvidiaTeslaT4",
     "expected_visible_gpu_count": 2,
-    "expected_runtime_minutes": 60,
-    "hard_timeout_minutes": 120,
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 180,
     "max_active_runs": 2,
-    "min_remaining_quota_hours": 1.5
+    "min_remaining_quota_hours": 2.0
   },
   "api_budget": {
     "max_calls": 60
@@ -50,32 +56,43 @@
     "create one private notebook version"
   ],
   "persistent_outputs": [
-    "matched-target-context-contrast-v1-pilot-500/sample_manifest.parquet",
-    "matched-target-context-contrast-v1-pilot-500/span_manifest.parquet",
-    "matched-target-context-contrast-v1-pilot-500/condition_scores.parquet",
-    "matched-target-context-contrast-v1-pilot-500/span_contrasts.parquet",
-    "matched-target-context-contrast-v1-pilot-500/file_features.parquet",
-    "matched-target-context-contrast-v1-pilot-500/fidelity.json",
-    "matched-target-context-contrast-v1-pilot-500/runtime.json",
-    "matched-target-context-contrast-v1-pilot-500/run_manifest.json",
-    "matched-target-context-contrast-v1-pilot-500/REPORT.md"
+    "matched-target-context-contrast-v1-10k/sample_manifest.parquet",
+    "matched-target-context-contrast-v1-10k/file_features.parquet",
+    "matched-target-context-contrast-v1-10k/span_contrasts.parquet",
+    "matched-target-context-contrast-v1-10k/baseline_features.parquet",
+    "matched-target-context-contrast-v1-10k/fidelity.json",
+    "matched-target-context-contrast-v1-10k/runtime.json",
+    "matched-target-context-contrast-v1-10k/coverage_by_language_label.csv",
+    "matched-target-context-contrast-v1-10k/predictor_metrics.csv",
+    "matched-target-context-contrast-v1-10k/language_metrics.csv",
+    "matched-target-context-contrast-v1-10k/length_metrics.csv",
+    "matched-target-context-contrast-v1-10k/strict_metrics.csv",
+    "matched-target-context-contrast-v1-10k/detection_jaccard.csv",
+    "matched-target-context-contrast-v1-10k/unique_true_positives.csv",
+    "matched-target-context-contrast-v1-10k/bootstrap.json",
+    "matched-target-context-contrast-v1-10k/evaluation_summary.json",
+    "matched-target-context-contrast-v1-10k/run_manifest.json",
+    "matched-target-context-contrast-v1-10k/REPORT.md"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
   "competition_submission": false,
   "select_as_final": false,
   "clean_room": {
-    "stage2_holdout_consumed": false,
+    "new_model_specific_holdout_opened": false,
     "public_leaderboard_feedback_used": false,
     "hidden_validation_labels_used": false,
     "validation_rows_used": false,
     "codeparrot_rows_or_labels_used": false,
-    "performance_evaluation_forbidden": true
+    "row_level_persisted_membership_labels": false,
+    "automatic_promotion": false
   },
   "scientific_contract": {
     "task_id": "P2-01",
-    "rows": 500,
-    "per_language_per_label": 50,
+    "rows": 10000,
+    "samples_per_language": 2000,
+    "per_language_per_label": 1000,
+    "selection_seed": 2027,
     "selection_labels_removed_before_model_scoring": true,
     "model_id": "bigcode/starcoder2-3b",
     "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
@@ -84,15 +101,18 @@
     "target_tokens": 256,
     "min_target_tokens": 64,
     "spans_per_file": 3,
-    "max_model_tokens_per_window": 768,
-    "shared_target_identity_required": true,
-    "condition_metrics": ["mean_logp", "paper_minkpp10", "local64"],
-    "paper_schema": "prob_weighted_minkpp_v1",
-    "paper_fraction": 0.1,
-    "local_width": 64,
-    "cpu_oracle_required": true,
-    "dense_blocked_parity_required": true,
-    "cpu_gpu_reduction_tolerance": 0.00002,
-    "performance_metrics_computed": false
+    "primary_features": [
+      "delta_512_32_mean_logp__max_span",
+      "delta_512_32_paper_minkpp10__max_span",
+      "delta_512_32_local64__max_span"
+    ],
+    "fallback_never_imputed_as_primary": true,
+    "baseline_scores": ["loss_multiwindow", "paper_minkpp10", "local_64"],
+    "historical_loss_local_first8_fidelity_required": true,
+    "max_batch_tokens": 12288,
+    "samples_per_shard": 250,
+    "bootstrap_replicates": 1000,
+    "automatic_promotion": false,
+    "competition_submission": false
   }
 }
