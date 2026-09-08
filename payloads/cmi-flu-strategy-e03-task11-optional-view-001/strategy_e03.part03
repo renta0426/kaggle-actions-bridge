@@ -1,0 +1,220 @@
+) -> Mapping[str, Any]:
+    deltas: list[float] = []
+    detail: list[dict[str, Any]] = []
+    declines: list[str] = []
+    for fold in folds:
+        candidate = fold["conditions"][condition]
+        reference = fold["conditions"]["b21"]
+        delta = None
+        if candidate["status"] == "ok" and reference["status"] == "ok":
+            delta = float(candidate["value"] - reference["value"])
+            deltas.append(delta)
+            if int(fold["validation_rows"]) >= LARGE_STUDY_N and delta < LARGE_STUDY_DECLINE_REVIEW:
+                declines.append(str(fold["held_study"]))
+        detail.append(
+            {
+                "study": str(fold["held_study"]),
+                "n": int(fold["validation_rows"]),
+                "candidate": candidate.get("value"),
+                "reference": reference.get("value"),
+                "delta": delta,
+            }
+        )
+    strict = float(np.mean(deltas)) if len(deltas) == len(folds) and folds else None
+    return {
+        "candidate": condition,
+        "reference": "b21",
+        "study_mean_delta_strict": strict,
+        "candidate_threshold": CANDIDATE_DELTA_THRESHOLD,
+        "passes_candidate_delta_heuristic": (
+            strict is not None and strict >= CANDIDATE_DELTA_THRESHOLD
+        ),
+        "large_study_decline_threshold": LARGE_STUDY_DECLINE_REVIEW,
+        "large_studies_requiring_review": declines,
+        "passes_guardrail": not declines and len(deltas) == len(folds),
+        "folds": detail,
+    }
+
+
+def _movement(base: Sequence[float], candidate: Sequence[float]) -> Mapping[str, Any]:
+    left = percentile_rank(np.asarray(base, dtype=float))
+    right = percentile_rank(np.asarray(candidate, dtype=float))
+    diff = np.abs(left - right)
+    return {
+        "rank_spearman_vs_b21": safe_spearman(left, right).to_dict(),
+        "mean_absolute_percentile_shift": float(np.mean(diff)),
+        "max_absolute_percentile_shift": float(np.max(diff)),
+    }
+
+
+def _expert_diagnostics(
+    target: np.ndarray,
+    base_rank: np.ndarray,
+    expert: np.ndarray,
+    candidate: np.ndarray,
+) -> Mapping[str, Any]:
+    mask = np.isfinite(expert)
+    if not mask.any():
+        return {
+            "available_rows": 0,
+            "expert_std": None,
+            "expert_vs_base_rank_spearman": None,
+            "candidate_available_spearman": None,
+            "base_available_spearman": None,
+            "movement": _movement(base_rank, candidate),
+        }
+    return {
+        "available_rows": int(mask.sum()),
+        "expert_std": float(np.std(expert[mask])),
+        "expert_vs_base_rank_spearman": safe_spearman(
+            expert[mask], base_rank[mask]
+        ).to_dict(),
+        "candidate_available_spearman": safe_spearman(
+            target[mask], candidate[mask]
+        ).to_dict(),
+        "base_available_spearman": safe_spearman(
+            target[mask], base_rank[mask]
+        ).to_dict(),
+        "movement": _movement(base_rank, candidate),
+    }
+
+
+def _challenge_agreement(base_rank: np.ndarray, candidate: np.ndarray) -> Mapping[str, Any]:
+    return _movement(base_rank, candidate)
+
+
+def run_strategy_e03(
+    config: BaselineConfig,
+    inputs: InputBundle,
+) -> Mapping[str, Any]:
+    """Run the predeclared E03 comparison; return aggregate diagnostics only."""
+
+    if config.baseline != "b021_taskwise_robust":
+        raise DataContractError("E03 requires the B2.1 robust config")
+    if str(config.section("selection").get("policy", "")) != "robust_v1":
+        raise DataContractError("E03 requires robust_v1 selection")
+
+    dataset = build_b02_datasets(config, inputs)[TASK]
+    if len(dataset.train) != 127 or len(dataset.challenge) != 40:
+        raise DataContractError("E03 fixed Task1.1 snapshot changed")
+    b21_spec = _find_b21_spec(config)
+
+    public_hai = build_prior_immunity_features(inputs.tables["public_serology"])
+    challenge_hai = build_prior_immunity_features(inputs.tables["challenge_serology"])
+    train_hai = _attach_view(
+        dataset.train,
+        public_hai,
+        SEROLOGY_RANK_COLUMNS,
+        flag_column="__has_hai",
+    )
+    challenge_hai_frame = _attach_view(
+        dataset.challenge,
+        challenge_hai,
+        SEROLOGY_RANK_COLUMNS,
+        flag_column="__has_hai",
+    )
+
+    public_flow, challenge_flow, flow_contract = build_gate_compatible_innate_flow_features(
+        inputs.tables["public_flow"],
+        inputs.tables["challenge_flow"],
+    )
+    flow_columns, flow_panel = _select_flow_panel(
+        dataset.train,
+        public_flow,
+        challenge_flow,
+    )
+    train_flow = _attach_view(
+        dataset.train,
+        public_flow,
+        flow_columns,
+        flag_column="__has_flow",
+    )
+    challenge_flow_frame = _attach_view(
+        dataset.challenge,
+        challenge_flow,
+        flow_columns,
+        flag_column="__has_flow",
+    )
+
+    splits = default_splits_for_task(dataset, random_state=config.random_state)
+    folds: list[dict[str, Any]] = []
+    for fold_index, split in enumerate(splits):
+        train_base = dataset.train.iloc[split.train_indices].reset_index(drop=True)
+        held_base = dataset.train.iloc[split.validation_indices].reset_index(drop=True)
+        train_hai_fold = train_hai.iloc[split.train_indices].reset_index(drop=True)
+        held_hai = train_hai.iloc[split.validation_indices].reset_index(drop=True)
+        train_flow_fold = train_flow.iloc[split.train_indices].reset_index(drop=True)
+        held_flow = train_flow.iloc[split.validation_indices].reset_index(drop=True)
+
+        target = pd.to_numeric(
+            held_base[dataset.target_column], errors="coerce"
+        ).to_numpy(dtype=float)
+        require_finite(target, name="E03 held target")
+        train_target_rank = _target_rank(train_base, dataset.target_column)
+        base_prediction = _fit_b21(
+            train_base,
+            held_base,
+            target_column=dataset.target_column,
+            spec=b21_spec,
+            excluded_columns=dataset.excluded_columns,
+        )
+        base_rank = percentile_rank(base_prediction)
+        inner_base_rank = _crossfit_base_rank(
+            train_base,
+            target_column=dataset.target_column,
+            spec=b21_spec,
+            excluded_columns=dataset.excluded_columns,
+        )
+        residual_target = train_target_rank - inner_base_rank
+
+        hai_direct, hai_direct_fit = _fit_view_expert(
+            train_hai_fold,
+            held_hai,
+            columns=SEROLOGY_RANK_COLUMNS,
+            target_values=train_target_rank,
+            target_name="__e03_hai_target_rank",
+            flag_column="__has_hai",
+        )
+        hai_raw = np.where(np.isfinite(hai_direct), np.clip(hai_direct, 0.0, 1.0), np.nan)
+        hai_rank = _rank_available(hai_direct)
+        hai_residual, hai_residual_fit = _fit_view_expert(
+            train_hai_fold,
+            held_hai,
+            columns=SEROLOGY_RANK_COLUMNS,
+            target_values=residual_target,
+            target_name="__e03_hai_residual",
+            flag_column="__has_hai",
+        )
+
+        flow_direct, flow_direct_fit = _fit_view_expert(
+            train_flow_fold,
+            held_flow,
+            columns=flow_columns,
+            target_values=train_target_rank,
+            target_name="__e03_flow_target_rank",
+            flag_column="__has_flow",
+        )
+        flow_rank = _rank_available(flow_direct)
+        flow_residual, flow_residual_fit = _fit_view_expert(
+            train_flow_fold,
+            held_flow,
+            columns=flow_columns,
+            target_values=residual_target,
+            target_name="__e03_flow_residual",
+            flag_column="__has_flow",
+        )
+
+        scores = {
+            "b21": base_rank,
+            "hai_raw_fusion_w0.25": _blend(base_rank, hai_raw),
+            "hai_rank_fusion_w0.25": _blend(base_rank, hai_rank),
+            "hai_crossfit_residual_w0.25": _residual_correct(base_rank, hai_residual),
+            "innate_flow_rank_fusion_w0.25": _blend(base_rank, flow_rank),
+            "innate_flow_crossfit_residual_w0.25": _residual_correct(
+                base_rank, flow_residual
+            ),
+        }
+
+        shuffle_target, moved = _shuffle_target_by_study(
+            train_base,
+            train_target_rank,

@@ -1,0 +1,11 @@
+            "residual_teacher": "training_internal_subject_purged_b21_oof_on_within_study_rank_scale",
+            "leaderboard_used_for_selection": False,
+            "competition_submission_attempted": False,
+            "folds": folds,
+            "summary": summary,
+            "paired_vs_b21": paired,
+            "selected_promoted_condition": selected,
+            "challenge": challenge,
+            "output_policy": "aggregate_only_no_participant_ids_or_row_level_predictions",
+        }
+    )

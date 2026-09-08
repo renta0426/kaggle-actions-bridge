@@ -1,0 +1,220 @@
+"""Strategy v2 E03: Task1.1 optional-view rank and residual fusion.
+
+E03 separates three questions that were confounded in the earlier Task1.1
+prior-immunity pilot:
+
+1. does the optional view contain ranking signal at all;
+2. is useful signal suppressed by the expert output scale;
+3. does the optional view explain error left by the frozen B2.1 model?
+
+The six predeclared science conditions are fixed by strategy v2.  HAI and flow
+are optional views.  Rows without a view fall back *exactly* to the frozen
+B2.1 score; no complete-case filtering is permitted.
+
+The flow panel is selected without outcomes.  A candidate must:
+- be an innate-flow name considered by E00;
+- match the Challenge Pre-vacc unit/material/gate signature exactly after
+  conservative text normalization;
+- cover at least two Task1.1 studies and 24 independent Task1.1 subjects.
+
+At most eight candidates are retained, ordered by support then name.  This
+resolves the E00 ``innate_name_candidates_not_final_panel`` gate without
+looking at Task1.1 outcomes.  If the contract yields no usable panel, flow
+conditions are explicitly data-limited and remain exact B2.1 fallback.
+
+Residual teachers are built from subject-purged inner OOF B2.1 predictions.
+Held-study outcomes are never used to define a view, panel, preprocessing
+rule, fusion scale, or missing-view fallback.
+"""
+from __future__ import annotations
+
+from dataclasses import replace
+import re
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+
+from .aliases import canonicalize_flow_population
+from .configuration import BaselineConfig
+from .contracts import DataContractError, require_columns, require_finite
+from .cv import purged_leave_one_study_out
+from .evaluation import default_splits_for_task
+from .metrics import percentile_rank, safe_spearman
+from .models import ModelSpec, fit_final_model, fit_predict_oof
+from .runner import InputBundle, build_b02_datasets
+from .targets import select_pre_vacc
+from .task11_prior_immunity import (
+    SEROLOGY_RANK_COLUMNS,
+    build_prior_immunity_features,
+)
+
+
+EXPERIMENT = "strategy_v2_e03_task11_optional_view_fusion"
+TASK = "Task1.1"
+B21_MODEL_NAME = "pls_2"
+FUSION_WEIGHT = 0.25
+VIEW_ALPHA = 10.0
+RANDOM_SEED = 20260907
+CANDIDATE_DELTA_THRESHOLD = 0.02
+LARGE_STUDY_N = 10
+LARGE_STUDY_DECLINE_REVIEW = -0.10
+MIN_FLOW_TOTAL_SUBJECTS = 24
+MIN_FLOW_TOTAL_STUDIES = 2
+MIN_VIEW_SOURCE_SUBJECTS = 8
+MAX_FLOW_FEATURES = 8
+VIEW_MODEL = ModelSpec(
+    name="e03_optional_view_ridge_a10",
+    family="ridge",
+    params={"alpha": VIEW_ALPHA},
+    target_transform="identity",
+    clip_min=None,
+    random_state=RANDOM_SEED,
+)
+CONDITION_NAMES = (
+    "b21",
+    "hai_raw_fusion_w0.25",
+    "hai_rank_fusion_w0.25",
+    "hai_crossfit_residual_w0.25",
+    "innate_flow_rank_fusion_w0.25",
+    "innate_flow_crossfit_residual_w0.25",
+)
+INNATE_NAME_TOKENS = (
+    "monocyte",
+    "dendritic",
+    "_dc",
+    "natural_kill",
+    "_nk_",
+)
+_TEXT_SPACE = re.compile(r"\s+")
+_GATE_SPACE = re.compile(r"\s+")
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    return value
+
+
+def _norm_text(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return _TEXT_SPACE.sub(" ", str(value).strip()).casefold()
+
+
+def _unit_key(value: object) -> str:
+    text = _norm_text(value)
+    if text in {"percentage", "percent", "%", "pct"}:
+        return "percentage"
+    return text
+
+
+def _material_key(value: object) -> str:
+    text = _norm_text(value)
+    compact = re.sub(r"[^a-z0-9]+", "", text)
+    if compact in {"pbmc", "pbmcs", "peripheralbloodmononuclearcells"}:
+        return "pbmc"
+    return text
+
+
+def _gate_signature(value: object) -> str:
+    """Conservative textual gate identity; it is not a biological ontology."""
+
+    text = _norm_text(value)
+    if not text or text in {"na", "unknown", "none"}:
+        return ""
+    text = (
+        text.replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("＋", "+")
+        .replace("％", "%")
+    )
+    return _GATE_SPACE.sub("", text)
+
+
+def _is_innate_name(name: str) -> bool:
+    text = str(name).casefold()
+    return any(token in text for token in INNATE_NAME_TOKENS)
+
+
+def _find_b21_spec(config: BaselineConfig) -> ModelSpec:
+    matches = [spec for spec in config.model_specs("task_11") if spec.name == B21_MODEL_NAME]
+    if len(matches) != 1:
+        raise DataContractError(
+            f"E03 expected exactly one Task1.1 {B21_MODEL_NAME!r} spec; found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _within_study_rank(frame: pd.DataFrame, values: Sequence[float]) -> np.ndarray:
+    require_columns(frame, ["study_group"], table_name="E03 rank frame")
+    array = np.asarray(values, dtype=float)
+    if array.shape != (len(frame),):
+        raise DataContractError("E03 rank values do not align with frame")
+    require_finite(array, name="E03 rank values")
+    result = np.full(len(frame), np.nan, dtype=float)
+    for _, positions in frame.groupby(
+        "study_group", dropna=False, observed=True, sort=False
+    ).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        result[pos] = percentile_rank(array[pos])
+    require_finite(result, name="E03 within-study rank")
+    return result
+
+
+def _target_rank(frame: pd.DataFrame, target_column: str) -> np.ndarray:
+    values = pd.to_numeric(frame[target_column], errors="coerce").to_numpy(dtype=float)
+    require_finite(values, name="E03 target")
+    return _within_study_rank(frame, values)
+
+
+def _rank_available(expert: Sequence[float]) -> np.ndarray:
+    values = np.asarray(expert, dtype=float)
+    if np.isinf(values).any():
+        raise DataContractError("E03 expert contains infinity")
+    result = np.full(values.shape, np.nan, dtype=float)
+    mask = np.isfinite(values)
+    if mask.any():
+        result[mask] = percentile_rank(values[mask])
+    return result
+
+
+def _blend(base_rank: Sequence[float], expert: Sequence[float], weight: float = FUSION_WEIGHT) -> np.ndarray:
+    base = np.asarray(base_rank, dtype=float)
+    extra = np.asarray(expert, dtype=float)
+    if base.shape != extra.shape or base.ndim != 1:
+        raise DataContractError("E03 blend arrays disagree")
+    require_finite(base, name="E03 base rank")
+    if np.isinf(extra).any() or not np.isfinite(weight) or not 0 <= weight <= 1:
+        raise DataContractError("E03 invalid expert or fusion weight")
+    result = base.copy()
+    mask = np.isfinite(extra)
+    result[mask] = (1.0 - weight) * base[mask] + weight * extra[mask]
+    require_finite(result, name="E03 blended score")
+    return result
+
+
+def _residual_correct(
+    base_rank: Sequence[float],
+    residual_prediction: Sequence[float],
+    weight: float = FUSION_WEIGHT,
+) -> np.ndarray:
+    base = np.asarray(base_rank, dtype=float)
+    residual = np.asarray(residual_prediction, dtype=float)
+    if base.shape != residual.shape or base.ndim != 1:
+        raise DataContractError("E03 residual arrays disagree")
+    require_finite(base, name="E03 residual base")
+    if np.isinf(residual).any():
+        raise DataContractError("E03 residual expert contains infinity")
+    result = base.copy()
+    mask = np.isfinite(residual)
+    result[mask] = base[mask] + weight * residual[mask]

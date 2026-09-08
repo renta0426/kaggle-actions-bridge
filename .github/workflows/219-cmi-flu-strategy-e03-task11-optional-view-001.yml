@@ -1,0 +1,16 @@
+name: RETIRED CMI-Flu strategy E03 Task1.1 optional-view CPU 001 proven-B21
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse replay of self-matching submission-guard workflow
+        shell: bash
+        run: |
+          echo "RETIRED: secret-free preflight built the exact proven-B2.1 E03 runtime, then the outer scanner matched the runtime's own submission-safety marker string. No Kaggle write occurred. Use successor preflight 220."
+          exit 1

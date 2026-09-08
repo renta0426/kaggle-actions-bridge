@@ -1,0 +1,16 @@
+name: RETIRED CMI-Flu E03 Task1.1 optional-view v5 secret-free preflight
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse replay of stale-sanitizer E03 preflight
+        shell: bash
+        run: |
+          echo "RETIRED: full synthetic E03 execution completed, but the independent sanitizer still expected the obsolete 87c... package identity instead of the proven Task1.1 release 48ff.... No Kaggle write occurred. Use successor preflight 221."
+          exit 1

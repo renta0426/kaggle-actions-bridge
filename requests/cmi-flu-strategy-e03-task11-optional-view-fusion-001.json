@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "request_id": "20260908-cmi-flu-strategy-e03-task11-optional-view-fusion-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e03-task11-optional-view-fusion-20260908-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "2eaf8fac9a632c67f32c4a0ed37b64eeac571387",
+  "science_transport": "agent_relay_exact_blobs",
+  "strategy_e03_blob_sha": "e38fe01606dc5653ad3d1542f722726c1374b278",
+  "strategy_e03_relay_parts": [
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part00",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part01",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part02",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part03",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part04",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part05"
+  ],
+  "task11_prior_immunity_blob_sha": "50d9a43604d2b75479b8f873a86a8daf9d5bd7a9",
+  "task11_prior_immunity_relay_path": "payloads/cmi-flu-task11-prior-immunity-001/task11_prior_immunity.py",
+  "config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9",
+  "config_relay_path": "payloads/cmi-flu-strategy-e01-paired-evaluation-001/baseline_b021_robust.yaml",
+  "frozen_b21_package_sha256": "48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3",
+  "frozen_b21_transport": "existing_task11_prior_runtime_release",
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 45,
+    "hard_timeout_minutes": 75,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 100,
+    "max_pages": 2,
+    "poll_interval_seconds": 120,
+    "max_polls": 40
+  },
+  "watcher": {
+    "mode": "finite",
+    "polls": 13,
+    "deadline_seconds": 4500
+  },
+  "experiment_contract": {
+    "task": "Task1.1",
+    "conditions": [
+      "b21",
+      "hai_raw_fusion_w0.25",
+      "hai_rank_fusion_w0.25",
+      "hai_crossfit_residual_w0.25",
+      "innate_flow_rank_fusion_w0.25",
+      "innate_flow_crossfit_residual_w0.25"
+    ],
+    "b21_model": "pls_2",
+    "fusion_weight": 0.25,
+    "view_ridge_alpha": 10.0,
+    "random_seed": 20260907,
+    "missing_view_policy": "exact_fallback_to_frozen_b21",
+    "residual_teacher": "training_internal_subject_purged_b21_oof_on_within_study_rank_scale",
+    "flow_selection_outcome_independent": true,
+    "flow_gate_contract": "Pre-vacc/percentage/PBMC/exact-normalized-population_definition",
+    "flow_min_total_subjects": 24,
+    "flow_min_total_studies": 2,
+    "flow_min_source_subjects_per_fold": 8,
+    "flow_max_features": 8,
+    "promotion_mean_paired_delta": 0.02,
+    "large_study_n": 10,
+    "large_study_decline_review": -0.10,
+    "negative_controls": [
+      "availability_only",
+      "within_study_subject_label_shuffle"
+    ]
+  },
+  "allowed_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0
+}

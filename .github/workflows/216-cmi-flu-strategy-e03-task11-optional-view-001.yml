@@ -1,0 +1,16 @@
+name: Retired CMI-Flu strategy E03 Task1.1 optional-view CPU 001 preflight
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse retired preflight workflow
+        shell: bash
+        run: |
+          echo "RETIRED: secret-free preflight caught an unauthenticated science-snapshot transport 404 before any Kaggle write. Use workflow 217 with exact relayed science blobs."
+          exit 1

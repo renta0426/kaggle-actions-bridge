@@ -1,0 +1,220 @@
+            str(row["feature"]),
+        )
+    )
+    selected = tuple(str(row["feature"]) for row in eligible[:MAX_FLOW_FEATURES])
+    selected_studies: set[str] = set()
+    selected_subjects = 0
+    if selected:
+        merged = _attach_view(
+            train,
+            public_features,
+            selected,
+            flag_column="__has_selected_flow",
+        )
+        mask = merged["__has_selected_flow"].to_numpy(dtype=bool)
+        selected_studies = set(merged.loc[mask, "study_group"].astype(str))
+        selected_subjects = int(merged.loc[mask, "subject_group"].nunique())
+    if not selected:
+        state = "data_limited_no_exact_gate_compatible_panel"
+    elif len(selected_studies) <= 2:
+        state = "data_limited_two_study_support_but_expert_testable"
+    else:
+        state = "ready_limited_support"
+    return selected, {
+        "state": state,
+        "selection_rule": (
+            "outcome-independent exact Challenge gate/unit/material match; "
+            "Task1.1 support >=24 independent subjects and >=2 studies; "
+            "max 8 by support then lexical tie-break"
+        ),
+        "candidate_count": len(common),
+        "eligible_count": len(eligible),
+        "selected_count": len(selected),
+        "selected_features": list(selected),
+        "selected_subjects": selected_subjects,
+        "selected_studies": len(selected_studies),
+        "selected_study_labels": sorted(selected_studies),
+        "broad_cross_study_replacement_claim_permitted": len(selected_studies) >= 3,
+        "two_study_panel_may_only_support_optional_expert_claim": len(selected_studies) == 2,
+        "features": diagnostics,
+    }
+
+
+def _usable_columns(frame: pd.DataFrame, columns: Sequence[str], mask: np.ndarray) -> tuple[str, ...]:
+    usable: list[str] = []
+    for column in columns:
+        values = pd.to_numeric(frame.loc[mask, column], errors="coerce")
+        finite = values[np.isfinite(values.to_numpy(dtype=float))]
+        if finite.nunique(dropna=True) >= 2:
+            usable.append(column)
+    return tuple(usable)
+
+
+def _fit_view_expert(
+    train: pd.DataFrame,
+    prediction: pd.DataFrame,
+    *,
+    columns: Sequence[str],
+    target_values: Sequence[float],
+    target_name: str,
+    flag_column: str,
+) -> tuple[np.ndarray, Mapping[str, Any]]:
+    result = np.full(len(prediction), np.nan, dtype=float)
+    if not columns:
+        return result, {
+            "status": "data_limited_no_features",
+            "source_subjects": 0,
+            "source_studies": 0,
+            "source_rows": 0,
+            "prediction_rows": 0,
+            "usable_feature_count": 0,
+        }
+    train_mask = train[flag_column].to_numpy(dtype=bool)
+    pred_mask = prediction[flag_column].to_numpy(dtype=bool)
+    source_subjects = int(train.loc[train_mask, "subject_group"].nunique())
+    source_studies = int(train.loc[train_mask, "study_group"].nunique())
+    usable = _usable_columns(train, columns, train_mask)
+    detail = {
+        "source_subjects": source_subjects,
+        "source_studies": source_studies,
+        "source_rows": int(train_mask.sum()),
+        "prediction_rows": int(pred_mask.sum()),
+        "usable_feature_count": len(usable),
+        "usable_features": list(usable),
+    }
+    if source_subjects < MIN_VIEW_SOURCE_SUBJECTS:
+        return result, {**detail, "status": "data_limited_source_subjects_lt_8"}
+    if not usable:
+        return result, {**detail, "status": "data_limited_no_nonconstant_feature"}
+    if not pred_mask.any():
+        return result, {**detail, "status": "held_or_challenge_has_no_view"}
+
+    target = np.asarray(target_values, dtype=float)
+    if target.shape != (len(train),):
+        raise DataContractError("E03 view target does not align with train")
+    require_finite(target, name="E03 view target")
+    train_model = train.loc[train_mask, list(usable)].copy()
+    train_model[target_name] = target[train_mask]
+    pred_model = prediction.loc[pred_mask, list(usable)].copy()
+    _, values = fit_final_model(
+        train_model,
+        pred_model,
+        target_column=target_name,
+        spec=VIEW_MODEL,
+        excluded_columns=(target_name,),
+    )
+    values = np.asarray(values, dtype=float)
+    require_finite(values, name="E03 view prediction")
+    result[pred_mask] = values
+    return result, {**detail, "status": "ok"}
+
+
+def _fit_b21(
+    train: pd.DataFrame,
+    prediction: pd.DataFrame,
+    *,
+    target_column: str,
+    spec: ModelSpec,
+    excluded_columns: Sequence[str],
+) -> np.ndarray:
+    _, values = fit_final_model(
+        train,
+        prediction,
+        target_column=target_column,
+        spec=spec,
+        excluded_columns=excluded_columns,
+    )
+    values = np.asarray(values, dtype=float)
+    require_finite(values, name="E03 B2.1 prediction")
+    return values
+
+
+def _crossfit_base_rank(
+    train: pd.DataFrame,
+    *,
+    target_column: str,
+    spec: ModelSpec,
+    excluded_columns: Sequence[str],
+) -> np.ndarray:
+    require_columns(
+        train,
+        ["study_group", "subject_group", target_column],
+        table_name="E03 residual train",
+    )
+    studies = train["study_group"].astype(str)
+    subjects = train["subject_group"].astype(str)
+    if studies.nunique() < 2:
+        raise DataContractError("E03 residual cross-fitting requires >=2 training studies")
+    splits = purged_leave_one_study_out(studies, subjects)
+    oof = fit_predict_oof(
+        train,
+        target_column=target_column,
+        splits=splits,
+        spec=spec,
+        excluded_columns=excluded_columns,
+    )
+    row_index = pd.to_numeric(oof["row_index"], errors="raise").astype(int)
+    if row_index.duplicated().any() or set(row_index) != set(range(len(train))):
+        raise DataContractError("E03 inner OOF does not cover each outer-training row once")
+    ordered = oof.assign(__row=row_index).sort_values("__row")
+    prediction = pd.to_numeric(ordered["prediction"], errors="coerce").to_numpy(dtype=float)
+    require_finite(prediction, name="E03 inner B2.1 OOF")
+    return _within_study_rank(train, prediction)
+
+
+def _shuffle_target_by_study(
+    train: pd.DataFrame,
+    target_values: Sequence[float],
+    *,
+    seed: int,
+) -> tuple[np.ndarray, int]:
+    values = np.asarray(target_values, dtype=float)
+    if values.shape != (len(train),):
+        raise DataContractError("E03 shuffle target does not align")
+    require_finite(values, name="E03 shuffle target")
+    require_columns(train, ["study_group", "subject_group"], table_name="E03 shuffle")
+    result = values.copy()
+    moved = 0
+    rng = np.random.default_rng(seed)
+    for _, positions in train.groupby(
+        "study_group", dropna=False, observed=True, sort=True
+    ).indices.items():
+        pos = np.asarray(positions, dtype=int)
+        subjects = train.iloc[pos]["subject_group"].astype(str)
+        if subjects.duplicated().any():
+            raise DataContractError("E03 shuffle expects one Task1.1 row per subject within study")
+        perm = rng.permutation(len(pos))
+        result[pos] = values[pos[perm]]
+        moved += int(np.sum(perm != np.arange(len(pos))))
+    return result, moved
+
+
+def _spearman(target: Sequence[float], prediction: Sequence[float]) -> Mapping[str, Any]:
+    return safe_spearman(target, prediction).to_dict()
+
+
+def _summary(folds: Sequence[Mapping[str, Any]], condition: str) -> Mapping[str, Any]:
+    values: list[float] = []
+    statuses: list[str] = []
+    for fold in folds:
+        item = fold["conditions"][condition]
+        statuses.append(str(item["status"]))
+        value = item.get("value")
+        if value is not None and np.isfinite(float(value)):
+            values.append(float(value))
+    strict = float(np.mean(values)) if len(values) == len(folds) and folds else None
+    return {
+        "fold_count": len(folds),
+        "valid_fold_count": len(values),
+        "all_folds_valid": len(values) == len(folds),
+        "study_equal_weight_spearman_mean_strict": strict,
+        "study_spearman_median": float(np.median(values)) if values else None,
+        "study_spearman_min": float(np.min(values)) if values else None,
+        "study_spearman_max": float(np.max(values)) if values else None,
+        "statuses": statuses,
+    }
+
+
+def _paired_vs_b21(
+    folds: Sequence[Mapping[str, Any]],
+    condition: str,

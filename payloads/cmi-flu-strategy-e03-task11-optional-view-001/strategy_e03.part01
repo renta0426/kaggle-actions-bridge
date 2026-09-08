@@ -1,0 +1,220 @@
+    require_finite(result, name="E03 residual-corrected score")
+    return result
+
+
+def _attach_view(
+    base: pd.DataFrame,
+    view: pd.DataFrame,
+    feature_columns: Sequence[str],
+    *,
+    flag_column: str,
+) -> pd.DataFrame:
+    require_columns(base, ["participant_id", "study_group", "subject_group"], table_name="E03 base")
+    columns = list(feature_columns)
+    if not columns:
+        output = base.copy()
+        output[flag_column] = False
+        return output
+    require_columns(view, ["participant_id", "study_accession", *columns], table_name="E03 view")
+    if view["participant_id"].duplicated().any():
+        raise DataContractError("E03 view is not unique by participant")
+    merged = base.merge(
+        view[["participant_id", "study_accession", *columns]],
+        on="participant_id",
+        how="left",
+        validate="one_to_one",
+        sort=False,
+    )
+    known = merged["study_accession"].notna()
+    mismatch = known & merged["study_accession"].astype(str).ne(merged["study_group"].astype(str))
+    if mismatch.any():
+        raise DataContractError("E03 view study disagrees with Task1.1 study")
+    merged = merged.drop(columns=["study_accession"])
+    values = merged[columns].apply(pd.to_numeric, errors="coerce")
+    if np.isinf(values.to_numpy(dtype=float)).any():
+        raise DataContractError("E03 view contains infinity")
+    merged[flag_column] = values.notna().any(axis=1)
+    return merged
+
+
+def _prepare_flow_baseline(flow: pd.DataFrame) -> pd.DataFrame:
+    required = [
+        "participant_id",
+        "study_accession",
+        "timepoint",
+        "name",
+        "value",
+        "unit",
+        "material",
+        "population_definition",
+    ]
+    require_columns(flow, required, table_name="E03 flow")
+    work = flow[required].copy()
+    work["name"] = work["name"].map(canonicalize_flow_population)
+    work = work.loc[work["name"].map(_is_innate_name)].copy()
+    work["__unit_key"] = work["unit"].map(_unit_key)
+    work["__material_key"] = work["material"].map(_material_key)
+    work["__gate_signature"] = work["population_definition"].map(_gate_signature)
+    work = work.loc[
+        work["__unit_key"].eq("percentage")
+        & work["__material_key"].eq("pbmc")
+        & work["__gate_signature"].ne("")
+    ].copy()
+    if work.empty:
+        return pd.DataFrame(
+            columns=[
+                "participant_id",
+                "study_accession",
+                "name",
+                "__unit_key",
+                "__material_key",
+                "__gate_signature",
+                "baseline_value",
+                "baseline_source",
+            ]
+        )
+    return select_pre_vacc(
+        work,
+        group_columns=(
+            "participant_id",
+            "study_accession",
+            "name",
+            "__unit_key",
+            "__material_key",
+            "__gate_signature",
+        ),
+        value_column="value",
+        output_column="baseline_value",
+    )
+
+
+def build_gate_compatible_innate_flow_features(
+    public_flow: pd.DataFrame,
+    challenge_flow: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, Mapping[str, Any]]:
+    """Build Challenge-contract-matched flow ranks without using outcomes."""
+
+    public = _prepare_flow_baseline(public_flow)
+    challenge = _prepare_flow_baseline(challenge_flow)
+
+    contracts: dict[str, tuple[str, str, str]] = {}
+    ambiguous_names: list[str] = []
+    for name, group in challenge.groupby("name", observed=True, sort=True):
+        identities = group[
+            ["__unit_key", "__material_key", "__gate_signature"]
+        ].drop_duplicates()
+        if len(identities) != 1:
+            ambiguous_names.append(str(name))
+            continue
+        row = identities.iloc[0]
+        contracts[str(name)] = (
+            str(row["__unit_key"]),
+            str(row["__material_key"]),
+            str(row["__gate_signature"]),
+        )
+
+    def compatible(frame: pd.DataFrame) -> pd.DataFrame:
+        if frame.empty or not contracts:
+            return frame.iloc[0:0].copy()
+        keep = np.zeros(len(frame), dtype=bool)
+        for position, (_, row) in enumerate(frame.iterrows()):
+            contract = contracts.get(str(row["name"]))
+            if contract is None:
+                continue
+            keep[position] = (
+                str(row["__unit_key"]) == contract[0]
+                and str(row["__material_key"]) == contract[1]
+                and str(row["__gate_signature"]) == contract[2]
+            )
+        return frame.loc[keep].copy()
+
+    public = compatible(public)
+    challenge = compatible(challenge)
+
+    def to_features(frame: pd.DataFrame) -> pd.DataFrame:
+        if frame.empty:
+            return pd.DataFrame(columns=["participant_id", "study_accession"])
+        ranked = frame.copy()
+        ranked["rank_value"] = np.nan
+        for _, positions in ranked.groupby(
+            ["study_accession", "name"], observed=True, sort=False
+        ).indices.items():
+            pos = np.asarray(positions, dtype=int)
+            values = pd.to_numeric(
+                ranked.iloc[pos]["baseline_value"], errors="coerce"
+            ).to_numpy(dtype=float)
+            require_finite(values, name="E03 flow baseline values")
+            ranked.iloc[pos, ranked.columns.get_loc("rank_value")] = percentile_rank(values)
+        wide = ranked.pivot_table(
+            index=["participant_id", "study_accession"],
+            columns="name",
+            values="rank_value",
+            aggfunc="mean",
+            observed=True,
+        ).reset_index()
+        wide.columns.name = None
+        rename = {
+            column: f"innate_flow_rank__{column}"
+            for column in wide.columns
+            if column not in {"participant_id", "study_accession"}
+        }
+        return wide.rename(columns=rename)
+
+    public_features = to_features(public)
+    challenge_features = to_features(challenge)
+    metadata = {
+        "selection_is_outcome_independent": True,
+        "challenge_contract": "literal/canonical Pre-vacc; percentage; PBMC; exact normalized population_definition",
+        "gate_signature_is_textual_not_biological_ontology": True,
+        "challenge_contract_name_count": len(contracts),
+        "challenge_ambiguous_name_count": len(ambiguous_names),
+        "challenge_ambiguous_names": ambiguous_names,
+        "public_compatible_names": sorted(str(name) for name in public["name"].unique()),
+        "challenge_compatible_names": sorted(str(name) for name in challenge["name"].unique()),
+    }
+    return public_features, challenge_features, metadata
+
+
+def _select_flow_panel(
+    train: pd.DataFrame,
+    public_features: pd.DataFrame,
+    challenge_features: pd.DataFrame,
+) -> tuple[tuple[str, ...], Mapping[str, Any]]:
+    common = sorted(
+        set(public_features.columns)
+        .intersection(challenge_features.columns)
+        .difference({"participant_id", "study_accession"})
+    )
+    diagnostics: list[dict[str, Any]] = []
+    eligible: list[dict[str, Any]] = []
+    if common:
+        merged = _attach_view(
+            train,
+            public_features,
+            common,
+            flag_column="__has_flow_for_panel_selection",
+        )
+        challenge_values = challenge_features.set_index("participant_id", drop=False)
+        for column in common:
+            finite = pd.to_numeric(merged[column], errors="coerce").notna()
+            row = {
+                "feature": column,
+                "subjects": int(merged.loc[finite, "subject_group"].nunique()),
+                "studies": int(merged.loc[finite, "study_group"].nunique()),
+                "rows": int(finite.sum()),
+                "challenge_rows": int(
+                    pd.to_numeric(challenge_values[column], errors="coerce").notna().sum()
+                ),
+            }
+            row["eligible"] = bool(
+                row["subjects"] >= MIN_FLOW_TOTAL_SUBJECTS
+                and row["studies"] >= MIN_FLOW_TOTAL_STUDIES
+            )
+            diagnostics.append(row)
+            if row["eligible"]:
+                eligible.append(row)
+    eligible.sort(
+        key=lambda row: (
+            -int(row["subjects"]),
+            -int(row["challenge_rows"]),
+            -int(row["studies"]),

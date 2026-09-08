@@ -1,0 +1,16 @@
+name: RETIRED CMI-Flu strategy E03 Task1.1 optional-view CPU 001 corrected
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse replay of validator-bugged E03 workflow
+        shell: bash
+        run: |
+          echo "RETIRED: secret-free preflight proved the exact E03 relay bytes, then failed because the bridge validator attempted to compile the YAML config as Python. No Kaggle write occurred. Use successor workflow 218."
+          exit 1

@@ -1,0 +1,16 @@
+name: RETIRED CMI-Flu strategy E03 Task1.1 optional-view CPU 001 relay-v3
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse replay of wrong-package-pin E03 workflow
+        shell: bash
+        run: |
+          echo "RETIRED: secret-free preflight verified relay/YAML handling, then showed that 87c... was not the existing Task1.1 frozen B2.1 runtime release. No Kaggle write occurred. Use successor workflow 219 pinned to the proven 48ff... package."
+          exit 1
