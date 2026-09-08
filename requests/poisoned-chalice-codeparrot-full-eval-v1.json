@@ -1,0 +1,64 @@
+{
+  "schema_version": 3,
+  "request_id": "20260908-poisoned-chalice-codeparrot-full-eval-v1",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "current_output_read_and_cpu_evaluate",
+  "target": "renta0426/codeparrot-fresh-full-v1",
+  "expected_current_version": 1,
+  "required_terminal_status": "COMPLETE",
+  "evaluator": {
+    "entry_point": "scripts/evaluate_codeparrot_frozen_full_public_v2.py",
+    "implementation_library": "scripts/evaluate_codeparrot_frozen_full_public.py",
+    "cohort_reconstruction_reference": "scripts/compose_public_codecorpus_cohort.py",
+    "cohort_reconstruction_source": "public_bridge_frozen_contract",
+    "private_research_repository_access": false,
+    "member_dataset": "codeparrot/codeparrot-clean-train",
+    "member_revision": "3e6ab65f2864931e041f6a82db9b5a6ec2b71ab4",
+    "nonmember_dataset": "codeparrot/codeparrot-clean-valid",
+    "nonmember_revision": "4db92d2ec0c1b4c41eeb439cfae16854511d9dcd",
+    "train_scan_rows": 500000,
+    "rows_per_label": 2000
+  },
+  "uploaded_result_identity": {
+    "bundle_sha256": "d5141050877c21018bb8155de44b4adb382287896e2813c441c1649bbaa48b45",
+    "files": {
+      "full_predictions.parquet": {"bytes": 678787, "sha256": "b58af53be1a3192d64e5019439e6161effb74793bcc543edbd9b1fa900a381b2"},
+      "full_manifest.json": {"bytes": 1737, "sha256": "70c22c9a5f7c6b2c6b5047f0cc3aa1f17e11083f1d01832a5427f99cc7ca143d"},
+      "full_fidelity.json": {"bytes": 1207, "sha256": "33f9fdb5613187b7f3b1f9d5c22baec4e6d963d09f8597a69fdc621dbabfe47c"},
+      "full_profile.json": {"bytes": 452, "sha256": "5c1a382230da47fb10639e39fc59d64d757c18b76fa18a0cbc86d9b3a9e98ba1"},
+      "__huggingface_repos__.json": {"bytes": 428, "sha256": "ca4f4b5cf807255279e140a8f6a23fef007d562cb791919f0866c4aa5e0de5bd"}
+    }
+  },
+  "read_contract": {
+    "identity_authority": "exact_GetKernel_only",
+    "historical_output_fallback": false,
+    "allow_failed_run_salvage": false,
+    "max_selected_files": 5,
+    "max_total_download_bytes": 134217728,
+    "output_download_attempts": 1,
+    "exact_metadata_transient_http_statuses": [403, 404],
+    "exact_metadata_reconciliation_attempts_max": 6,
+    "write_calls": 0
+  },
+  "evaluation_contract": {
+    "resource": "github_hosted_cpu",
+    "kaggle_compute_started": false,
+    "kaggle_kernel_write_allowed": false,
+    "competition_submission_allowed": false,
+    "public_leaderboard_read_allowed": false,
+    "membership_source_open_only_after_label_free_predictor_hash": true,
+    "row_level_prediction_label_artifact_allowed": false,
+    "target_fprs": [0.001, 0.005, 0.01, 0.02],
+    "primary_fpr": 0.01,
+    "bootstrap_replicates": 1000,
+    "bootstrap_seed": 2027,
+    "result_derived_codeparrot_retuning_allowed": false
+  },
+  "authentication": {
+    "environment": "kaggle-readonry",
+    "credential_scope": "current_output_read_only",
+    "credential_must_be_removed_before_membership_reconstruction": true,
+    "private_repository_credentials_allowed": false
+  },
+  "automatic_compute_retries": 0
+}
