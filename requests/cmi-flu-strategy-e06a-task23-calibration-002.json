@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "request_id": "20260908-cmi-flu-strategy-e06a-task23-calibration-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e06a-task23-calibration-20260908-002",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "6974d1f3c6f2e9b52bc8f1076e46051c71ea62c3",
+  "science_transport": "agent_relay_exact_blobs",
+  "strategy_e06_blob_sha": "dd5b5ed12e7667e527c97a99e86b8821e68e6442",
+  "strategy_e06_v2_blob_sha": "270a9616c4ab4726cac72e220f86c071161765dc",
+  "repair_of_request_id": "20260908-cmi-flu-strategy-e06a-task23-calibration-001",
+  "repair_evidence": {
+    "failed_bridge_run_id": 34146316937,
+    "failed_bridge_job_id": 101819150585,
+    "write_cli_return_code": 0,
+    "exact_identity_confirmed": true,
+    "remote_terminal_state": "ERROR",
+    "exception_type": "DataContractError",
+    "error_code": "bb02718138642f982020",
+    "safe_site": "strategy_e06._panel_frame",
+    "decoded_error": "E06a panel source has zero overlap with task panel",
+    "uploaded_notebook_log_sha256": "614933a1b2393bb76a0c949205b9699a57ceff86ddc7e14af35bc8b1791f8be1",
+    "root_cause": "D365 HAI dataset contains valid historical studies with zero fixed Task2.3 Challenge-panel strain overlap; v1 attempted to score every study as a Task2.3 panel-GM outer fold"
+  },
+  "runtime_ancestry": {
+    "strategy_e05_blob_sha": "78cde9e3a6b6e3b332352218c4b4545f769aa6c4",
+    "strategy_e05_v2_blob_sha": "50951807d28418bb50f4e9dba656fa2b3e4d86ff",
+    "strategy_e05_v3_blob_sha": "129a4a5713a758d58adbb02489105e17a1c13922",
+    "strategy_e05_v4_blob_sha": "ab93726fe0810299892091b7e0e8f63dcacec4f3",
+    "hai_transfer_blob_sha": "b671d8bf7f10bebbd65aca2a5bad42e267ee78d5",
+    "hai_transfer_v2_blob_sha": "ebf4110df4ab49d726d80af03c1203f93e9c89c0",
+    "strategy_e01_blob_sha": "dd27aea0cf97d41bad3cec64819c4c4269d94cbd",
+    "strategy_e01_v2_blob_sha": "8cc64dc5ab9483d5957cfada18d445188566c56c",
+    "config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9"
+  },
+  "locked_reference_sha256": {
+    "strain_sequences.csv": "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887",
+    "vaccine_strains_per_season.txt": "8f6c7116f37f29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35"
+  },
+  "locked_strain_sequence_header": ["Virus", "Sequence", "Status_of_sequence"],
+  "calibration_contract": {
+    "task": "Task2.3",
+    "target_day": 365,
+    "raw_conditions": ["b21_reference", "phase_a_target_domain"],
+    "model": "ridge_exact_a100",
+    "calibration_kinds": ["positive_affine", "log2_affine"],
+    "outer_evaluation": "subject_purged_leave_one_study_out",
+    "outer_fold_panel_overlap_filter": "fixed_panel_strain_availability_only_before_outcome_access",
+    "zero_panel_overlap_studies_scored_as_task23_proxy": false,
+    "minimum_calibrator_panel_overlap_studies": 2,
+    "calibrator_training": "inner_subject_purged_study_out_oof_from_outer_training_only",
+    "calibration_weighting": "equal_study_total_weight",
+    "minimum_equal_study_mean_rmse_reduction": 0.02,
+    "maximum_worst_study_rmse_ratio": 1.05,
+    "rank_preservation_required": true,
+    "observed_d28_used_as_d365_feature": false
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 120,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 150,
+    "poll_interval_seconds": 120,
+    "max_polls": 65,
+    "max_pages": 2
+  },
+  "watcher_contract": {
+    "watch_horizon_minutes": 130,
+    "actions_job_timeout_minutes": 150,
+    "poll_exhaustion_is_remote_failure": false,
+    "write_retry_on_watch_expiry": false,
+    "recovery_after_watch_expiry": "current_version_read_only"
+  },
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0
+}
