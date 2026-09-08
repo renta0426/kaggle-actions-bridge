@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-poisoned-chalice-p1-03-sersem-cache-readout-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_current_output_aggregate",
+  "science_commit": "fa717668f471f6389c4b810742e88480dbe40180",
+  "science_sources": {
+    "src/poisoned_chalice/sersem.py": "19ed17386589cb0f3b38164dba82c660f3ff721b",
+    "src/poisoned_chalice/evaluation.py": "cb3afd4f3e3ecafe0e0677eda4fda30e93b04ba8"
+  },
+  "public_dataset": {
+    "id": "Poisoned-Chalice/ICSE-2027-public",
+    "revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "split": "train",
+    "languages": ["Go", "Java", "Python", "Ruby", "Rust"]
+  },
+  "tokenizer": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "transformers_version": "5.0.0"
+  },
+  "cache_sources": [
+    {
+      "target": "renta0426/starter-plus-10k-v2",
+      "expected_current_version": 1,
+      "required_terminal_status": "ERROR",
+      "shard_start": 0,
+      "shard_stop": 24
+    },
+    {
+      "target": "renta0426/starter-plus-10k-v2-continuation",
+      "expected_current_version": 1,
+      "required_terminal_status": "COMPLETE",
+      "shard_start": 24,
+      "shard_stop": 40
+    }
+  ],
+  "scientific_contract": {
+    "comparison": [
+      "zsigmoid_window_mean",
+      "sersem_output_windowed_formula_faithful",
+      "sersem_max_context_union_variant"
+    ],
+    "expected_samples": 10000,
+    "expected_samples_per_language": 2000,
+    "expected_samples_per_language_label": 1000,
+    "bootstrap_replicates": 1000,
+    "bootstrap_seed": 20260909,
+    "target_fpr": 0.01,
+    "predictor_sealed_before_label_join": true,
+    "sample_id_used_only_as_join_key": true,
+    "public_lb_feedback_used": false,
+    "codeparrot_reused": false,
+    "new_model_forward": false
+  },
+  "download_contract": {
+    "file_family": "token_statistics.partNNN.parquet",
+    "shards_per_download": 2,
+    "expected_total_shards": 40,
+    "max_single_shard_bytes": 67108864,
+    "max_batch_bytes": 134217728,
+    "persist_raw_cache": false,
+    "persist_sample_ids": false,
+    "persist_predictions": false,
+    "aggregate_only": true
+  },
+  "api_budget": {
+    "max_calls": 60,
+    "max_pages": 2,
+    "poll_interval_seconds": 0
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "protected_job_private_repository_access": false,
+  "kaggle_compute": false,
+  "competition_submission": false
+}
