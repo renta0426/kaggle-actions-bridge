@@ -1,0 +1,87 @@
+{
+  "experiment_id": "matched-target-context-contrast-v1-10k",
+  "task_id": "P2-01",
+  "status": "implementation_complete_execution_pending",
+  "parent": "matched-target-context-contrast-v1-pilot-500",
+  "parent_result": "runtime_fidelity_pass",
+  "model": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928"
+  },
+  "data": {
+    "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "split": "train",
+    "rows": 10000,
+    "samples_per_language": 2000,
+    "samples_per_language_per_label": 1000,
+    "seed": 2027,
+    "sampling_contract": "exact sample_training_rows(train, 2000, 2027) set, then sort by sample_id; identical fixed 10k source-development cohort",
+    "validation_rows_used": false,
+    "codeparrot_rows_or_labels_used": false
+  },
+  "context_contract": {
+    "context_budgets": [32, 128, 512],
+    "target_tokens": 256,
+    "min_target_tokens": 64,
+    "spans_per_file": 3,
+    "anchor_fractions": [0.25, 0.5, 0.75],
+    "anchor_coordinate": "utf8_byte",
+    "tokenize_once_per_file": true,
+    "shared_target_identity_required": true,
+    "primary_delta": "512_minus_32",
+    "fallback_delta": "128_minus_32",
+    "delta_orientation": "long_minus_short",
+    "primary_aggregation": "max_span",
+    "mean_span_role": "diagnostic",
+    "fallback_never_imputed_as_primary": true
+  },
+  "primary_context_features": [
+    "delta_512_32_mean_logp__max_span",
+    "delta_512_32_paper_minkpp10__max_span",
+    "delta_512_32_local64__max_span"
+  ],
+  "baseline_reproduction": {
+    "same_model_and_same_fixed_10k_cohort": true,
+    "window_contract": "historical whole-or-prefix-middle-suffix, max_length=768",
+    "scores": ["loss_multiwindow", "paper_minkpp10", "local_64"],
+    "historical_loss_and_local_first8_fidelity_required": true,
+    "reason": "compare on the exact primary-eligible subset without exposing private science artifacts to the public bridge runtime"
+  },
+  "evaluation": {
+    "primary_population": "rows with at least one valid 512_minus_32 span",
+    "fallback_population": "rows without primary but with at least one valid 128_minus_32 span; diagnostic only",
+    "metrics": ["auc", "pauc_01", "tpr_at_0.001_fpr", "tpr_at_0.005_fpr", "tpr_at_0.01_fpr", "tpr_at_0.02_fpr"],
+    "per_language": true,
+    "length_quartiles": true,
+    "strict_views": ["stratified_5fold", "minhash_group_5fold", "leave_one_language_out", "length_holdout"],
+    "detection_overlap_at_fpr": 0.01,
+    "bootstrap_replicates": 1000,
+    "automatic_promotion": false
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "model_devices_used": 1,
+    "max_batch_tokens": 12288,
+    "samples_per_shard": 250,
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 180,
+    "automatic_compute_retries": 0
+  },
+  "output_hygiene": {
+    "selection_labels_removed_before_model_scoring": true,
+    "row_level_persisted_outputs_contain_membership_labels": false,
+    "condition_level_scores_persisted": false,
+    "span_contrasts_persisted": true,
+    "file_features_persisted": true,
+    "baseline_features_persisted": true,
+    "scratch_parts_root": "/tmp/matched-target-context-contrast-v1-10k-parts",
+    "scratch_parts_persisted": false
+  },
+  "independent_confirmation_rule": "Any formula/sign/aggregation/feature choice informed by this 10k development result must be frozen before another independently pinned model-specific holdout is opened.",
+  "competition_submission": false,
+  "public_lb_feedback_used": false,
+  "execution_authorized_by_this_file": false
+}
