@@ -93,6 +93,7 @@ class ContextWindow:
     target_token_ids: tuple[int, ...]
 
 
+
 def _char_to_byte_boundaries(content: str) -> list[int]:
     boundaries = [0]
     total = 0
