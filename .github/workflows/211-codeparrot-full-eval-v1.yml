@@ -1,0 +1,419 @@
+name: CodeParrot frozen full-v1 CPU evaluation
+
+on:
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-codeparrot-full-eval-v1.json
+      - .github/workflows/211-codeparrot-full-eval-v1.yml
+      - scripts/kaggle_current_output_read.py
+      - scripts/kaggle_exact_identity.py
+      - scripts/kaggle_policy_preflight.py
+      - scripts/test_kaggle_exact_identity_eventual.py
+      - requirements/kaggle-2.2.4.lock
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-codeparrot-full-eval-v1.json
+      - .github/workflows/211-codeparrot-full-eval-v1.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-codeparrot-full-eval-v1.json
+  SCIENCE_REPOSITORY: renta0426/The-Poisoned-Chalice-of-LLM-Evaluation
+  SCIENCE_COMMIT: ccb675f47d7cf7f6570f9f6698c2a8749241b4e6
+  TARGET_KERNEL: renta0426/codeparrot-fresh-full-v1
+  EXPECTED_VERSION: "1"
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+  CURRENT_OUTPUT_PATH: scripts/kaggle_current_output_read.py
+  EXACT_IDENTITY_PATH: scripts/kaggle_exact_identity.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate exact output-read and frozen science evaluation before approval
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          echo "SOURCE_SHA=${source_sha}" >> "${GITHUB_ENV}"
+
+      - name: Fetch exact bridge request and read-only helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          mkdir -p "${workdir}/bridge"
+          python3 - "${SOURCE_SHA}" "${workdir}/bridge" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          files=(
+              ("requests/poisoned-chalice-codeparrot-full-eval-v1.json",32768,"request.json"),
+              ("scripts/kaggle_current_output_read.py",65536,"kaggle_current_output_read.py"),
+              ("scripts/kaggle_exact_identity.py",65536,"kaggle_exact_identity.py"),
+              ("scripts/kaggle_policy_preflight.py",65536,"kaggle_policy_preflight.py"),
+              ("scripts/test_kaggle_exact_identity_eventual.py",65536,"test_kaggle_exact_identity_eventual.py"),
+          )
+          for remote,maximum,local in files:
+              url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}"
+              req=urllib.request.Request(url,headers={"User-Agent":"codeparrot-full-eval/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"bridge source byte budget failed: {remote}")
+              path=root/local; path.write_bytes(data)
+              if path.suffix==".py": compile(data,str(path),"exec")
+          PY
+          python3 "${workdir}/bridge/kaggle_policy_preflight.py"
+          PYTHONPATH="${workdir}/bridge" python3 "${workdir}/bridge/test_kaggle_exact_identity_eventual.py"
+
+      - name: Validate request contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge/request.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8"))
+          expected={
+              "schema_version":1,
+              "request_id":"20260908-poisoned-chalice-codeparrot-full-eval-v1",
+              "competition":"poisoned-chalice-icse27",
+              "operation":"current_output_read_and_cpu_evaluate",
+              "target":"renta0426/codeparrot-fresh-full-v1",
+              "expected_current_version":1,
+              "required_terminal_status":"COMPLETE",
+              "automatic_compute_retries":0,
+          }
+          for key,value in expected.items():
+              if r.get(key)!=value: raise SystemExit(f"request mismatch: {key}")
+          s=r["science_source"]
+          if s!={"repository":"renta0426/The-Poisoned-Chalice-of-LLM-Evaluation","commit":"ccb675f47d7cf7f6570f9f6698c2a8749241b4e6","evaluation_script":"scripts/run_codeparrot_fresh_evaluation.py"}:
+              raise SystemExit("science identity mismatch")
+          files=r["uploaded_result_identity"]["files"]
+          exact={
+              "full_predictions.parquet":(678787,"b58af53be1a3192d64e5019439e6161effb74793bcc543edbd9b1fa900a381b2"),
+              "full_manifest.json":(1737,"70c22c9a5f7c6b2c6b5047f0cc3aa1f17e11083f1d01832a5427f99cc7ca143d"),
+              "full_fidelity.json":(1207,"33f9fdb5613187b7f3b1f9d5c22baec4e6d963d09f8597a69fdc621dbabfe47c"),
+              "full_profile.json":(452,"5c1a382230da47fb10639e39fc59d64d757c18b76fa18a0cbc86d9b3a9e98ba1"),
+              "__huggingface_repos__.json":(428,"ca4f4b5cf807255279e140a8f6a23fef007d562cb791919f0866c4aa5e0de5bd"),
+          }
+          if set(files)!=set(exact): raise SystemExit("output allowlist mismatch")
+          for name,(size,digest) in exact.items():
+              if files[name].get("bytes")!=size or files[name].get("sha256")!=digest:
+                  raise SystemExit(f"output identity mismatch: {name}")
+          read=r["read_contract"]
+          if read.get("identity_authority")!="exact_GetKernel_only" or read.get("historical_output_fallback") is not False or read.get("allow_failed_run_salvage") is not False or read.get("automatic_read_retries")!=0:
+              raise SystemExit("read boundary mismatch")
+          ev=r["evaluation_contract"]
+          required_false=("kaggle_compute_started","kaggle_kernel_write_allowed","competition_submission_allowed","public_leaderboard_read_allowed","row_level_prediction_label_artifact_allowed","result_derived_codeparrot_retuning_allowed")
+          if any(ev.get(key) is not False for key in required_false): raise SystemExit("evaluation side-effect boundary mismatch")
+          if ev.get("membership_source_open_only_after_label_free_predictor_hash") is not True or ev.get("bootstrap_replicates")!=1000 or ev.get("primary_fpr")!=0.01:
+              raise SystemExit("frozen evaluation contract mismatch")
+          if r["authentication"]!={"environment":"kaggle-readonry","credential_scope":"current_output_read_only","credential_must_be_removed_before_membership_reconstruction":True}:
+              raise SystemExit("authentication boundary mismatch")
+          print("CODEPARROT_FULL_EVAL_REQUEST_STATIC PASS exact_version=1 files=5 compute=0 submission=0")
+          PY
+
+      - name: Materialize pinned science evaluation source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${WORKDIR}/science/src/poisoned_chalice" "${WORKDIR}/science/scripts" "${WORKDIR}/science/configs" "${WORKDIR}/science/experiments/codeparrot-fresh-confirmation-v1" "${WORKDIR}/science/tests"
+          python3 - "${WORKDIR}/science" "${SCIENCE_COMMIT}" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          root=pathlib.Path(sys.argv[1]); sha=sys.argv[2]; ctx=ssl.create_default_context()
+          files={
+              "scripts/run_codeparrot_fresh_evaluation.py":131072,
+              "configs/codeparrot_fresh_confirmation_v1.json":32768,
+              "experiments/codeparrot-fresh-confirmation-v1/full_result_audit_20260908.json":32768,
+              "src/poisoned_chalice/__init__.py":32768,
+              "src/poisoned_chalice/codeparrot_artifacts.py":65536,
+              "src/poisoned_chalice/codeparrot_evaluation.py":131072,
+              "src/poisoned_chalice/codeparrot_fresh.py":131072,
+              "src/poisoned_chalice/codeparrot_postscore.py":131072,
+              "src/poisoned_chalice/novelty_evaluation_v2.py":131072,
+              "tests/test_codeparrot_postscore.py":65536,
+              "tests/test_codeparrot_evaluation.py":65536,
+          }
+          for rel,maximum in files.items():
+              url=f"https://raw.githubusercontent.com/renta0426/The-Poisoned-Chalice-of-LLM-Evaluation/{sha}/{rel}"
+              req=urllib.request.Request(url,headers={"User-Agent":"codeparrot-full-eval/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"science source byte budget failed: {rel}")
+              path=root/rel; path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
+              if path.suffix==".py": compile(data,str(path),"exec")
+          PY
+          python3 - "${WORKDIR}/science/scripts/run_codeparrot_fresh_evaluation.py" <<'PY'
+          import pathlib,sys
+          source=pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          order=(
+              "prediction_only = prepare_label_free_predictors(raw)",
+              "label_free_predictor_sha256 = _canonical_frame_sha256(predictor_identity)",
+              "labels, reconstruction = _reconstruct_evaluation_manifest(config)",
+          )
+          positions=[source.index(token) for token in order]
+          if positions != sorted(positions): raise SystemExit("membership reconstruction occurs before predictor seal")
+          if 'codeparrot_consumed_after_first_label_join' not in source or 'result_derived_codeparrot_retuning_authorized' not in source:
+              raise SystemExit("consumed-model boundary missing")
+          if 'predictions.to_parquet' in source or 'membership.to_' in source:
+              raise SystemExit("unexpected row-level persistence path")
+          print("CODEPARROT_FULL_EVAL_ORDER_STATIC PASS predictor_seal_before_labels=1 row_join_persisted=0")
+          PY
+
+      - name: Install pinned evaluation dependencies and run science regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/eval-venv"
+          "${WORKDIR}/eval-venv/bin/pip" install --disable-pip-version-check --no-input \
+            numpy==2.3.5 pandas==2.3.3 scipy==1.17.0 scikit-learn==1.8.0 \
+            datasets==4.8.5 pyarrow==24.0.0 pytest==8.4.2 >/dev/null
+          PYTHONPATH="${WORKDIR}/science/src" "${WORKDIR}/eval-venv/bin/python" -m pytest -q \
+            "${WORKDIR}/science/tests/test_codeparrot_postscore.py" \
+            "${WORKDIR}/science/tests/test_codeparrot_evaluation.py"
+          "${WORKDIR}/eval-venv/bin/python" - <<'PY'
+          import datasets,numpy,pandas,pyarrow,scipy,sklearn
+          print("CODEPARROT_FULL_EVAL_DEPS PASS", {
+              "datasets":datasets.__version__,"numpy":numpy.__version__,"pandas":pandas.__version__,
+              "pyarrow":pyarrow.__version__,"scipy":scipy.__version__,"sklearn":sklearn.__version__,
+          })
+          PY
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+
+  evaluate:
+    name: Read exact CodeParrot full output and evaluate once on CPU
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Enforce protected read/evaluation boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/211-codeparrot-full-eval-v1.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "forbidden credential variable: ${name}"; exit 1; }
+          done
+          echo "CODEPARROT_FULL_EVAL_BOUNDARY PASS current_output_read=1 kaggle_compute=0 kernel_write=0 submission=0"
+
+      - name: Materialize exact bridge and pinned science sources
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          mkdir -p "${workdir}/bridge" "${workdir}/science/src/poisoned_chalice" "${workdir}/science/scripts" "${workdir}/science/configs" "${workdir}/science/experiments/codeparrot-fresh-confirmation-v1"
+          python3 - "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
+          files=(
+              ("requests/poisoned-chalice-codeparrot-full-eval-v1.json",32768,"request.json"),
+              ("scripts/kaggle_current_output_read.py",65536,"kaggle_current_output_read.py"),
+              ("scripts/kaggle_exact_identity.py",65536,"kaggle_exact_identity.py"),
+              ("scripts/kaggle_policy_preflight.py",65536,"kaggle_policy_preflight.py"),
+              ("requirements/kaggle-2.2.4.lock",262144,"kaggle.lock"),
+          )
+          for remote,maximum,local in files:
+              url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}"
+              req=urllib.request.Request(url,headers={"User-Agent":"codeparrot-full-eval/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"bridge material byte budget failed: {remote}")
+              path=root/local; path.write_bytes(data)
+              if path.suffix==".py": compile(data,str(path),"exec")
+          PY
+          python3 - "${workdir}/science" "${SCIENCE_COMMIT}" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          root=pathlib.Path(sys.argv[1]); sha=sys.argv[2]; ctx=ssl.create_default_context()
+          files={
+              "scripts/run_codeparrot_fresh_evaluation.py":131072,
+              "configs/codeparrot_fresh_confirmation_v1.json":32768,
+              "experiments/codeparrot-fresh-confirmation-v1/full_result_audit_20260908.json":32768,
+              "src/poisoned_chalice/__init__.py":32768,
+              "src/poisoned_chalice/codeparrot_artifacts.py":65536,
+              "src/poisoned_chalice/codeparrot_evaluation.py":131072,
+              "src/poisoned_chalice/codeparrot_fresh.py":131072,
+              "src/poisoned_chalice/codeparrot_postscore.py":131072,
+              "src/poisoned_chalice/novelty_evaluation_v2.py":131072,
+          }
+          for rel,maximum in files.items():
+              url=f"https://raw.githubusercontent.com/renta0426/The-Poisoned-Chalice-of-LLM-Evaluation/{sha}/{rel}"
+              req=urllib.request.Request(url,headers={"User-Agent":"codeparrot-full-eval/1"})
+              with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f"science material byte budget failed: {rel}")
+              path=root/rel; path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
+              if path.suffix==".py": compile(data,str(path),"exec")
+          PY
+          python3 "${workdir}/bridge/kaggle_policy_preflight.py"
+
+      - name: Install locked Kaggle client and pinned CPU evaluation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/kaggle.lock" >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          python3 -m venv "${WORKDIR}/eval-venv"
+          "${WORKDIR}/eval-venv/bin/pip" install --disable-pip-version-check --no-input \
+            numpy==2.3.5 pandas==2.3.3 scipy==1.17.0 scikit-learn==1.8.0 \
+            datasets==4.8.5 pyarrow==24.0.0 >/dev/null
+          echo "CODEPARROT_FULL_EVAL_PREP PASS locked_kaggle_cli=2.2.4 cpu_eval=1"
+
+      - name: Read exact successful current output and verify uploaded identity
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          mkdir -p "${HOME}/.kaggle"; umask 077
+          printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"
+          unset KAGGLE_API_TOKEN
+          PATH="${WORKDIR}/kaggle-venv/bin:${PATH}" PYTHONPATH="${WORKDIR}/bridge" \
+            "${WORKDIR}/kaggle-venv/bin/python" "${WORKDIR}/bridge/kaggle_current_output_read.py" \
+              --kernel "${TARGET_KERNEL}" \
+              --expected-version "${EXPECTED_VERSION}" \
+              --allow-file "full_predictions.parquet:678787" \
+              --allow-file "full_manifest.json:1737" \
+              --allow-file "full_fidelity.json:1207" \
+              --allow-file "full_profile.json:452" \
+              --allow-file "__huggingface_repos__.json:428" \
+              --output-dir "${WORKDIR}/raw-output"
+          "${WORKDIR}/eval-venv/bin/python" - "${WORKDIR}/bridge/request.json" "${WORKDIR}/raw-output" <<'PY'
+          import hashlib,json,pathlib,sys
+          request=json.load(open(sys.argv[1],encoding="utf-8")); root=pathlib.Path(sys.argv[2])
+          expected=request["uploaded_result_identity"]["files"]
+          if set(p.name for p in root.iterdir() if p.is_file()) != set(expected): raise SystemExit("saved output allowlist mismatch")
+          for name,identity in expected.items():
+              path=root/name; data=path.read_bytes()
+              if len(data)!=identity["bytes"]: raise SystemExit(f"uploaded/current byte mismatch: {name}")
+              if hashlib.sha256(data).hexdigest()!=identity["sha256"]: raise SystemExit(f"uploaded/current sha mismatch: {name}")
+          print("CODEPARROT_FULL_EVAL_OUTPUT_IDENTITY PASS exact_current_version=1 uploaded_match=1 files=5")
+          PY
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          [[ ! -e "${HOME}/.kaggle/access_token" && ! -e "${HOME}/.kaggle/kaggle.json" ]]
+          echo "CODEPARROT_FULL_EVAL_CREDENTIAL_BOUNDARY PASS kaggle_credentials_removed_before_label_source=1"
+
+      - name: Run first and only frozen CodeParrot membership evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -z "${KAGGLE_API_TOKEN-}" && ! -e "${HOME}/.kaggle/access_token" && ! -e "${HOME}/.kaggle/kaggle.json" ]]
+          "${WORKDIR}/eval-venv/bin/python" "${WORKDIR}/science/scripts/run_codeparrot_fresh_evaluation.py" \
+            --prediction-dir "${WORKDIR}/raw-output" \
+            --config "${WORKDIR}/science/configs/codeparrot_fresh_confirmation_v1.json" \
+            --uploaded-audit "${WORKDIR}/science/experiments/codeparrot-fresh-confirmation-v1/full_result_audit_20260908.json" \
+            --output-dir "${WORKDIR}/aggregate-output"
+
+      - name: Audit aggregate-only evaluation result and print frozen headline metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/eval-venv/bin/python" - "${WORKDIR}/aggregate-output" "${WORKDIR}/bridge/request.json" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); request=json.load(open(sys.argv[2],encoding="utf-8"))
+          files=sorted(p.name for p in root.iterdir() if p.is_file())
+          if files != ["REPORT.md","evaluation_summary.json"]: raise SystemExit(f"unexpected aggregate files: {files}")
+          if any(p.stat().st_size<=0 or p.stat().st_size>2_000_000 for p in root.iterdir() if p.is_file()): raise SystemExit("aggregate artifact byte contract failed")
+          summary=json.load(open(root/"evaluation_summary.json",encoding="utf-8")); report=(root/"REPORT.md").read_text(encoding="utf-8")
+          if summary.get("status")!="complete_fresh_holdout_evaluation" or summary.get("rows")!=4000 or summary.get("members")!=2000 or summary.get("nonmembers")!=2000: raise SystemExit("evaluation completion contract failed")
+          if summary.get("uploaded_bundle_sha256")!=request["uploaded_result_identity"]["bundle_sha256"]: raise SystemExit("uploaded bundle binding failed")
+          if summary.get("codeparrot_consumed_after_first_label_join") is not True or summary.get("result_derived_codeparrot_retuning_authorized") is not False: raise SystemExit("consumed-model boundary failed")
+          join=summary.get("label_join_order",{})
+          if join.get("label_free_predictors_sealed_before_membership_source_open") is not True or join.get("membership_join_performed_once_for_frozen_evaluation") is not True or join.get("row_level_join_persisted") is not False: raise SystemExit("label-join ordering boundary failed")
+          clean=summary.get("clean_room",{})
+          if clean.get("current_competition_rows_used")!=0 or clean.get("public_lb_feedback_used") is not False or summary.get("official_novelty_score_computed") is not False: raise SystemExit("clean-room result boundary failed")
+          prediction_identity=summary.get("prediction_artifact_identity",{})
+          for name in ("full_predictions.parquet","full_manifest.json","full_fidelity.json","full_profile.json"):
+              expected=request["uploaded_result_identity"]["files"][name]
+              if prediction_identity.get(name)!={"bytes":expected["bytes"],"sha256":expected["sha256"]}: raise SystemExit(f"prediction identity not bound: {name}")
+          serialized=json.dumps(summary,sort_keys=True)
+          if "cp-" in serialized or "cp-" in report: raise SystemExit("row-level sample identifier leaked into aggregate output")
+          metrics=summary["predictor_metrics"]; boot=summary["primary_paired_repository_group_bootstrap"]["conservative_empirical_tpr"]
+          headline={
+              "local_64_auc":metrics["local_64"]["auc_roc"],
+              "local_64_tpr_01":metrics["local_64"]["low_fpr"]["0.010"]["conservative_empirical"]["tpr"],
+              "aux_auc":metrics["short_half_local_or_paper_v1"]["auc_roc"],
+              "aux_tpr_01":metrics["short_half_local_or_paper_v1"]["low_fpr"]["0.010"]["conservative_empirical"]["tpr"],
+              "stage2_v1_auc":metrics["stage2_v1_rank_fusion"]["auc_roc"],
+              "bootstrap_tpr_delta_mean":boot["mean"],
+              "bootstrap_tpr_delta_lower95":boot["lower_95"],
+              "bootstrap_tpr_delta_upper95":boot["upper_95"],
+              "promote_aux":summary["promote_short_half_local_or_paper_v1"],
+              "label_free_predictor_sha256":summary["label_free_predictor_sha256"],
+              "evaluation_manifest_sha256":summary["evaluation_manifest_sha256"],
+          }
+          print("CODEPARROT_FULL_EVAL_RESULT PASS "+json.dumps(headline,sort_keys=True))
+          PY
+
+      - name: Upload aggregate-only frozen evaluation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeparrot-fresh-full-v1-frozen-evaluation
+          path: ${{ env.WORKDIR }}/aggregate-output
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+
+      - name: Cleanup credentials and row-level runner-local material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
+            rm -rf "${WORKDIR}/raw-output" "${WORKDIR}/science" "${WORKDIR}/bridge" "${WORKDIR}/eval-venv" "${WORKDIR}/kaggle-venv" "${WORKDIR}/aggregate-output"
+            rmdir "${WORKDIR}" 2>/dev/null || true
+          fi
+          echo "CODEPARROT_FULL_EVAL_CLEANUP PASS raw_prediction_retained=0 row_label_join_retained=0 credentials_retained=0"
