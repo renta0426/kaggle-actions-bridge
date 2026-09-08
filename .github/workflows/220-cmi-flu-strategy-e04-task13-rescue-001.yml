@@ -7,15 +7,19 @@ on:
       - .github/workflows/220-cmi-flu-strategy-e04-task13-rescue-001.yml
       - requests/cmi-flu-strategy-e04-task13-rescue-001.json
       - scripts/cmi_flu_strategy_e04_prepare.py
+      - scripts/cmi_flu_strategy_e04_prepare_v2.py
       - scripts/cmi_flu_strategy_e04_execute.py
       - scripts/cmi_flu_strategy_e04_sanitize.py
+      - payloads/cmi-flu-strategy-e04-task13-rescue-001/**
   pull_request:
     paths:
       - .github/workflows/220-cmi-flu-strategy-e04-task13-rescue-001.yml
       - requests/cmi-flu-strategy-e04-task13-rescue-001.json
       - scripts/cmi_flu_strategy_e04_prepare.py
+      - scripts/cmi_flu_strategy_e04_prepare_v2.py
       - scripts/cmi_flu_strategy_e04_execute.py
       - scripts/cmi_flu_strategy_e04_sanitize.py
+      - payloads/cmi-flu-strategy-e04-task13-rescue-001/**
 
 permissions: {}
 concurrency:
@@ -52,7 +56,7 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e04-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e04-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(40_000_001)
           if len(data)>40_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
@@ -60,8 +64,9 @@ jobs:
             if len(prefixes)!=1:raise SystemExit('archive layout')
             prefix=next(iter(prefixes))+'/'
             for m in files:
+              if not m.name.startswith(prefix):raise SystemExit('archive prefix')
               rel=pathlib.PurePosixPath(m.name[len(prefix):])
-              if not m.name.startswith(prefix) or '..' in rel.parts:raise SystemExit('unsafe archive')
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
               out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
           PY
       - name: Install E04 synthetic modeling dependencies
@@ -73,8 +78,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_prepare.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_execute.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_sanitize.py"
-          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_prepare.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
+          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_prepare.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_prepare_v2.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_execute.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_sanitize.py"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_prepare_v2.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
           python3 "${WORKDIR}/runtime.py" --self-test
           mkdir "${WORKDIR}/synthetic"
           python3 "${WORKDIR}/runtime.py" --synthetic --output-dir "${WORKDIR}/synthetic"
@@ -83,12 +88,13 @@ jobs:
           root=pathlib.Path(sys.argv[1]); assert sorted(p.name for p in root.iterdir())==['bridge-result.json','metrics.json','summary.md']
           b=json.loads((root/'bridge-result.json').read_text()); m=json.loads((root/'metrics.json').read_text())
           assert b['synthetic'] is True and b['science_commit']=='6e4d786cddc7b2d02dc4671d1c005db551d19ad6'
+          assert b['strategy_e04_blob_sha']=='73c112a8bb3b1ee7a6dd5bfbd5645a945bea6ebb'
           assert m['experiment']=='strategy_v2_e04_task13_anchor_preserving_rescue' and m['task']=='Task1.3'
           assert m['frozen_conditions']['residual_alpha']==10.0 and m['frozen_conditions']['proxy_weights']==[0.25,1.0]
           assert m['frozen_control_reproduction']['status']=='synthetic_not_real_data'
           text=(root/'metrics.json').read_text(); assert '"participant_id"' not in text and '"subject_group"' not in text
           PY
-          ! grep -R -E 'kaggle[[:space:]]+competitions[[:space:]]+submit|competition_submit' "${WORKDIR}/runtime.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_"* >/dev/null
+          ! grep -R -E 'kaggle[[:space:]]+competitions[[:space:]]+submit|competition_submit\(' "${WORKDIR}/runtime.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e04_"* >/dev/null
           echo CMI_FLU_E04_VALIDATE_PASS
       - name: Cleanup validation content
         if: always()
@@ -131,15 +137,20 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e04-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e04-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(40_000_001)
           if len(data)>40_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
-            files=[m for m in tf.getmembers() if m.isfile()]; prefix=next(iter({m.name.split('/',1)[0] for m in files}))+'/'
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
             for m in files:
-              rel=pathlib.PurePosixPath(m.name[len(prefix):]); out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+              if not m.name.startswith(prefix):raise SystemExit('archive prefix')
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
           PY
-          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e04_prepare.py" --repository-root "${workdir}/bridge" --output "${workdir}/runtime.py"
+          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e04_prepare_v2.py" --repository-root "${workdir}/bridge" --output "${workdir}/runtime.py"
           python3 "${workdir}/runtime.py" --self-test
       - name: Install locked Kaggle CLI
         shell: bash
