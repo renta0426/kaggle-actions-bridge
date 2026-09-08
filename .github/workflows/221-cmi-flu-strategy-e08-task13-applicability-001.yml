@@ -7,6 +7,7 @@ on:
       - .github/workflows/221-cmi-flu-strategy-e08-task13-applicability-001.yml
       - requests/cmi-flu-strategy-e08-task13-applicability-001.json
       - scripts/cmi_flu_strategy_e08_prepare.py
+      - scripts/cmi_flu_strategy_e08_prepare_v2.py
       - scripts/cmi_flu_strategy_e08_execute.py
       - scripts/cmi_flu_strategy_e08_sanitize.py
       - payloads/cmi-flu-strategy-e08-task13-applicability-001/**
@@ -15,6 +16,7 @@ on:
       - .github/workflows/221-cmi-flu-strategy-e08-task13-applicability-001.yml
       - requests/cmi-flu-strategy-e08-task13-applicability-001.json
       - scripts/cmi_flu_strategy_e08_prepare.py
+      - scripts/cmi_flu_strategy_e08_prepare_v2.py
       - scripts/cmi_flu_strategy_e08_execute.py
       - scripts/cmi_flu_strategy_e08_sanitize.py
       - payloads/cmi-flu-strategy-e08-task13-applicability-001/**
@@ -54,7 +56,7 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e08-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e08-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(40_000_001)
           if len(data)>40_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
@@ -76,8 +78,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_prepare.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_execute.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_sanitize.py"
-          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_prepare.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
+          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_prepare.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_prepare_v2.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_execute.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_sanitize.py"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e08_prepare_v2.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
           python3 "${WORKDIR}/runtime.py" --self-test
           mkdir "${WORKDIR}/synthetic"
           python3 "${WORKDIR}/runtime.py" --synthetic --output-dir "${WORKDIR}/synthetic"
@@ -139,7 +141,7 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e08-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e08-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(40_000_001)
           if len(data)>40_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
@@ -152,7 +154,7 @@ jobs:
               if '..' in rel.parts:raise SystemExit('unsafe archive')
               out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
           PY
-          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e08_prepare.py" --repository-root "${workdir}/bridge" --output "${workdir}/runtime.py"
+          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e08_prepare_v2.py" --repository-root "${workdir}/bridge" --output "${workdir}/runtime.py"
           python3 "${workdir}/runtime.py" --self-test
       - name: Install locked Kaggle CLI
         shell: bash
