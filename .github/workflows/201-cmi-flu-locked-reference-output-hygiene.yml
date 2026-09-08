@@ -1,0 +1,54 @@
+name: CMI-Flu locked-reference output hygiene regression
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/200-cmi-flu-strategy-e06b-task23-two-head-001.yml
+      - .github/workflows/201-cmi-flu-locked-reference-output-hygiene.yml
+      - scripts/cmi_flu_strategy_e05_prepare_v3.py
+      - scripts/test_cmi_flu_locked_reference_output_hygiene.py
+      - scripts/kaggle_current_output_read.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/200-cmi-flu-strategy-e06b-task23-two-head-001.yml
+      - .github/workflows/201-cmi-flu-locked-reference-output-hygiene.yml
+      - scripts/cmi_flu_strategy_e05_prepare_v3.py
+      - scripts/test_cmi_flu_locked_reference_output_hygiene.py
+      - scripts/kaggle_current_output_read.py
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Enforce secret-free regression boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]] || exit 1; done
+
+      - name: Verify transient staging and strict reader
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/cmi_flu_strategy_e05_prepare_v3.py scripts/test_cmi_flu_locked_reference_output_hygiene.py
+          python3 scripts/test_cmi_flu_locked_reference_output_hygiene.py
+          ! grep -F '/kaggle/working/.e05-locked-references' scripts/cmi_flu_strategy_e05_prepare_v3.py
+          grep -F 'Path("/tmp")' scripts/cmi_flu_strategy_e05_prepare_v3.py >/dev/null
+          grep -F 'unexpected_saved_output_count' scripts/kaggle_current_output_read.py >/dev/null
+
+      - name: Verify consumed E06b launcher is inert
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=.github/workflows/200-cmi-flu-strategy-e06b-task23-two-head-001.yml
+          grep -Eq 'RETIRED|Retired|retired' "$f"
+          ! grep -Eq '^[[:space:]]+push:|^[[:space:]]+pull_request:|environment:|KAGGLE_API_TOKEN|group:[[:space:]]+kaggle-resource' "$f"
