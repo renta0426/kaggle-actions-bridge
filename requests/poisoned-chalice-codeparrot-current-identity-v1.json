@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "request_id": "20260908-codeparrot-current-identity-after-mismatch-001",
+  "operation": "read_exact_metadata_only",
+  "target": "renta0426/codeparrot-fresh-full-v1",
+  "expected_current_version": 1,
+  "diagnoses_run": 34177475292,
+  "failure_category": "current_version_mismatch",
+  "exact_get_kernel_invocations": 1,
+  "output_download_invocations": 0,
+  "automatic_retries": 0,
+  "kaggle_write_calls": 0,
+  "kaggle_compute_started": false,
+  "membership_sources_allowed": false,
+  "performance_evaluation_allowed": false,
+  "version_substitution_allowed": false,
+  "environment": "kaggle-readonry"
+}
