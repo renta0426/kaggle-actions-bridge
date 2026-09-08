@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "request_id": "20260908-cmi-flu-e06a-003-readonly-recovery-001",
+  "operation": "kernel_current_failed_recovery_read",
+  "target": "renta0426/cmi-flu-e06a-task23-calibration-20260908-003",
+  "expected_kernel_version": 1,
+  "expected_runtime_sha256": "c43767288c4994a743700831de5d1a24283b2f6a93f57844a555c19db96709b8",
+  "science_source_commit": "c968d00eb209e55e53b88643d99382ad6915c87e",
+  "failed_bridge_run_id": 34175015608,
+  "failed_bridge_job_id": 101902673219,
+  "known_failure": {
+    "stage": "write_outputs",
+    "exception_type": "KeyError",
+    "error_code": "6d98aeb26dde4e8134ee",
+    "decoded_error": "KeyError:'tasks'",
+    "root_cause": "E06a inherited the E05 completion marker tasks={len(result['tasks'])}; E06a has conditions rather than tasks, so the failure occurs after scientific execution and validation during output/completion handling"
+  },
+  "allowed_reads": ["current_code", "current_saved_output"],
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
+  "new_write_attempted": false,
+  "new_compute_requested": false,
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0
+}
