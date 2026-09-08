@@ -19,26 +19,51 @@ on:
 
 permissions: {}
 
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+
 jobs:
   validate:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-
       - name: Enforce secret-free regression boundary
         shell: bash
         run: |
           set -euo pipefail
           for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]] || exit 1; done
 
+      - name: Materialize exact public bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-output-hygiene/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]
+            prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              if not m.name.startswith(prefix):raise SystemExit('archive prefix')
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
       - name: Verify transient staging and strict reader
         shell: bash
         run: |
           set -euo pipefail
+          cd "${WORKDIR}/bridge"
           python3 -m py_compile scripts/cmi_flu_strategy_e05_prepare_v3.py scripts/test_cmi_flu_locked_reference_output_hygiene.py
           python3 scripts/test_cmi_flu_locked_reference_output_hygiene.py
           ! grep -F '/kaggle/working/.e05-locked-references' scripts/cmi_flu_strategy_e05_prepare_v3.py
@@ -49,6 +74,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cd "${WORKDIR}/bridge"
           f=.github/workflows/200-cmi-flu-strategy-e06b-task23-two-head-001.yml
           grep -Eq 'RETIRED|Retired|retired' "$f"
           ! grep -Eq '^[[:space:]]+push:|^[[:space:]]+pull_request:|environment:|KAGGLE_API_TOKEN|group:[[:space:]]+kaggle-resource' "$f"
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
