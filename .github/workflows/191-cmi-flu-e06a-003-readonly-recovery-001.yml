@@ -86,8 +86,18 @@ jobs:
           ! grep -Eq 'kernels[[:space:]]+push|competitions[[:space:]]+submit|competition_submit' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py"
           grep -F 'verb not in {"pull", "output"}' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py" >/dev/null
           grep -F 'new_write_attempted": False' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py" >/dev/null
-          grep -F 'tasks={len(result[' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_completion_marker.py" >/dev/null
-          grep -F 'conditions={len((result.get(' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_completion_marker.py" >/dev/null
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 - <<'PY'
+          from cmi_flu_e06a_completion_marker import patch_runtime, OLD, NEW
+          source = "print(f\"tasks={len(result['tasks'])}\")"
+          patched = patch_runtime(source)
+          assert OLD not in patched
+          assert NEW in patched
+          assert "result['tasks']" not in patched
+          assert "result.get('conditions')" in patched
+          print("CMI_FLU_E06A_COMPLETION_MARKER_REGRESSION_PASS")
+          PY
+          grep -F "tasks={len(result[" "${WORKDIR}/bridge/scripts/cmi_flu_e06a_completion_marker.py" >/dev/null
+          grep -F "conditions={len((result.get(" "${WORKDIR}/bridge/scripts/cmi_flu_e06a_completion_marker.py" >/dev/null
 
       - name: Cleanup validation content
         if: always()
@@ -117,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
-          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
           [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
           [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/191-cmi-flu-e06a-003-readonly-recovery-001.yml@refs/heads/main" ]]
 
