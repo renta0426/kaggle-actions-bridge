@@ -1,0 +1,238 @@
+name: CMI-Flu E03 ambiguous-push read-only reconcile v2
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/224-cmi-flu-strategy-e03-push-reconcile-v2.yml
+      - requests/cmi-flu-strategy-e03-push-reconcile-002.json
+      - requirements/kaggle-2.2.4.lock
+      - scripts/kaggle_exact_identity.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/224-cmi-flu-strategy-e03-push-reconcile-v2.yml
+      - requests/cmi-flu-strategy-e03-push-reconcile-002.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-strategy-e03-push-reconcile-002.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET_KERNEL: renta0426/cmi-flu-e03-task11-optional-view-fusion-20260908-001
+  TARGET_SLUG: cmi-flu-e03-task11-optional-view-fusion-20260908-001
+  TARGET_TITLE: CMI Flu E03 Task11 Optional View Fusion 20260908 001
+  EXPECTED_VERSION: "1"
+
+jobs:
+  validate:
+    name: Validate E03 reconcile-v2 request without secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+      - name: Materialize exact event commit and validate request
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EVENT_SHA}" <<'PY'
+          import io,json,pathlib,ssl,sys,tarfile,urllib.request
+          target=pathlib.Path(sys.argv[1]); ref=sys.argv[2]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/renta0426/kaggle-actions-bridge/tarball/{ref}",headers={"User-Agent":"cmi-flu-e03-reconcile-v2/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit("bridge archive exceeds byte budget")
+          with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as archive:
+            files=[m for m in archive.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit("bridge archive layout invalid")
+            prefix=next(iter(prefixes))+'/'
+            for member in files:
+              rel=pathlib.PurePosixPath(member.name[len(prefix):])
+              if not member.name.startswith(prefix) or not rel.parts or '..' in rel.parts:raise SystemExit("unsafe bridge archive")
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(member).read())
+          manifest=json.loads((target/'requests/cmi-flu-strategy-e03-push-reconcile-002.json').read_text(encoding='utf-8'))
+          expected={
+            'schema_version':1,
+            'request_id':'20260908-cmi-flu-strategy-e03-push-reconcile-002',
+            'operation':'exact_private_kernel_multi_endpoint_reconcile_read_only',
+            'target':'renta0426/cmi-flu-e03-task11-optional-view-fusion-20260908-001',
+            'expected_version_if_metadata_available':1,
+            'prior_workflow_run_id':34193867697,
+            'prior_reconcile_run_id':34196027232,
+            'prior_reconcile_result':'unresolved_after_bounded_exact_reads',
+            'diagnostic_result_is_not_ci_failure':True,
+            'side_effects':[],
+            'competition_submission_attempted':False,
+            'kaggle_write_attempted':False,
+            'automatic_compute_retries':0,
+          }
+          for key,value in expected.items():
+            if manifest.get(key)!=value:raise SystemExit(f'reconcile-v2 request mismatch:{key}')
+          budget=manifest.get('api_budget') or {}
+          if budget!={'exact_metadata_attempts':4,'exact_status_attempts':2,'exact_file_list_attempts':2,'delay_seconds':5,'list_page_size':20,'max_total_calls':12}:raise SystemExit('reconcile-v2 api budget mismatch')
+          if manifest.get('result_states')!=['exists','absent','unresolved']:raise SystemExit('reconcile-v2 result-state contract mismatch')
+          print('CMI_FLU_E03_RECONCILE_V2_REQUEST PASS read_only=true')
+          PY
+      - name: Verify workflow has no Kaggle write or submission command
+        shell: bash
+        run: |
+          set -euo pipefail
+          f="${WORKDIR}/bridge/.github/workflows/224-cmi-flu-strategy-e03-push-reconcile-v2.yml"
+          ! grep -Eq 'kernels[[:space:]]+push|save_kernel|competitions[[:space:]]+submit|competition_submit|delete_kernel' "$f"
+          echo 'CMI_FLU_E03_RECONCILE_V2_STATIC_SAFETY PASS'
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  reconcile:
+    name: Diagnose exact private E03 target without writes
+    needs: validate
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${WORKFLOW_SHA}" == "${EVENT_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/224-cmi-flu-strategy-e03-push-reconcile-v2.yml@refs/heads/main" ]]
+      - name: Materialize approved commit and install locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target=pathlib.Path(sys.argv[1]); ref=sys.argv[2]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/renta0426/kaggle-actions-bridge/tarball/{ref}",headers={"User-Agent":"cmi-flu-e03-reconcile-v2/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit("bridge archive exceeds byte budget")
+          with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as archive:
+            files=[m for m in archive.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit("bridge archive layout invalid")
+            prefix=next(iter(prefixes))+'/'
+            for member in files:
+              rel=pathlib.PurePosixPath(member.name[len(prefix):])
+              if not member.name.startswith(prefix) or not rel.parts or '..' in rel.parts:raise SystemExit("unsafe bridge archive")
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(member).read())
+          PY
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/bridge/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+      - name: Run bounded multi-endpoint read-only reconciliation
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          PYTHONPATH: ${{ env.WORKDIR }}/bridge/scripts
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/venv/bin/python" - <<'PY'
+          from __future__ import annotations
+          from collections import Counter
+          import os,time
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          from kaggle_exact_identity import _http_status, validate_metadata
+
+          target=os.environ['TARGET_KERNEL']; owner,slug=target.split('/',1)
+          expected=int(os.environ['EXPECTED_VERSION']); api=KaggleApi(); api.authenticate()
+
+          def probe(label, fn, attempts):
+              counts=Counter(); value=None
+              for index in range(attempts):
+                  try:
+                      value=fn(); return value,counts
+                  except Exception as exc:
+                      code=_http_status(exc); counts[str(code) if code is not None else 'none']+=1
+                      if code==429:raise SystemExit(f'E03_RECONCILE_V2 {label}_rate_limit_stop')
+                      if index+1<attempts:time.sleep(5)
+              return None,counts
+
+          def metadata_read():
+              request=ApiGetKernelRequest(); request.user_name=owner; request.kernel_slug=slug
+              with api.build_kaggle_client() as client:
+                  return client.kernels.kernels_api_client.get_kernel(request).metadata
+
+          metadata,meta_codes=probe('metadata',metadata_read,4)
+          status,status_codes=probe('status',lambda:api.kernels_status(target),2)
+          files,file_codes=probe('files',lambda:api.kernels_list_files(target,page_size=1),2)
+          listed_search=api.kernels_list(user=owner,search=slug,page_size=20) or []
+          listed_recent=api.kernels_list(user=owner,sort_by='dateRun',page_size=20) or []
+          search_present=target in {str(getattr(item,'ref','')) for item in listed_search}
+          recent_present=target in {str(getattr(item,'ref','')) for item in listed_recent}
+
+          exact_identity=False
+          if metadata is not None:
+              validate_metadata(metadata,target,expected,cpu=True); exact_identity=True
+
+          endpoint_success={
+              'metadata':metadata is not None,
+              'status':status is not None,
+              'files':files is not None,
+          }
+          if exact_identity or endpoint_success['status'] or endpoint_success['files']:
+              result='exists'
+          else:
+              all_404=(
+                  sum(meta_codes.values())==4 and set(meta_codes)=={'404'} and
+                  sum(status_codes.values())==2 and set(status_codes)=={'404'} and
+                  sum(file_codes.values())==2 and set(file_codes)=={'404'} and
+                  not search_present and not recent_present
+              )
+              result='absent' if all_404 else 'unresolved'
+
+          def fmt(counter):
+              return ','.join(f'{key}:{counter[key]}' for key in sorted(counter)) or 'none'
+          status_value='none' if status is None else str(getattr(status,'status',None)).rsplit('.',1)[-1].upper()
+          file_count='none' if files is None else str(len(getattr(files,'files',[]) or []))
+          print(
+              'E03_RECONCILE_V2_RESULT '
+              f'result={result} exact_identity={str(exact_identity).lower()} '
+              f'metadata_http={fmt(meta_codes)} status_http={fmt(status_codes)} files_http={fmt(file_codes)} '
+              f'status_value={status_value} file_count={file_count} '
+              f'list_search_present={str(search_present).lower()} list_recent_present={str(recent_present).lower()} '
+              f'title_chars={len(os.environ["TARGET_TITLE"])} slug_chars={len(slug)} '
+              'write=false submission=false'
+          )
+          PY
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
