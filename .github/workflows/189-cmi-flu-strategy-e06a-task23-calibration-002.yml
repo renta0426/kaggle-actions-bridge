@@ -1,0 +1,317 @@
+name: CMI-Flu strategy E06a Task2.3 calibration CPU 002
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/189-cmi-flu-strategy-e06a-task23-calibration-002.yml
+      - .github/workflows/188-cmi-flu-strategy-e06a-task23-calibration-001.yml
+      - requests/cmi-flu-strategy-e06a-task23-calibration-002.json
+      - payloads/cmi-flu-strategy-e06a-task23-calibration-001/strategy_e06.py
+      - payloads/cmi-flu-strategy-e06a-task23-calibration-002/strategy_e06_v2.py
+      - scripts/cmi_flu_strategy_e06a_prepare.py
+      - scripts/cmi_flu_strategy_e06a_prepare_v2.py
+      - scripts/cmi_flu_strategy_e06a_execute.py
+      - scripts/cmi_flu_strategy_e06a_execute_v2.py
+      - scripts/cmi_flu_strategy_e06a_sanitize_v2.py
+      - scripts/cmi_flu_e06a_safe_failure_site.py
+      - scripts/test_cmi_e06a_frozen_runtime_v2.py
+      - scripts/test_cmi_e06a_real_reference.py
+      - scripts/test_cmi_e06a_safe_failure_site.py
+      - scripts/test_cmi_e06a_watcher_contract.py
+      - scripts/test_cmi_e06a_v2_executor_contract.py
+      - scripts/kaggle_exact_identity.py
+      - scripts/kaggle_current_output_read.py
+      - scripts/test_kaggle_exact_identity_eventual.py
+      - scripts/cmi_flu_inspect_locked_hai_reference_schema.py
+  pull_request:
+    paths:
+      - .github/workflows/189-cmi-flu-strategy-e06a-task23-calibration-002.yml
+      - .github/workflows/188-cmi-flu-strategy-e06a-task23-calibration-001.yml
+      - requests/cmi-flu-strategy-e06a-task23-calibration-002.json
+      - payloads/cmi-flu-strategy-e06a-task23-calibration-001/strategy_e06.py
+      - payloads/cmi-flu-strategy-e06a-task23-calibration-002/strategy_e06_v2.py
+      - scripts/cmi_flu_strategy_e06a_prepare.py
+      - scripts/cmi_flu_strategy_e06a_prepare_v2.py
+      - scripts/cmi_flu_strategy_e06a_execute.py
+      - scripts/cmi_flu_strategy_e06a_execute_v2.py
+      - scripts/cmi_flu_strategy_e06a_sanitize_v2.py
+      - scripts/cmi_flu_e06a_safe_failure_site.py
+      - scripts/test_cmi_e06a_frozen_runtime_v2.py
+      - scripts/test_cmi_e06a_real_reference.py
+      - scripts/test_cmi_e06a_safe_failure_site.py
+      - scripts/test_cmi_e06a_watcher_contract.py
+      - scripts/test_cmi_e06a_v2_executor_contract.py
+      - scripts/kaggle_exact_identity.py
+      - scripts/kaggle_current_output_read.py
+      - scripts/test_kaggle_exact_identity_eventual.py
+      - scripts/cmi_flu_inspect_locked_hai_reference_schema.py
+
+permissions: {}
+concurrency:
+  group: kaggle-resource-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_ID: 20260908-cmi-flu-strategy-e06a-task23-calibration-002
+  SCIENCE_COMMIT: 6974d1f3c6f2e9b52bc8f1076e46051c71ea62c3
+  E06_BLOB: dd5b5ed12e7667e527c97a99e86b8821e68e6442
+  E06_V2_BLOB: 270a9616c4ab4726cac72e220f86c071161765dc
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate E06a 002 panel-overlap repair before approval
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]] || exit 1; done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e06a-002/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if not m.name.startswith(prefix) or '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Install modeling dependencies and fetch locked references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+
+      - name: Execute exact E06a 002 preflight ladder
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_prepare_v2.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_e06a_safe_failure_site.py" --runtime "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/script.py" --self-test
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_real_reference.py" --runtime "${WORKDIR}/script.py" --reference-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_frozen_runtime_v2.py" --runtime "${WORKDIR}/script.py" --output-dir "${WORKDIR}/synthetic-model"
+          test -f "${WORKDIR}/synthetic-model/receipt/release-receipt.json"
+          grep -F '"model_executed": true' "${WORKDIR}/synthetic-model/receipt/release-receipt.json" >/dev/null
+          grep -F '"nested_calibration_executed": true' "${WORKDIR}/synthetic-model/receipt/release-receipt.json" >/dev/null
+          grep -F '"panel_overlap_filter_executed": true' "${WORKDIR}/synthetic-model/receipt/release-receipt.json" >/dev/null
+          grep -F '"result_validated": true' "${WORKDIR}/synthetic-model/receipt/release-receipt.json" >/dev/null
+          grep -F '"all_final_files_saved": true' "${WORKDIR}/synthetic-model/receipt/release-receipt.json" >/dev/null
+          grep -F '"cleanup_completed": true' "${WORKDIR}/synthetic-model/receipt/release-receipt.json" >/dev/null
+          mkdir "${WORKDIR}/synthetic-safe"
+          cp "${WORKDIR}/synthetic-model/bridge-result.json" "${WORKDIR}/synthetic-model/metrics.json" "${WORKDIR}/synthetic-model/summary.md" "${WORKDIR}/synthetic-safe/"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_sanitize_v2.py" --input-dir "${WORKDIR}/synthetic-safe"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_safe_failure_site.py" --runtime "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_watcher_contract.py"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_v2_executor_contract.py"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/test_kaggle_exact_identity_eventual.py"
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_prepare_v2.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_execute_v2.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_sanitize_v2.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_e06a_safe_failure_site.py" \
+            "${WORKDIR}/bridge/scripts/test_cmi_e06a_frozen_runtime_v2.py" \
+            "${WORKDIR}/bridge/scripts/test_cmi_e06a_real_reference.py" \
+            "${WORKDIR}/bridge/scripts/test_cmi_e06a_safe_failure_site.py" \
+            "${WORKDIR}/bridge/scripts/test_cmi_e06a_v2_executor_contract.py"
+          ! grep -F 'kaggle competitions submit' "${WORKDIR}/script.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_execute_v2.py" >/dev/null
+          echo CMI_FLU_E06A_V2_PREFLIGHT_PASS
+
+      - name: Validate repaired request and retired workflow guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge/requests/cmi-flu-strategy-e06a-task23-calibration-002.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          expected={
+            'schema_version':1,
+            'request_id':'20260908-cmi-flu-strategy-e06a-task23-calibration-002',
+            'competition':'cmi-flu-first-prediction-challenge',
+            'operation':'kernel_run_and_current_output_read',
+            'target':'renta0426/cmi-flu-e06a-task23-calibration-20260908-002',
+            'science_source_commit':'6974d1f3c6f2e9b52bc8f1076e46051c71ea62c3',
+            'science_transport':'agent_relay_exact_blobs',
+            'strategy_e06_blob_sha':'dd5b5ed12e7667e527c97a99e86b8821e68e6442',
+            'strategy_e06_v2_blob_sha':'270a9616c4ab4726cac72e220f86c071161765dc',
+            'repair_of_request_id':'20260908-cmi-flu-strategy-e06a-task23-calibration-001',
+            'expected_kernel_version':1,
+            'enable_internet':False,
+            'competition_submission_attempted':False,
+            'leaderboard_used_for_selection':False,
+            'automatic_compute_retries':0,
+          }
+          for k,v in expected.items():
+            if r.get(k)!=v:raise SystemExit(f'E06a 002 request mismatch:{k}')
+          e=r.get('repair_evidence',{})
+          repair_expected={
+            'failed_bridge_run_id':34146316937,
+            'failed_bridge_job_id':101819150585,
+            'write_cli_return_code':0,
+            'exact_identity_confirmed':True,
+            'remote_terminal_state':'ERROR',
+            'exception_type':'DataContractError',
+            'error_code':'bb02718138642f982020',
+            'safe_site':'strategy_e06._panel_frame',
+            'decoded_error':'E06a panel source has zero overlap with task panel',
+            'uploaded_notebook_log_sha256':'614933a1b2393bb76a0c949205b9699a57ceff86ddc7e14af35bc8b1791f8be1',
+          }
+          for k,v in repair_expected.items():
+            if e.get(k)!=v:raise SystemExit(f'E06a 002 repair evidence mismatch:{k}')
+          c=r.get('calibration_contract',{})
+          required={
+            'task':'Task2.3','target_day':365,'raw_conditions':['b21_reference','phase_a_target_domain'],
+            'model':'ridge_exact_a100','calibration_kinds':['positive_affine','log2_affine'],
+            'outer_evaluation':'subject_purged_leave_one_study_out',
+            'outer_fold_panel_overlap_filter':'fixed_panel_strain_availability_only_before_outcome_access',
+            'zero_panel_overlap_studies_scored_as_task23_proxy':False,
+            'minimum_calibrator_panel_overlap_studies':2,
+            'calibrator_training':'inner_subject_purged_study_out_oof_from_outer_training_only',
+            'calibration_weighting':'equal_study_total_weight','minimum_equal_study_mean_rmse_reduction':0.02,
+            'maximum_worst_study_rmse_ratio':1.05,'rank_preservation_required':True,
+            'observed_d28_used_as_d365_feature':False,
+          }
+          if c!=required:raise SystemExit('E06a 002 calibration contract mismatch')
+          resource=r.get('resource',{}); api=r.get('api_budget',{}); watcher=r.get('watcher_contract',{})
+          if resource!={'accelerator':'cpu','expected_runtime_minutes':90,'hard_timeout_minutes':120,'max_active_runs':1}:raise SystemExit('E06a 002 resource mismatch')
+          if api!={'max_calls':150,'poll_interval_seconds':120,'max_polls':65,'max_pages':2}:raise SystemExit('E06a 002 API budget mismatch')
+          if watcher!={'watch_horizon_minutes':130,'actions_job_timeout_minutes':150,'poll_exhaustion_is_remote_failure':False,'write_retry_on_watch_expiry':False,'recovery_after_watch_expiry':'current_version_read_only'}:raise SystemExit('E06a 002 watcher mismatch')
+          if r.get('allowed_output_paths')!=['bridge-result.json','metrics.json','summary.md']:raise SystemExit('E06a 002 output allowlist mismatch')
+          PY
+          for n in 163 164 174 175 176 177 178 179 180 181 182 183 184 186 187 188; do
+            f=$(find "${WORKDIR}/bridge/.github/workflows" -maxdepth 1 -type f -name "${n}-*" | head -1)
+            [[ -n "$f" ]]
+            ! grep -Eq '^[[:space:]]+push:|^[[:space:]]+pull_request:|environment:|KAGGLE_API_TOKEN|group:[[:space:]]+kaggle-resource' "$f"
+            grep -Eq 'Retired|RETIRED|retired' "$f"
+          done
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  launch:
+    name: Run one repaired private CPU E06a Task2.3 calibration 002
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/189-cmi-flu-strategy-e06a-task23-calibration-002.yml@refs/heads/main" ]]
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e06a-002/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if not m.name.startswith(prefix) or '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Fetch references and rebuild exact E06a 002 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_prepare_v2.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_e06a_safe_failure_site.py" --runtime "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/script.py" --self-test
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_real_reference.py" --runtime "${WORKDIR}/script.py" --reference-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_frozen_runtime_v2.py" --runtime "${WORKDIR}/script.py" --output-dir "${WORKDIR}/protected-synthetic"
+          grep -F '"panel_overlap_filter_executed": true' "${WORKDIR}/protected-synthetic/receipt/release-receipt.json" >/dev/null
+          rm -rf "${WORKDIR}/protected-synthetic"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_safe_failure_site.py" --runtime "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e06a_v2_executor_contract.py"
+          echo "E06A_V2_RUNTIME_SHA256=$(sha256sum "${WORKDIR}/script.py" | awk '{print $1}')" >> "${GITHUB_ENV}"
+
+      - name: Install locked Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          echo "${WORKDIR}/venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Run approved E06a 002 CPU kernel and read aggregate output
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "CMI_FLU_E06A_V2_APPROVED_RUNTIME sha256=${E06A_V2_RUNTIME_SHA256}"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_execute_v2.py" --runtime "${WORKDIR}/script.py" --bridge-root "${WORKDIR}/bridge" --output-dir "${WORKDIR}/output"
+
+      - name: Validate aggregate-only E06a 002 result
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_sanitize_v2.py" --input-dir "${WORKDIR}/output"
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
