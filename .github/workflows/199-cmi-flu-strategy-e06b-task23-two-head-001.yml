@@ -1,0 +1,16 @@
+name: Retired CMI-Flu strategy E06b Task2.3 two-head CPU 001 preflight
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse retired preflight workflow
+        shell: bash
+        run: |
+          echo "RETIRED: secret-free preflight caught a bridge MetricValue schema-reader mismatch before any Kaggle write. Use the corrected successor workflow."
+          exit 1
