@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "request_id": "20260908-cmi-flu-strategy-e04-task13-rescue-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e04-task13-rescue-20260908-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "6e4d786cddc7b2d02dc4671d1c005db551d19ad6",
+  "science_transport": "github_exact_commit_archive_with_blob_verification",
+  "pinned_git_blobs": {
+    "src/cmi_flu/strategy_e04.py": "73c112a8bb3b1ee7a6dd5bfbd5645a945bea6ebb",
+    "src/cmi_flu/strategy_e04_contract.py": "3982541febfb4641fbf895438ae1a465bdbb3d5e",
+    "src/cmi_flu/strategy_e04_synthetic.py": "436b6a971622915cc5b335060f9a850feb6108fd",
+    "src/cmi_flu/task13_harmonization.py": "5c6725dc757a5ba9dd21289b1c4f09997e1afdb8",
+    "configs/baseline_b021_robust.yaml": "170d3211e2795c0730e481056c7bb068accf97c9"
+  },
+  "experiment_contract": {
+    "experiment": "strategy_v2_e04_task13_anchor_preserving_rescue",
+    "task": "Task1.3",
+    "measurement_audit_precedes_model_construction": true,
+    "strict_b21_model": "pls_1",
+    "strict_anchor": "flow_rank__Antibody-secreting_cells_(ASC)",
+    "historical_rank_control": "enet_a0.1_l0.5",
+    "residual_model": "ridge",
+    "residual_alpha": 10.0,
+    "residual_shrinkage": 0.25,
+    "residual_score_cap": 0.05,
+    "proxy_weight_sensitivity": [0.25, 1.0],
+    "proxy_weight_selected": null,
+    "strict_cv_plus_proxy_is_auxiliary_not_third_study": true,
+    "cd71_reconstruction_from_sdy272_forbidden": true,
+    "promotion_mean_delta_threshold": 0.02,
+    "large_study_decline_review_threshold": -0.10,
+    "no_automatic_competition_promotion": true
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 100,
+    "poll_interval_seconds": 60,
+    "max_polls": 65,
+    "max_pages": 2
+  },
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0
+}
