@@ -8,7 +8,6 @@ on:
       - scripts/kaggle_current_output_read.py
       - scripts/kaggle_exact_identity.py
       - scripts/kaggle_policy_preflight.py
-      - scripts/test_kaggle_exact_identity_eventual.py
       - requirements/kaggle-2.2.4.lock
   push:
     branches: [main]
@@ -82,7 +81,6 @@ jobs:
               ("scripts/kaggle_current_output_read.py",65536,"kaggle_current_output_read.py"),
               ("scripts/kaggle_exact_identity.py",65536,"kaggle_exact_identity.py"),
               ("scripts/kaggle_policy_preflight.py",65536,"kaggle_policy_preflight.py"),
-              ("scripts/test_kaggle_exact_identity_eventual.py",65536,"test_kaggle_exact_identity_eventual.py"),
           )
           for remote,maximum,local in files:
               url=f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{remote}"
@@ -93,7 +91,47 @@ jobs:
               if path.suffix==".py": compile(data,str(path),"exec")
           PY
           python3 "${workdir}/bridge/kaggle_policy_preflight.py"
-          PYTHONPATH="${workdir}/bridge" python3 "${workdir}/bridge/test_kaggle_exact_identity_eventual.py"
+          PYTHONPATH="${workdir}/bridge" python3 - "${workdir}/bridge/kaggle_current_output_read.py" <<'PY'
+          import pathlib,sys
+          from types import SimpleNamespace
+          import kaggle_exact_identity as identity
+          reader=pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          if "verify_current_eventually" not in reader or "exact_metadata_eventually(api, kernel)" not in reader or "exact_metadata(api, kernel)" in reader:
+              raise SystemExit("current-output reader exact-helper wiring mismatch")
+          class FakeHttpError(RuntimeError):
+              def __init__(self,status):
+                  self.response=SimpleNamespace(status_code=status)
+          kernel="renta0426/example-private-kernel"
+          meta=SimpleNamespace(ref=kernel,is_private=True,current_version_number=1,enable_gpu=False,enable_tpu=False,enable_internet=False)
+          original=identity.exact_metadata
+          calls=[]; sleeps=[]
+          try:
+              def fake(api,ref):
+                  calls.append(ref)
+                  if len(calls)==1: raise FakeHttpError(403)
+                  return meta
+              identity.exact_metadata=fake
+              observed=identity.exact_metadata_eventually(object(),kernel,attempts=3,delay_seconds=0.1,sleep=sleeps.append)
+              identity.validate_metadata(observed,kernel,1,cpu=True)
+          finally:
+              identity.exact_metadata=original
+          if len(calls)!=2 or sleeps!=[0.1]: raise SystemExit("bounded 403 reconciliation regression")
+          calls=[]; sleeps=[]
+          try:
+              def fail429(api,ref):
+                  calls.append(ref); raise FakeHttpError(429)
+              identity.exact_metadata=fail429
+              try:
+                  identity.exact_metadata_eventually(object(),kernel,attempts=6,delay_seconds=1.0,sleep=sleeps.append)
+              except identity.IdentityError as exc:
+                  if str(exc)!="exact_metadata_nontransient_failure": raise
+              else:
+                  raise SystemExit("429 unexpectedly retried/succeeded")
+          finally:
+              identity.exact_metadata=original
+          if len(calls)!=1 or sleeps: raise SystemExit("429 retry regression")
+          print("CODEPARROT_EXACT_IDENTITY_SELF_TEST PASS transient_403_bounded=1 retry_429=0 output_exact_helper=1")
+          PY
 
       - name: Validate request contract
         shell: bash
