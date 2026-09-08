@@ -5,7 +5,7 @@
   "operation": "kernel_run",
   "target": "renta0426/poisoned-chalice-context-contrast-pilot-500-v1",
   "launcher_path": "runners/poisoned_chalice/context_contrast_pilot_500_v1.py",
-  "launcher_blob_sha": "0af9e8c1af788b38019c31bfc87a1a8b05e5e7f5",
+  "launcher_blob_sha": "846e2e44ada8757f31f7d9fc2062c948ea6ec95a",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
   "research_commit": "74d04a7f16d7ec1403ae859217e65a7adc3e40d6",
   "research_files": [
