@@ -5,6 +5,7 @@ on:
     paths:
       - 'requests/poisoned-chalice-codeparrot-current-identity-v1.json'
       - 'scripts/codeparrot_current_identity_diagnostic.py'
+      - 'scripts/check_codeparrot_workflow_contexts.py'
       - 'scripts/kaggle_exact_identity.py'
       - '.github/workflows/215-codeparrot-current-identity-diagnostic.yml'
   push:
@@ -39,7 +40,7 @@ jobs:
           python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
           import json,pathlib,re,sys,urllib.request
           sha,root=sys.argv[1:]; assert re.fullmatch(r'[0-9a-f]{40}',sha); root=pathlib.Path(root)
-          paths=['requests/poisoned-chalice-codeparrot-current-identity-v1.json','scripts/codeparrot_current_identity_diagnostic.py','scripts/kaggle_exact_identity.py']
+          paths=['requests/poisoned-chalice-codeparrot-current-identity-v1.json','scripts/codeparrot_current_identity_diagnostic.py','scripts/kaggle_exact_identity.py','scripts/check_codeparrot_workflow_contexts.py','.github/workflows/215-codeparrot-current-identity-diagnostic.yml']
           for rel in paths:
               with urllib.request.urlopen(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',timeout=30) as response: data=response.read(131073)
               assert 0<len(data)<=131072; (root/rel.split('/')[-1]).write_bytes(data)
@@ -52,6 +53,7 @@ jobs:
           PY
           python3 -W error::SyntaxWarning -m py_compile "${workdir}/codeparrot_current_identity_diagnostic.py" "${workdir}/kaggle_exact_identity.py"
           python3 "${workdir}/codeparrot_current_identity_diagnostic.py" --self-test
+          python3 "${workdir}/check_codeparrot_workflow_contexts.py" --workflow "${workdir}/215-codeparrot-current-identity-diagnostic.yml"
       - name: Cleanup
         if: always()
         shell: bash
@@ -77,9 +79,10 @@ jobs:
       EVENT_ACTOR: ${{ github.actor }}
       EVENT_ACTOR_ID: ${{ github.actor_id }}
       EVENT_SENDER_ID: ${{ github.event.sender.id }}
-      RUNNER_ENVIRONMENT: ${{ runner.environment }}
     steps:
       - name: Enforce approved public read-only boundary
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         shell: bash
         run: |
           set -euo pipefail
