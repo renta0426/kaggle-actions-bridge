@@ -6,7 +6,7 @@
   "target": "renta0426/cmi-flu-e04-task13-rescue-20260908-001",
   "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
   "science_source_commit": "6e4d786cddc7b2d02dc4671d1c005db551d19ad6",
-  "science_transport": "github_exact_commit_archive_with_blob_verification",
+  "science_transport": "agent_relay_exact_blobs",
   "pinned_git_blobs": {
     "src/cmi_flu/strategy_e04.py": "73c112a8bb3b1ee7a6dd5bfbd5645a945bea6ebb",
     "src/cmi_flu/strategy_e04_contract.py": "3982541febfb4641fbf895438ae1a465bdbb3d5e",
