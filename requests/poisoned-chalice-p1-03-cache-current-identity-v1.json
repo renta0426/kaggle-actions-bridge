@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "request_id": "poisoned-chalice-p1-03-cache-current-identity-20260909-001",
+  "operation": "read_exact_metadata_only",
+  "targets": [
+    {
+      "kernel": "renta0426/starter-plus-10k-v2",
+      "expected_current_version": 1
+    },
+    {
+      "kernel": "renta0426/starter-plus-10k-v2-continuation",
+      "expected_current_version": 1
+    }
+  ],
+  "exact_get_kernel_invocations": 2,
+  "output_download_invocations": 0,
+  "automatic_retries": 0,
+  "kaggle_write_calls": 0,
+  "kaggle_compute_started": false,
+  "membership_sources_allowed": false,
+  "performance_evaluation_allowed": false,
+  "version_substitution_allowed": false,
+  "environment": "kaggle-readonry",
+  "purpose": "Determine whether the already-completed historical P1-03 token-stat producers are still exactly current version 1 before any output read or new compute is considered."
+}
