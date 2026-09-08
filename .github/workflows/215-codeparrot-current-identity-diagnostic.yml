@@ -8,7 +8,7 @@ on:
       - 'scripts/kaggle_exact_identity.py'
       - '.github/workflows/215-codeparrot-current-identity-diagnostic.yml'
   push:
-    branches: [main]
+    branches: [main, diagnose/codeparrot-current-version-20260908]
     paths:
       - 'requests/poisoned-chalice-codeparrot-current-identity-v1.json'
 
