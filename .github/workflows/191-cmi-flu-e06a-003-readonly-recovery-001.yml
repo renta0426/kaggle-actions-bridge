@@ -1,0 +1,174 @@
+name: CMI-Flu E06a 003 read-only recovery 001
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/191-cmi-flu-e06a-003-readonly-recovery-001.yml
+      - .github/workflows/190-cmi-flu-strategy-e06a-task23-calibration-003.yml
+      - requests/cmi-flu-e06a-003-readonly-recovery-001.json
+      - scripts/cmi_flu_e06a_recover_v3.py
+      - scripts/cmi_flu_e06a_completion_marker.py
+  pull_request:
+    paths:
+      - .github/workflows/191-cmi-flu-e06a-003-readonly-recovery-001.yml
+      - .github/workflows/190-cmi-flu-strategy-e06a-task23-calibration-003.yml
+      - requests/cmi-flu-e06a-003-readonly-recovery-001.json
+      - scripts/cmi_flu_e06a_recover_v3.py
+      - scripts/cmi_flu_e06a_completion_marker.py
+
+permissions: {}
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_ID: 20260908-cmi-flu-e06a-003-readonly-recovery-001
+  TARGET: renta0426/cmi-flu-e06a-task23-calibration-20260908-003
+  RUNTIME_SHA256: c43767288c4994a743700831de5d1a24283b2f6a93f57844a555c19db96709b8
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate E06a 003 read-only recovery and completion recurrence guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]] || exit 1; done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e06a-recovery/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if not m.name.startswith(prefix) or '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Validate recovery request and no-write contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge/requests/cmi-flu-e06a-003-readonly-recovery-001.json" <<'PY'
+          import hashlib,json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r['request_id']=='20260908-cmi-flu-e06a-003-readonly-recovery-001'
+          assert r['operation']=='kernel_current_failed_recovery_read'
+          assert r['target']=='renta0426/cmi-flu-e06a-task23-calibration-20260908-003'
+          assert r['expected_kernel_version']==1
+          assert r['expected_runtime_sha256']=='c43767288c4994a743700831de5d1a24283b2f6a93f57844a555c19db96709b8'
+          assert r['new_write_attempted'] is False and r['new_compute_requested'] is False
+          assert r['competition_submission_attempted'] is False and r['automatic_compute_retries']==0
+          k=r['known_failure']
+          assert k['stage']=='write_outputs' and k['exception_type']=='KeyError' and k['error_code']=='6d98aeb26dde4e8134ee'
+          assert hashlib.sha256("KeyError:'tasks'".encode()).hexdigest()[:20]==k['error_code']
+          PY
+          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py" "${WORKDIR}/bridge/scripts/cmi_flu_e06a_completion_marker.py"
+          ! grep -Eq 'kernels[[:space:]]+push|competitions[[:space:]]+submit|competition_submit' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py"
+          grep -F 'verb not in {"pull", "output"}' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py" >/dev/null
+          grep -F 'new_write_attempted": False' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py" >/dev/null
+          grep -F 'tasks={len(result[' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_completion_marker.py" >/dev/null
+          grep -F 'conditions={len((result.get(' "${WORKDIR}/bridge/scripts/cmi_flu_e06a_completion_marker.py" >/dev/null
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  recover:
+    name: Recover existing E06a 003 version 1 outputs read-only
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce protected recovery boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/191-cmi-flu-e06a-003-readonly-recovery-001.yml@refs/heads/main" ]]
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e06a-recovery/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if not m.name.startswith(prefix) or '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Install locked Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          echo "${WORKDIR}/venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Read current failed version outputs and validate aggregate result
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_e06a_recover_v3.py" \
+            --output-dir "${WORKDIR}/recovery" \
+            --sanitizer "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e06a_sanitize_v3.py"
+          test -f "${WORKDIR}/recovery/recovery.json"
+          grep -F '"new_write_attempted": false' "${WORKDIR}/recovery/recovery.json" >/dev/null
+          grep -F '"new_compute_requested": false' "${WORKDIR}/recovery/recovery.json" >/dev/null
+          grep -F '"scientific_outputs_validated": true' "${WORKDIR}/recovery/recovery.json" >/dev/null
+
+      - name: Cleanup runner-local recovery content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
