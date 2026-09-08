@@ -121,8 +121,12 @@ def patch_runtime(runtime: str, references: dict[str, bytes]) -> str:
 
 def locate_locked_reference(name: str) -> Path:
     data = locked_reference_bytes(name)
-    base = Path("/kaggle/working") if Path("/kaggle/working").is_dir() else Path.cwd()
-    root = base / ".e05-locked-references"
+    # Kaggle saves /kaggle/working recursively as Notebook output. Locked
+    # organizer references are runtime staging material, not declared outputs,
+    # so materialize them under /tmp when available. Keep the strict output
+    # reader allowlist unchanged rather than teaching it to ignore leftovers.
+    base = Path("/tmp") if Path("/tmp").is_dir() else Path.cwd()
+    root = base / "cmi-flu-e05-locked-references"
     root.mkdir(parents=True, exist_ok=True)
     path = root / name
     if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() != LOCKED_REFERENCE_SHA256[name]:
@@ -139,6 +143,8 @@ def locate_locked_reference(name: str) -> Path:
         raise SystemExit("E05 v3 runtime binding contract failed")
     if OLD_REQUEST_ID in runtime or OLD_TARGET_KERNEL in runtime or "20260907-cmi-flu-strategy-e05-hai-donor-strain-002" in runtime:
         raise SystemExit("prior E05 identity remained in v3 runtime")
+    if "/kaggle/working/.e05-locked-references" in runtime or 'base / ".e05-locked-references"' in runtime:
+        raise SystemExit("locked reference staging would leak into saved Kaggle output")
     if "competition_submit" in runtime or "kaggle competitions submit" in runtime:
         raise SystemExit("E05 v3 runtime contains submission path")
     compile(runtime, "generated_e05_v3.py", "exec")
@@ -158,7 +164,7 @@ def main() -> int:
     print(
         "CMI_FLU_E05_V3_BUILD PASS "
         f"science_commit={SCIENCE_COMMIT} request_id={REQUEST_ID} target={TARGET_KERNEL} "
-        f"runtime_sha256={sha256(runtime.encode())} references=embedded_verified json_safe=preserved"
+        f"runtime_sha256={sha256(runtime.encode())} references=embedded_verified json_safe=preserved staging=/tmp"
     )
     return 0
 
