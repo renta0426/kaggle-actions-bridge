@@ -1,14 +1,20 @@
 {
   "schema_version": 1,
-  "request_id": "20260907-poisoned-chalice-minkpp-paper-pilot-500-001",
+  "request_id": "20260908-poisoned-chalice-context-contrast-pilot-500-v1-001",
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
-  "target": "renta0426/poisoned-chalice-minkpp-paper-pilot-500-v1",
-  "launcher_path": "runners/poisoned_chalice/minkpp_paper_pilot_500_v1.py",
-  "launcher_blob_sha": "fd58ab0e83f078ea44a50f9e70750adc511506d1",
+  "target": "renta0426/poisoned-chalice-context-contrast-pilot-500-v1",
+  "launcher_path": "runners/poisoned_chalice/context_contrast_pilot_500_v1.py",
+  "launcher_blob_sha": "0af9e8c1af788b38019c31bfc87a1a8b05e5e7f5",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-  "research_commit": "0895502ddb188de5af4ba780eb6f77f2185e64d1",
+  "research_commit": "74d04a7f16d7ec1403ae859217e65a7adc3e40d6",
   "research_files": [
+    {
+      "path": "src/poisoned_chalice/context_contrast.py",
+      "git_blob_sha": "8322b344156713308042b1da725369abbd78f6b3",
+      "max_bytes": 65536,
+      "snapshot_parts": 1
+    },
     {
       "path": "src/poisoned_chalice/minkpp_paper.py",
       "git_blob_sha": "cd6479564ebec0818e42a6612f242d00642301ea",
@@ -16,14 +22,14 @@
       "snapshot_parts": 1
     },
     {
-      "path": "scripts/build_minkpp_pilot_notebook.py",
-      "git_blob_sha": "4bbc2dced5aa3b0d9c72ee617ba5e1bb2646d082",
+      "path": "scripts/build_context_contrast_pilot_notebook.py",
+      "git_blob_sha": "222e98c67779ac3cb72665d9ead03b7de8b9836f",
       "max_bytes": 131072,
       "snapshot_parts": 1
     },
     {
-      "path": "experiments/stage1-minkpp-paper-pilot-500/experiment.json",
-      "git_blob_sha": "2ee9c12aa529726ca940abb2cb3d31938b1cdbe6",
+      "path": "experiments/matched-target-context-contrast-v1-pilot-500/experiment.json",
+      "git_blob_sha": "95d0fd390565b89a10a80bb14b9b206bdfe04ab1",
       "max_bytes": 32768,
       "snapshot_parts": 1
     }
@@ -32,10 +38,10 @@
     "accelerator": "gpu",
     "machine_shape": "NvidiaTeslaT4",
     "expected_visible_gpu_count": 2,
-    "expected_runtime_minutes": 45,
-    "hard_timeout_minutes": 90,
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 120,
     "max_active_runs": 2,
-    "min_remaining_quota_hours": 1.0
+    "min_remaining_quota_hours": 1.5
   },
   "api_budget": {
     "max_calls": 60
@@ -44,14 +50,15 @@
     "create one private notebook version"
   ],
   "persistent_outputs": [
-    "stage1-minkpp-paper-pilot-500/sample_manifest.parquet",
-    "stage1-minkpp-paper-pilot-500/sample_scores.parquet",
-    "stage1-minkpp-paper-pilot-500/window_scores.parquet",
-    "stage1-minkpp-paper-pilot-500/token_statistics.parquet",
-    "stage1-minkpp-paper-pilot-500/score_spearman.csv",
-    "stage1-minkpp-paper-pilot-500/metrics.json",
-    "stage1-minkpp-paper-pilot-500/run_manifest.json",
-    "stage1-minkpp-paper-pilot-500/REPORT.md"
+    "matched-target-context-contrast-v1-pilot-500/sample_manifest.parquet",
+    "matched-target-context-contrast-v1-pilot-500/span_manifest.parquet",
+    "matched-target-context-contrast-v1-pilot-500/condition_scores.parquet",
+    "matched-target-context-contrast-v1-pilot-500/span_contrasts.parquet",
+    "matched-target-context-contrast-v1-pilot-500/file_features.parquet",
+    "matched-target-context-contrast-v1-pilot-500/fidelity.json",
+    "matched-target-context-contrast-v1-pilot-500/runtime.json",
+    "matched-target-context-contrast-v1-pilot-500/run_manifest.json",
+    "matched-target-context-contrast-v1-pilot-500/REPORT.md"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
@@ -61,22 +68,31 @@
     "stage2_holdout_consumed": false,
     "public_leaderboard_feedback_used": false,
     "hidden_validation_labels_used": false,
-    "low_fpr_selection_from_500_forbidden": true,
-    "legacy_feature_semantics_modified": false
+    "validation_rows_used": false,
+    "codeparrot_rows_or_labels_used": false,
+    "performance_evaluation_forbidden": true
   },
   "scientific_contract": {
+    "task_id": "P2-01",
     "rows": 500,
-    "member_rows": 250,
     "per_language_per_label": 50,
-    "paper_schema": "prob_weighted_minkpp_v1",
-    "legacy_schema": "legacy_uniform_vocab_z",
+    "selection_labels_removed_before_model_scoring": true,
     "model_id": "bigcode/starcoder2-3b",
     "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
     "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "context_budgets": [32, 128, 512],
+    "target_tokens": 256,
+    "min_target_tokens": 64,
+    "spans_per_file": 3,
     "max_model_tokens_per_window": 768,
-    "same_forward": true,
+    "shared_target_identity_required": true,
+    "condition_metrics": ["mean_logp", "paper_minkpp10", "local64"],
+    "paper_schema": "prob_weighted_minkpp_v1",
+    "paper_fraction": 0.1,
+    "local_width": 64,
     "cpu_oracle_required": true,
     "dense_blocked_parity_required": true,
-    "low_fpr_selection_from_500_forbidden": true
+    "cpu_gpu_reduction_tolerance": 0.00002,
+    "performance_metrics_computed": false
   }
 }
