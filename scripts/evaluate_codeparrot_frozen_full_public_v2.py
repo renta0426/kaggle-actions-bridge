@@ -12,7 +12,49 @@ import pandas as pd
 import evaluate_codeparrot_frozen_full_public as core
 
 
+def output_allowlist_self_test() -> None:
+    """Exercise the actual reader parser, with no Kaggle import or API call."""
+    from kaggle_current_output_read import _parse_allow
+
+    expected = {
+        "full_predictions.parquet": 678787,
+        "full_manifest.json": 1737,
+        "full_fidelity.json": 1207,
+        "full_profile.json": 452,
+        "__huggingface_repos__.json": 428,
+    }
+    assert _parse_allow([f"{name}:{size}" for name, size in expected.items()]) == expected
+    for name in ("a", "_", "_metadata.json", "A" * 128):
+        assert _parse_allow([f"{name}:1"]) == {name: 1}
+    rejected_names = (
+        "../secret", "/tmp/x", "a/b", "a\\b", "..", ".", "a..b",
+        "_..secret", ".hidden", "-option", "a b", "a\n", "a\x00b",
+        "a:b", "", "A" * 129,
+    )
+    rejected_values = [[f"{name}:1"] for name in rejected_names]
+    rejected_values += [
+        [], ["a"], ["a:0"], ["a:-1"], ["a:not-an-int"],
+        ["a:67108865"], ["a:1", "a:2"],
+        [f"file_{index}:1" for index in range(33)],
+    ]
+    for values in rejected_values:
+        try:
+            _parse_allow(values)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe_or_unbounded_output_allowlist_accepted")
+    assert _parse_allow(["a:67108864"]) == {"a": 67108864}
+    assert len(_parse_allow([f"file_{index}:1" for index in range(32)])) == 32
+    print(
+        "CODEPARROT_OUTPUT_ALLOWLIST_SELF_TEST PASS "
+        "exact_files=5 leading_underscore=1 traversal_rejected=1 "
+        "duplicate_rejected=1 count_and_size_bounds=1 kaggle_api_calls=0"
+    )
+
+
 def self_test() -> None:
+    output_allowlist_self_test()
     labels = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=int)
     scores = np.array([0.9, 0.8, 0.7, 0.6, 0.95, 0.85, 0.4, 0.3], dtype=float)
     boundary = core.conservative_boundary(labels, scores, 0.25)
