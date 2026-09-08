@@ -1,0 +1,139 @@
+name: Poisoned Chalice P1-03 exact historical cache identity
+
+on:
+  pull_request:
+    paths:
+      - 'requests/poisoned-chalice-p1-03-cache-current-identity-v1.json'
+      - 'scripts/poisoned_chalice_p1_03_cache_identity.py'
+      - 'scripts/kaggle_exact_identity.py'
+      - '.github/workflows/227-poisoned-chalice-p1-03-cache-identity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'requests/poisoned-chalice-p1-03-cache-current-identity-v1.json'
+      - 'scripts/poisoned_chalice_p1_03_cache_identity.py'
+      - '.github/workflows/227-poisoned-chalice-p1-03-cache-identity.yml'
+
+permissions: {}
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: '1354356687'
+  EXPECTED_ACTOR_ID: '71638068'
+
+jobs:
+  validate:
+    name: Validate exact two-target metadata-only contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Materialize public source and test contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/p1-03-cache-identity-validate"; [[ ! -e "${workdir}" ]]; mkdir -p "${workdir}"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import json,pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]; assert re.fullmatch(r'[0-9a-f]{40}',sha); root=pathlib.Path(root)
+          paths=['requests/poisoned-chalice-p1-03-cache-current-identity-v1.json','scripts/poisoned_chalice_p1_03_cache_identity.py','scripts/kaggle_exact_identity.py']
+          for rel in paths:
+              with urllib.request.urlopen(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',timeout=30) as response: data=response.read(131073)
+              assert 0<len(data)<=131072; (root/rel.split('/')[-1]).write_bytes(data)
+          request=json.loads((root/'poisoned-chalice-p1-03-cache-current-identity-v1.json').read_text())
+          assert request['operation']=='read_exact_metadata_only'
+          assert request['targets']==[
+              {'kernel':'renta0426/starter-plus-10k-v2','expected_current_version':1},
+              {'kernel':'renta0426/starter-plus-10k-v2-continuation','expected_current_version':1},
+          ]
+          assert request['exact_get_kernel_invocations']==2
+          for key in ['output_download_invocations','automatic_retries','kaggle_write_calls']: assert request[key]==0
+          for key in ['kaggle_compute_started','membership_sources_allowed','performance_evaluation_allowed','version_substitution_allowed']: assert request[key] is False
+          assert request['environment']=='kaggle-readonry'
+          PY
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/poisoned_chalice_p1_03_cache_identity.py" "${workdir}/kaggle_exact_identity.py"
+          PYTHONPATH="${workdir}" python3 "${workdir}/poisoned_chalice_p1_03_cache_identity.py" --self-test
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/p1-03-cache-identity-validate"
+
+  diagnose:
+    name: Observe exact current versions only; no output download
+    needs: validate
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.repository_id == '1354356687' && github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EVENT_SHA: ${{ github.sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      WORKFLOW_REF: ${{ github.workflow_ref }}
+      EVENT_REPOSITORY: ${{ github.repository }}
+      EVENT_REPOSITORY_ID: ${{ github.repository_id }}
+      EVENT_ACTOR: ${{ github.actor }}
+      EVENT_ACTOR_ID: ${{ github.actor_id }}
+      EVENT_SENDER_ID: ${{ github.event.sender.id }}
+    steps:
+      - name: Enforce exact protected context
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == renta0426 && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == 'renta0426/kaggle-actions-bridge/.github/workflows/227-poisoned-chalice-p1-03-cache-identity.yml@refs/heads/main' ]]
+          [[ "${RUNNER_ENVIRONMENT}" == github-hosted ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]]; done
+      - name: Materialize exact public source and locked Kaggle SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/p1-03-cache-identity"; [[ ! -e "${workdir}" ]]; mkdir -p "${workdir}/bridge"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import json,pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]; assert re.fullmatch(r'[0-9a-f]{40}',sha); root=pathlib.Path(root)
+          paths=['requests/poisoned-chalice-p1-03-cache-current-identity-v1.json','scripts/poisoned_chalice_p1_03_cache_identity.py','scripts/kaggle_exact_identity.py','scripts/kaggle_policy_preflight.py','requirements/kaggle-2.2.4.lock']
+          for rel in paths:
+              with urllib.request.urlopen(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',timeout=30) as response: data=response.read(262145)
+              assert 0<len(data)<=262144; (root/rel.split('/')[-1]).write_bytes(data)
+          request=json.loads((root/'poisoned-chalice-p1-03-cache-current-identity-v1.json').read_text())
+          assert request['exact_get_kernel_invocations']==2 and request['output_download_invocations']==0
+          assert request['kaggle_write_calls']==0 and request['kaggle_compute_started'] is False
+          assert request['environment']=='kaggle-readonry'
+          PY
+          PYTHONPATH="${workdir}/bridge" python3 "${workdir}/bridge/poisoned_chalice_p1_03_cache_identity.py" --self-test
+          python3 "${workdir}/bridge/kaggle_policy_preflight.py"
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/bridge/kaggle-2.2.4.lock" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+      - name: Read exactly two metadata records and remove credential
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          trap 'rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"' EXIT
+          mkdir -p "${HOME}/.kaggle"; umask 077; printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"; unset KAGGLE_API_TOKEN
+          PYTHONPATH="${WORKDIR}/bridge" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/poisoned_chalice_p1_03_cache_identity.py"
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          rm -rf "${RUNNER_TEMP}/p1-03-cache-identity"
+          echo 'P1_03_CACHE_IDENTITY_CLEANUP PASS credentials_retained=0 output_downloads=0 raw_predictions=0 label_join=0 compute=0'
