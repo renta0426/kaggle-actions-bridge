@@ -130,8 +130,12 @@ jobs:
               if files[name].get("bytes")!=size or files[name].get("sha256")!=digest:
                   raise SystemExit(f"output identity mismatch: {name}")
           read=r["read_contract"]
-          if read.get("identity_authority")!="exact_GetKernel_only" or read.get("historical_output_fallback") is not False or read.get("allow_failed_run_salvage") is not False or read.get("automatic_read_retries")!=0:
-              raise SystemExit("read boundary mismatch")
+          if read.get("identity_authority")!="exact_GetKernel_only" or read.get("historical_output_fallback") is not False or read.get("allow_failed_run_salvage") is not False:
+              raise SystemExit("read identity boundary mismatch")
+          if read.get("max_selected_files")!=5 or read.get("max_total_download_bytes")!=134217728 or read.get("output_download_attempts")!=1 or read.get("write_calls")!=0:
+              raise SystemExit("read byte/write boundary mismatch")
+          if read.get("exact_metadata_transient_http_statuses")!=[403,404] or read.get("exact_metadata_reconciliation_attempts_max")!=6:
+              raise SystemExit("exact metadata reconciliation boundary mismatch")
           ev=r["evaluation_contract"]
           required_false=("kaggle_compute_started","kaggle_kernel_write_allowed","competition_submission_allowed","public_leaderboard_read_allowed","row_level_prediction_label_artifact_allowed","result_derived_codeparrot_retuning_allowed")
           if any(ev.get(key) is not False for key in required_false): raise SystemExit("evaluation side-effect boundary mismatch")
@@ -139,7 +143,7 @@ jobs:
               raise SystemExit("frozen evaluation contract mismatch")
           if r["authentication"]!={"environment":"kaggle-readonry","credential_scope":"current_output_read_only","credential_must_be_removed_before_membership_reconstruction":True}:
               raise SystemExit("authentication boundary mismatch")
-          print("CODEPARROT_FULL_EVAL_REQUEST_STATIC PASS exact_version=1 files=5 compute=0 submission=0")
+          print("CODEPARROT_FULL_EVAL_REQUEST_STATIC PASS exact_version=1 files=5 download_attempts=1 compute=0 writes=0 submission=0")
           PY
 
       - name: Materialize pinned science evaluation source
@@ -252,8 +256,10 @@ jobs:
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          workdir="${RUNNER_TEMP}/codeparrot-full-eval-v1"
+          [[ ! -e "${workdir}" ]]
           mkdir -p "${workdir}/bridge" "${workdir}/science/src/poisoned_chalice" "${workdir}/science/scripts" "${workdir}/science/configs" "${workdir}/science/experiments/codeparrot-fresh-confirmation-v1"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
           python3 - "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
           import pathlib,ssl,sys,urllib.request
           sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
@@ -335,10 +341,12 @@ jobs:
           request=json.load(open(sys.argv[1],encoding="utf-8")); root=pathlib.Path(sys.argv[2])
           expected=request["uploaded_result_identity"]["files"]
           if set(p.name for p in root.iterdir() if p.is_file()) != set(expected): raise SystemExit("saved output allowlist mismatch")
+          selected_bytes=0
           for name,identity in expected.items():
-              path=root/name; data=path.read_bytes()
+              path=root/name; data=path.read_bytes(); selected_bytes+=len(data)
               if len(data)!=identity["bytes"]: raise SystemExit(f"uploaded/current byte mismatch: {name}")
               if hashlib.sha256(data).hexdigest()!=identity["sha256"]: raise SystemExit(f"uploaded/current sha mismatch: {name}")
+          if selected_bytes>request["read_contract"]["max_total_download_bytes"]: raise SystemExit("selected output byte budget exceeded")
           print("CODEPARROT_FULL_EVAL_OUTPUT_IDENTITY PASS exact_current_version=1 uploaded_match=1 files=5")
           PY
           rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
@@ -401,7 +409,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codeparrot-fresh-full-v1-frozen-evaluation
-          path: ${{ env.WORKDIR }}/aggregate-output
+          path: ${{ runner.temp }}/codeparrot-full-eval-v1/aggregate-output
           if-no-files-found: error
           retention-days: 1
           compression-level: 9
@@ -412,8 +420,6 @@ jobs:
         run: |
           set -euo pipefail
           rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
-          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then
-            rm -rf "${WORKDIR}/raw-output" "${WORKDIR}/science" "${WORKDIR}/bridge" "${WORKDIR}/eval-venv" "${WORKDIR}/kaggle-venv" "${WORKDIR}/aggregate-output"
-            rmdir "${WORKDIR}" 2>/dev/null || true
-          fi
+          workdir="${RUNNER_TEMP}/codeparrot-full-eval-v1"
+          if [[ -d "${workdir}" ]]; then rm -rf "${workdir}"; fi
           echo "CODEPARROT_FULL_EVAL_CLEANUP PASS raw_prediction_retained=0 row_label_join_retained=0 credentials_retained=0"
