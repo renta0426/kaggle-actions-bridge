@@ -64,6 +64,22 @@ def main() -> int:
         1,
     )
 
+    # The frozen B2.1 adapter patches evaluation.run_compact_task. E04's exact
+    # science source deliberately resolves the callable through cmi_flu.runner,
+    # so bind that alias to the same patched function after adapter install.
+    install_anchor = '        install()\n        from cmi_flu.configuration import load_baseline_config\n'
+    if runtime.count(install_anchor) != 1:
+        raise SystemExit("E04 B2.1 adapter install anchor changed")
+    runtime = runtime.replace(
+        install_anchor,
+        '        install()\n'
+        '        from cmi_flu import evaluation as _e04_evaluation\n'
+        '        from cmi_flu import runner as _e04_runner\n'
+        '        _e04_runner.run_compact_task = _e04_evaluation.run_compact_task\n'
+        '        from cmi_flu.configuration import load_baseline_config\n',
+        1,
+    )
+
     # Synthetic CI contains no Competition Data, so expose the exception text
     # there for diagnosis. Production keeps only the stable hashed error code.
     failure_line = '        print(f"CMI_FLU_E04_FAILED stage={stage} exception_type={type(exc).__name__} error_code={code}", file=sys.stderr)\n'
