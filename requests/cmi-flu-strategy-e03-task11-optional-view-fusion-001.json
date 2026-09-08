@@ -6,11 +6,22 @@
   "target": "renta0426/cmi-flu-e03-task11-optional-view-fusion-20260908-001",
   "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
   "science_source_commit": "2eaf8fac9a632c67f32c4a0ed37b64eeac571387",
-  "science_transport": "pinned_public_github_snapshot_presecret",
+  "science_transport": "agent_relay_exact_blobs",
   "strategy_e03_blob_sha": "e38fe01606dc5653ad3d1542f722726c1374b278",
+  "strategy_e03_relay_parts": [
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part00",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part01",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part02",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part03",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part04",
+    "payloads/cmi-flu-strategy-e03-task11-optional-view-001/strategy_e03.part05"
+  ],
   "task11_prior_immunity_blob_sha": "50d9a43604d2b75479b8f873a86a8daf9d5bd7a9",
+  "task11_prior_immunity_relay_path": "payloads/cmi-flu-task11-prior-immunity-001/task11_prior_immunity.py",
   "config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9",
+  "config_relay_path": "payloads/cmi-flu-strategy-e01-paired-evaluation-001/baseline_b021_robust.yaml",
   "frozen_b21_package_sha256": "87c317789b3b8fcbd5fce2ff8f74663d23c19d0fcdce0e05ba1e809ea7728cb2",
+  "frozen_b21_transport": "existing_task11_prior_runtime_release",
   "expected_kernel_version": 1,
   "enable_internet": false,
   "resource": {
