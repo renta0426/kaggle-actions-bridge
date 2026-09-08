@@ -1,0 +1,124 @@
+name: CMI-Flu E03 Task1.1 optional-view v5 corrected preflight
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/221-cmi-flu-strategy-e03-task11-optional-view-preflight.yml
+      - requests/cmi-flu-strategy-e03-task11-optional-view-fusion-001.json
+      - payloads/cmi-flu-strategy-e03-task11-optional-view-001/**
+      - payloads/cmi-flu-task11-prior-immunity-001/task11_prior_immunity.py
+      - payloads/cmi-flu-strategy-e01-paired-evaluation-001/baseline_b021_robust.yaml
+      - requests/cmi-flu-task11-prior-immunity-001.json
+      - scripts/cmi_flu_strategy_e03_prepare.py
+      - scripts/cmi_flu_strategy_e03_prepare_v2.py
+      - scripts/cmi_flu_strategy_e03_prepare_v5.py
+      - scripts/cmi_flu_strategy_e03_sanitize.py
+      - scripts/test_cmi_e03_runtime_contract.py
+      - scripts/test_cmi_e03_full_synthetic.py
+      - scripts/cmi_flu_strategy_e01_prepare.py
+      - scripts/cmi_flu_task11_prior_immunity_prepare.py
+      - scripts/cmi_flu_task11_prior_immunity_prepare_v2.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/221-cmi-flu-strategy-e03-task11-optional-view-preflight.yml
+      - requests/cmi-flu-strategy-e03-task11-optional-view-fusion-001.json
+      - payloads/cmi-flu-strategy-e03-task11-optional-view-001/**
+      - scripts/cmi_flu_strategy_e03_prepare_v5.py
+      - scripts/cmi_flu_strategy_e03_sanitize.py
+      - scripts/test_cmi_e03_runtime_contract.py
+      - scripts/test_cmi_e03_full_synthetic.py
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate corrected E03 full production path without secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce secret-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+      - name: Materialize exact event commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target=pathlib.Path(sys.argv[1]); ref=sys.argv[2]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/renta0426/kaggle-actions-bridge/tarball/{ref}",headers={"User-Agent":"cmi-flu-e03-v5-corrected/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(25_000_001)
+          if len(data)>25_000_000:raise SystemExit("bridge archive exceeds byte budget")
+          with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as archive:
+            files=[m for m in archive.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit("bridge archive layout invalid")
+            prefix=next(iter(prefixes))+'/'
+            for member in files:
+              rel=pathlib.PurePosixPath(member.name[len(prefix):])
+              if not member.name.startswith(prefix) or not rel.parts or '..' in rel.parts:raise SystemExit("unsafe bridge archive")
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(member).read())
+          PY
+      - name: Install exact modeling dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+      - name: Build and execute full synthetic E03 lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e03_prepare_v5.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/script.py" --self-test
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e03_runtime_contract.py" "${WORKDIR}/script.py"
+          python3 "${WORKDIR}/bridge/scripts/test_cmi_e03_full_synthetic.py" --runtime "${WORKDIR}/script.py" --sanitizer "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e03_sanitize.py"
+          ! grep -F 'kaggle competitions submit' "${WORKDIR}/script.py" >/dev/null
+          ! grep -F 'competition_submit(' "${WORKDIR}/script.py" >/dev/null
+          grep -F 'cli_submit_marker = "kaggle competitions " + "submit"' "${WORKDIR}/script.py" >/dev/null
+          grep -F 'api_submit_marker = "competition_" + "submit"' "${WORKDIR}/script.py" >/dev/null
+          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e03_prepare_v5.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e03_sanitize.py" "${WORKDIR}/bridge/scripts/test_cmi_e03_runtime_contract.py" "${WORKDIR}/bridge/scripts/test_cmi_e03_full_synthetic.py" "${WORKDIR}/script.py"
+          echo 'CMI_FLU_E03_V5_CORRECTED_FULL_PREFLIGHT PASS'
+      - name: Validate immutable request and retirement ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge/requests/cmi-flu-strategy-e03-task11-optional-view-fusion-001.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          expected={'schema_version':1,'request_id':'20260908-cmi-flu-strategy-e03-task11-optional-view-fusion-001','competition':'cmi-flu-first-prediction-challenge','operation':'kernel_run_and_current_output_read','target':'renta0426/cmi-flu-e03-task11-optional-view-fusion-20260908-001','science_source_commit':'2eaf8fac9a632c67f32c4a0ed37b64eeac571387','science_transport':'agent_relay_exact_blobs','strategy_e03_blob_sha':'e38fe01606dc5653ad3d1542f722726c1374b278','task11_prior_immunity_blob_sha':'50d9a43604d2b75479b8f873a86a8daf9d5bd7a9','config_blob_sha':'170d3211e2795c0730e481056c7bb068accf97c9','frozen_b21_package_sha256':'48ff4ed2eadec8b059b8d37fb677af1f249b6486bccfbd55dca2274cfc6f3dc3','frozen_b21_transport':'existing_task11_prior_runtime_release','expected_kernel_version':1,'enable_internet':False,'competition_submission_attempted':False,'leaderboard_used_for_selection':False,'automatic_compute_retries':0}
+          for k,v in expected.items():
+            if r.get(k)!=v:raise SystemExit(f'E03 request mismatch:{k}')
+          assert r['resource']=={'accelerator':'cpu','expected_runtime_minutes':45,'hard_timeout_minutes':75,'max_active_runs':1}
+          assert r['allowed_output_paths']==['bridge-result.json','metrics.json','summary.md']
+          assert len(r['strategy_e03_relay_parts'])==6
+          print('CMI_FLU_E03_REQUEST_CONTRACT PASS')
+          PY
+          for n in 216 217 218 219 220; do
+            f=$(find "${WORKDIR}/bridge/.github/workflows" -maxdepth 1 -type f -name "${n}-*" | head -1); [[ -n "$f" ]]
+            grep -Eq 'RETIRED|Retired|retired' "$f"
+            ! grep -Eq '^[[:space:]]+push:|^[[:space:]]+pull_request:|environment:|KAGGLE_API_TOKEN|group:[[:space:]]+kaggle-resource' "$f"
+          done
+      - name: Confirm current official Kaggle policy pages are reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ssl,urllib.request
+          for url in ('https://www.kaggle.com/terms','https://www.kaggle.com/aup','https://www.kaggle.com/community-guidelines','https://www.kaggle.com/docs/api'):
+            req=urllib.request.Request(url,headers={'User-Agent':'kaggle-actions-bridge-cmi-e03-v5-corrected/1'})
+            with urllib.request.urlopen(req,timeout=30,context=ssl.create_default_context()) as response:
+              if response.status!=200 or not response.read(65536):raise SystemExit('official Kaggle policy page unavailable')
+          print('CURRENT_KAGGLE_POLICY_REACHABILITY PASS')
+          PY
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
