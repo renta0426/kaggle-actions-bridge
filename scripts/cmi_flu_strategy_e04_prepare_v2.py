@@ -40,7 +40,7 @@ def main() -> int:
 
     # v1's nested replacement source is correct Python text except that a
     # literal "\\n" in two generated helper functions is consumed once too
-    # early.  Obtain that exact runtime while bypassing only its final compile,
+    # early. Obtain that exact runtime while bypassing only its final compile,
     # restore escaped newlines, then perform the real compile here.
     original_compile = builtins.compile
     def compile_guard(source, filename, mode, *positional, **keywords):
@@ -53,6 +53,23 @@ def main() -> int:
     finally:
         builtins.compile = original_compile
     runtime = runtime.replace('"\n"', '"\\n"')
+
+    # CONFIG_TEXT is YAML: verify its exact Git blob but never feed it to the
+    # Python compiler. Only the four relayed .py sources belong in that loop.
+    config_tuple = '        (CONFIG_TEXT, CONFIG_BLOB, "config"),\n'
+    if runtime.count(config_tuple) != 1:
+        raise SystemExit("E04 runtime config self-test anchor changed")
+    runtime = runtime.replace(config_tuple, "", 1)
+    adapter_anchor = '    compile(B21_ADAPTER_SOURCE, "cmi_flu_b21_runtime_adapter.py", "exec")\n'
+    if runtime.count(adapter_anchor) != 1:
+        raise SystemExit("E04 runtime adapter self-test anchor changed")
+    runtime = runtime.replace(
+        adapter_anchor,
+        '    if git_blob_sha(CONFIG_TEXT.encode("utf-8")) != CONFIG_BLOB:\n'
+        '        raise BridgeContractError("config_blob_mismatch")\n' + adapter_anchor,
+        1,
+    )
+
     original_compile(runtime, "generated_e04_runtime.py", "exec")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(runtime, encoding="utf-8")
