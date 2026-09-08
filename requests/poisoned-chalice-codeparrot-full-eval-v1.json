@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "request_id": "20260908-poisoned-chalice-codeparrot-full-eval-v1",
   "competition": "poisoned-chalice-icse27",
   "operation": "current_output_read_and_cpu_evaluate",
@@ -7,7 +7,9 @@
   "expected_current_version": 1,
   "required_terminal_status": "COMPLETE",
   "evaluator": {
-    "source": "scripts/evaluate_codeparrot_frozen_full_public.py",
+    "entry_point": "scripts/evaluate_codeparrot_frozen_full_public_v2.py",
+    "implementation_library": "scripts/evaluate_codeparrot_frozen_full_public.py",
+    "cohort_reconstruction_reference": "scripts/compose_public_codecorpus_cohort.py",
     "cohort_reconstruction_source": "public_bridge_frozen_contract",
     "private_research_repository_access": false,
     "member_dataset": "codeparrot/codeparrot-clean-train",
