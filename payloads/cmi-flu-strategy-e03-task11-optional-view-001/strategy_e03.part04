@@ -1,0 +1,220 @@
+            seed=RANDOM_SEED + fold_index,
+        )
+        shuffled_hai, shuffled_hai_fit = _fit_view_expert(
+            train_hai_fold,
+            held_hai,
+            columns=SEROLOGY_RANK_COLUMNS,
+            target_values=shuffle_target,
+            target_name="__e03_hai_shuffled_target",
+            flag_column="__has_hai",
+        )
+        shuffled_flow, shuffled_flow_fit = _fit_view_expert(
+            train_flow_fold,
+            held_flow,
+            columns=flow_columns,
+            target_values=shuffle_target,
+            target_name="__e03_flow_shuffled_target",
+            flag_column="__has_flow",
+        )
+        shuffle_controls = {
+            "moved_training_subjects": moved,
+            "hai_rank_fusion": _spearman(
+                target,
+                _blend(base_rank, _rank_available(shuffled_hai)),
+            ),
+            "flow_rank_fusion": _spearman(
+                target,
+                _blend(base_rank, _rank_available(shuffled_flow)),
+            ),
+            "hai_fit": shuffled_hai_fit,
+            "flow_fit": shuffled_flow_fit,
+        }
+
+        hai_availability = held_hai["__has_hai"].astype(float).to_numpy()
+        flow_availability = held_flow["__has_flow"].astype(float).to_numpy()
+        negative_controls = {
+            "hai_availability_only": _spearman(target, hai_availability),
+            "flow_availability_only": _spearman(target, flow_availability),
+            "subject_label_shuffle": shuffle_controls,
+        }
+
+        expert_diagnostics = {
+            "hai_raw": {
+                **hai_direct_fit,
+                **_expert_diagnostics(
+                    target, base_rank, hai_raw, scores["hai_raw_fusion_w0.25"]
+                ),
+            },
+            "hai_rank": {
+                **hai_direct_fit,
+                **_expert_diagnostics(
+                    target, base_rank, hai_rank, scores["hai_rank_fusion_w0.25"]
+                ),
+            },
+            "hai_residual": {
+                **hai_residual_fit,
+                **_expert_diagnostics(
+                    target,
+                    base_rank,
+                    hai_residual,
+                    scores["hai_crossfit_residual_w0.25"],
+                ),
+            },
+            "flow_rank": {
+                **flow_direct_fit,
+                **_expert_diagnostics(
+                    target,
+                    base_rank,
+                    flow_rank,
+                    scores["innate_flow_rank_fusion_w0.25"],
+                ),
+            },
+            "flow_residual": {
+                **flow_residual_fit,
+                **_expert_diagnostics(
+                    target,
+                    base_rank,
+                    flow_residual,
+                    scores["innate_flow_crossfit_residual_w0.25"],
+                ),
+            },
+        }
+
+        folds.append(
+            _json_safe(
+                {
+                    "held_study": str(split.held_out_group),
+                    "validation_rows": int(len(held_base)),
+                    "conditions": {
+                        name: _spearman(target, score) for name, score in scores.items()
+                    },
+                    "negative_controls": negative_controls,
+                    "experts": expert_diagnostics,
+                }
+            )
+        )
+
+    summary = {name: _summary(folds, name) for name in CONDITION_NAMES}
+    paired = {
+        name: _paired_vs_b21(folds, name)
+        for name in CONDITION_NAMES
+        if name != "b21"
+    }
+    promotable = [
+        name
+        for name, item in paired.items()
+        if item["passes_candidate_delta_heuristic"] and item["passes_guardrail"]
+    ]
+    selected = None
+    if promotable:
+        selected = max(
+            promotable,
+            key=lambda name: float(
+                summary[name]["study_equal_weight_spearman_mean_strict"]
+            ),
+        )
+
+    challenge_base_prediction = _fit_b21(
+        dataset.train,
+        dataset.challenge,
+        target_column=dataset.target_column,
+        spec=b21_spec,
+        excluded_columns=dataset.excluded_columns,
+    )
+    challenge_base_rank = percentile_rank(challenge_base_prediction)
+    final_target_rank = _target_rank(dataset.train, dataset.target_column)
+    final_inner_base_rank = _crossfit_base_rank(
+        dataset.train,
+        target_column=dataset.target_column,
+        spec=b21_spec,
+        excluded_columns=dataset.excluded_columns,
+    )
+    final_residual_target = final_target_rank - final_inner_base_rank
+
+    challenge_hai_direct, challenge_hai_direct_fit = _fit_view_expert(
+        train_hai,
+        challenge_hai_frame,
+        columns=SEROLOGY_RANK_COLUMNS,
+        target_values=final_target_rank,
+        target_name="__e03_hai_target_rank",
+        flag_column="__has_hai",
+    )
+    challenge_hai_raw = np.where(
+        np.isfinite(challenge_hai_direct),
+        np.clip(challenge_hai_direct, 0.0, 1.0),
+        np.nan,
+    )
+    challenge_hai_rank = _rank_available(challenge_hai_direct)
+    challenge_hai_residual, challenge_hai_residual_fit = _fit_view_expert(
+        train_hai,
+        challenge_hai_frame,
+        columns=SEROLOGY_RANK_COLUMNS,
+        target_values=final_residual_target,
+        target_name="__e03_hai_residual",
+        flag_column="__has_hai",
+    )
+    challenge_flow_direct, challenge_flow_direct_fit = _fit_view_expert(
+        train_flow,
+        challenge_flow_frame,
+        columns=flow_columns,
+        target_values=final_target_rank,
+        target_name="__e03_flow_target_rank",
+        flag_column="__has_flow",
+    )
+    challenge_flow_rank = _rank_available(challenge_flow_direct)
+    challenge_flow_residual, challenge_flow_residual_fit = _fit_view_expert(
+        train_flow,
+        challenge_flow_frame,
+        columns=flow_columns,
+        target_values=final_residual_target,
+        target_name="__e03_flow_residual",
+        flag_column="__has_flow",
+    )
+    challenge_scores = {
+        "b21": challenge_base_rank,
+        "hai_raw_fusion_w0.25": _blend(challenge_base_rank, challenge_hai_raw),
+        "hai_rank_fusion_w0.25": _blend(challenge_base_rank, challenge_hai_rank),
+        "hai_crossfit_residual_w0.25": _residual_correct(
+            challenge_base_rank, challenge_hai_residual
+        ),
+        "innate_flow_rank_fusion_w0.25": _blend(
+            challenge_base_rank, challenge_flow_rank
+        ),
+        "innate_flow_crossfit_residual_w0.25": _residual_correct(
+            challenge_base_rank, challenge_flow_residual
+        ),
+    }
+    challenge = {
+        "rows": int(len(dataset.challenge)),
+        "hai_rows": int(challenge_hai_frame["__has_hai"].sum()),
+        "flow_rows": int(challenge_flow_frame["__has_flow"].sum()),
+        "conditions": {
+            name: _challenge_agreement(challenge_base_rank, score)
+            for name, score in challenge_scores.items()
+            if name != "b21"
+        },
+        "expert_fit": {
+            "hai_direct": challenge_hai_direct_fit,
+            "hai_residual": challenge_hai_residual_fit,
+            "flow_direct": challenge_flow_direct_fit,
+            "flow_residual": challenge_flow_residual_fit,
+        },
+    }
+
+    return _json_safe(
+        {
+            "schema_version": 1,
+            "experiment": EXPERIMENT,
+            "task": TASK,
+            "comparison_contract": "paired_subject_purged_v2",
+            "conditions": list(CONDITION_NAMES),
+            "frozen_parameters": {
+                "b21_model": B21_MODEL_NAME,
+                "fusion_weight": FUSION_WEIGHT,
+                "view_ridge_alpha": VIEW_ALPHA,
+                "random_seed": RANDOM_SEED,
+            },
+            "flow_contract": flow_contract,
+            "flow_panel": flow_panel,
+            "historical_hai_feature_count": len(SEROLOGY_RANK_COLUMNS),
+            "missing_view_policy": "exact_fallback_to_frozen_b21",
