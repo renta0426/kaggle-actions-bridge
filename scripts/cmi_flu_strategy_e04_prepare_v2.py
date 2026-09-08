@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E04 builder v2: preserve escaped newlines across the nested runtime template."""
+"""E04 builder v2: preserve nested runtime escapes and validate exact relays."""
 from __future__ import annotations
 
 import argparse
@@ -38,10 +38,6 @@ def main() -> int:
     e04, contract, synthetic, task13 = base.load_exact_e04(root)
     frozen = base.load_base(root)
 
-    # v1's nested replacement source is correct Python text except that a
-    # literal "\\n" in two generated helper functions is consumed once too
-    # early. Obtain that exact runtime while bypassing only its final compile,
-    # restore escaped newlines, then perform the real compile here.
     original_compile = builtins.compile
     def compile_guard(source, filename, mode, *positional, **keywords):
         if filename == "generated_e04_runtime.py":
@@ -54,8 +50,6 @@ def main() -> int:
         builtins.compile = original_compile
     runtime = runtime.replace('"\n"', '"\\n"')
 
-    # CONFIG_TEXT is YAML: verify its exact Git blob but never feed it to the
-    # Python compiler. Only the four relayed .py sources belong in that loop.
     config_tuple = '        (CONFIG_TEXT, CONFIG_BLOB, "config"),\n'
     if runtime.count(config_tuple) != 1:
         raise SystemExit("E04 runtime config self-test anchor changed")
@@ -67,6 +61,18 @@ def main() -> int:
         adapter_anchor,
         '    if git_blob_sha(CONFIG_TEXT.encode("utf-8")) != CONFIG_BLOB:\n'
         '        raise BridgeContractError("config_blob_mismatch")\n' + adapter_anchor,
+        1,
+    )
+
+    # Synthetic CI contains no Competition Data, so expose the exception text
+    # there for diagnosis. Production keeps only the stable hashed error code.
+    failure_line = '        print(f"CMI_FLU_E04_FAILED stage={stage} exception_type={type(exc).__name__} error_code={code}", file=sys.stderr)\n'
+    if runtime.count(failure_line) != 1:
+        raise SystemExit("E04 runtime failure-log anchor changed")
+    runtime = runtime.replace(
+        failure_line,
+        '        detail = f" detail={str(exc)}" if synthetic else ""\n'
+        '        print(f"CMI_FLU_E04_FAILED stage={stage} exception_type={type(exc).__name__} error_code={code}{detail}", file=sys.stderr)\n',
         1,
     )
 
