@@ -127,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
-          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
           [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
           [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/191-cmi-flu-e06a-003-readonly-recovery-001.yml@refs/heads/main" ]]
 
