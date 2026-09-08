@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "request_id": "20260908-cmi-flu-strategy-e06b-task23-two-head-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e06b-task23-two-head-20260908-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "d172adc2778f3e4fea7692d2a2129db402a994c4",
+  "science_transport": "agent_relay_exact_blobs",
+  "strategy_e06_blob_sha": "dd5b5ed12e7667e527c97a99e86b8821e68e6442",
+  "strategy_e06_v2_blob_sha": "270a9616c4ab4726cac72e220f86c071161765dc",
+  "strategy_e06b_blob_sha": "5b27abb1bb515e9388e63e7dd4c350aebea90574",
+  "strategy_e06b_v2_blob_sha": "fe05fd9497f5a80b56b96fbf5f2971a9d43f4e10",
+  "predecessor_result": {
+    "experiment": "strategy_v2_e06a_task23_rank_preserving_calibration",
+    "selected_promoted_condition": null,
+    "all_global_calibration_candidates_promoted": false,
+    "result_source": "user_supplied_hash_verified_003_output_archive",
+    "result_record_science_commit": "d172adc2778f3e4fea7692d2a2129db402a994c4"
+  },
+  "locked_reference_sha256": {
+    "strain_sequences.csv": "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887",
+    "vaccine_strains_per_season.txt": "8f6c7116f37f29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35"
+  },
+  "locked_strain_sequence_header": ["Virus", "Sequence", "Status_of_sequence"],
+  "experiment_contract": {
+    "task": "Task2.3",
+    "primary_day": 365,
+    "auxiliary_day": 28,
+    "conditions": ["b21_reference", "phase_a_target_domain"],
+    "independent_control": "ridge_exact_a100_D365_only",
+    "shared_model": "ridge_exact_a100_[Z,day_code*Z,day_code]",
+    "day_code_d28": -0.5,
+    "day_code_d365": 0.5,
+    "d28_role": "auxiliary_training_label_only",
+    "observed_d28_used_as_d365_feature": false,
+    "outer_evaluation": "subject_purged_leave_one_D365_study_out",
+    "held_study_and_subjects_purged_from_both_days": true,
+    "outer_fold_panel_overlap_filter": "fixed_panel_strain_availability_only_before_outcome_access",
+    "preprocessing_fit": "outer_training_rows_only_across_D28_and_D365",
+    "minimum_equal_study_mean_rmse_reduction": 0.02,
+    "minimum_median_study_rmse_reduction_strictly_greater_than": 0.0,
+    "maximum_worst_study_rmse_ratio": 1.05,
+    "minimum_equal_study_spearman_delta": -0.01,
+    "large_study_n": 10,
+    "maximum_large_study_spearman_decline": -0.10
+  },
+  "runtime_regression_contract": {
+    "production_execute_path_tested_before_write": true,
+    "completion_marker_uses_conditions_not_tasks": true,
+    "result_tasks_subscript_forbidden": true,
+    "candidate_nonpromotion_is_valid_result": true
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 120,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 150,
+    "poll_interval_seconds": 120,
+    "max_polls": 65,
+    "max_pages": 2
+  },
+  "watcher_contract": {
+    "watch_horizon_minutes": 130,
+    "actions_job_timeout_minutes": 150,
+    "poll_exhaustion_is_remote_failure": false,
+    "write_retry_on_watch_expiry": false,
+    "recovery_after_watch_expiry": "current_version_read_only"
+  },
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0
+}
