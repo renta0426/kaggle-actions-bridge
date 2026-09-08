@@ -25,7 +25,8 @@ from kaggle_exact_identity import (
     verify_current_eventually,
 )
 
-FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+# Kaggle-generated metadata may start with underscores; never accept paths.
+FILE_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 MAX_ALLOWED_FILES = 32
 MAX_SINGLE_FILE_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_DOWNLOAD_BYTES = 128 * 1024 * 1024
@@ -37,7 +38,7 @@ def _parse_allow(values: list[str]) -> dict[str, int]:
     result: dict[str, int] = {}
     for value in values:
         name, sep, raw_limit = value.partition(":")
-        if not sep or not FILE_RE.fullmatch(name):
+        if not sep or not FILE_RE.fullmatch(name) or ".." in name:
             raise ValueError("allow-file must be NAME:MAX_BYTES with a basename only")
         limit = int(raw_limit)
         if limit <= 0 or limit > MAX_SINGLE_FILE_BYTES:
