@@ -42,7 +42,7 @@ class OutputContracts(unittest.TestCase):
                 metadata.current_version_number = 2
             return subprocess.CompletedProcess(args, 1 if scenario == "cli_failed" else 0, "private-canary" if scenario == "cli_failed" else "", "")
         modules = {"kaggle": types.ModuleType("kaggle"), "kaggle.api": types.ModuleType("kaggle.api"), "kaggle.api.kaggle_api_extended": stub}
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, modules), patch.object(identity, "exact_metadata", return_value=metadata), patch.object(reader, "exact_metadata", return_value=metadata), patch.object(reader.shutil, "which", return_value="/synthetic/kaggle"), patch.object(reader.subprocess, "run", side_effect=cli):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, modules), patch.object(identity, "exact_metadata", return_value=metadata) as exact_read, patch.object(reader.shutil, "which", return_value="/synthetic/kaggle"), patch.object(reader.subprocess, "run", side_effect=cli):
             out = Path(tmp) / "out"
             if scenario == "ok":
                 with redirect_stdout(io.StringIO()):
@@ -53,6 +53,7 @@ class OutputContracts(unittest.TestCase):
                     reader.read_current_output(kernel="owner/notebook", expected_version=1, allow={"metrics.json": 1 if scenario == "oversize" else 100}, output_dir=out)
                 self.assertNotIn("private-canary", str(failure.exception))
                 self.assertFalse(out.exists())
+        self.assertEqual(exact_read.call_count, 1 if scenario == "cli_failed" else 2)
         self.assertEqual(len(called), 1)
         self.assertFalse(called[0].exists(), "temporary broad download must be cleaned")
 
@@ -74,6 +75,12 @@ class OutputContracts(unittest.TestCase):
         for values in ([], ["../private:1"], ["ok:0"], ["ok:67108865"], ["ok:1", "ok:2"]):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 reader._parse_allow(values)
+
+    def test_safe_underscore_and_path_rejection(self):
+        self.assertEqual(reader._parse_allow(["full_predictions.parquet:678787", "__huggingface_repos__.json:428"]), {"full_predictions.parquet": 678787, "__huggingface_repos__.json": 428})
+        for name in ("../secret", "/tmp/x", "a/b", "a\\b", "..", "a..b", "_..secret", ".hidden", "A" * 129):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                reader._parse_allow([f"{name}:1"])
 
     def test_single_bounded_cli_and_no_search(self):
         source = Path(reader.__file__).read_text(); tree = ast.parse(source)
