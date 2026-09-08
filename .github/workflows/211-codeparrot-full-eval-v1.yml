@@ -364,7 +364,7 @@ jobs:
             --uploaded-audit "${WORKDIR}/science/experiments/codeparrot-fresh-confirmation-v1/full_result_audit_20260908.json" \
             --output-dir "${WORKDIR}/aggregate-output"
 
-      - name: Audit aggregate-only evaluation result and print frozen headline metrics
+      - name: Audit and emit aggregate-only frozen result
         shell: bash
         run: |
           set -euo pipefail
@@ -403,16 +403,10 @@ jobs:
               "evaluation_manifest_sha256":summary["evaluation_manifest_sha256"],
           }
           print("CODEPARROT_FULL_EVAL_RESULT PASS "+json.dumps(headline,sort_keys=True))
+          print("CODEPARROT_FULL_EVAL_SUMMARY_BEGIN")
+          print(json.dumps(summary,sort_keys=True))
+          print("CODEPARROT_FULL_EVAL_SUMMARY_END")
           PY
-
-      - name: Upload aggregate-only frozen evaluation artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: codeparrot-fresh-full-v1-frozen-evaluation
-          path: ${{ runner.temp }}/codeparrot-full-eval-v1/aggregate-output
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 9
 
       - name: Cleanup credentials and row-level runner-local material
         if: always()
