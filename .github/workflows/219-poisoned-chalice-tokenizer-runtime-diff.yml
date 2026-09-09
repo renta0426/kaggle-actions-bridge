@@ -24,16 +24,17 @@ jobs:
     env:
       EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       DATASET_REVISION: 2ed5468723efa5457a3665782c6979ea4dbac7c2
-      HF_HOME: ${{ runner.temp }}/pc-tokenizer-hf
     steps:
       - name: Materialize exact public probe source
         shell: bash
         run: |
           set -euo pipefail
           workdir="${RUNNER_TEMP}/pc-tokenizer-runtime-probe"
-          [[ ! -e "${workdir}" ]]
-          mkdir -p "${workdir}"
+          hf_home="${RUNNER_TEMP}/pc-tokenizer-hf"
+          [[ ! -e "${workdir}" && ! -e "${hf_home}" ]]
+          mkdir -p "${workdir}" "${hf_home}"
           echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          echo "HF_HOME=${hf_home}" >> "${GITHUB_ENV}"
           python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
           import pathlib,re,sys,urllib.request
           sha,root=sys.argv[1:]
@@ -126,4 +127,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf "${RUNNER_TEMP}/pc-tokenizer-runtime-probe" "${HF_HOME}"
+          rm -rf "${RUNNER_TEMP}/pc-tokenizer-runtime-probe" "${RUNNER_TEMP}/pc-tokenizer-hf"
