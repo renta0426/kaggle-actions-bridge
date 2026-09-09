@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-poisoned-chalice-lumia-hs-runtime-50-readout-v1",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "current_kernel_runtime_readout",
+  "target_kernel": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v1",
+  "kernel_version": 1,
+  "expected_outputs": [
+    "lumia_hidden_state_runtime_pilot_50/runtime.json",
+    "lumia_hidden_state_runtime_pilot_50/run_manifest.json"
+  ],
+  "side_effects": [],
+  "automatic_retries": 0,
+  "publish_private_outputs": false,
+  "publish_only_aggregate_runtime": true,
+  "scientific_contract": {
+    "task_id": "P1-03-lumia-hidden-state-runtime-pilot-50-v1",
+    "rows": 50,
+    "max_length": 8192,
+    "direct_1000_gate_estimated_wall_minutes_lte": 105,
+    "performance_metrics_computed": false,
+    "sample_level_outputs_persisted": false,
+    "automatic_promotion": false
+  }
+}
