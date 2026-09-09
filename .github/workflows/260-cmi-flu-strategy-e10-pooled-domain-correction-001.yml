@@ -8,6 +8,7 @@ on:
       - requests/cmi-flu-strategy-e10-pooled-domain-correction-001.json
       - payloads/cmi-flu-strategy-e10-pooled-domain-correction-001/**
       - scripts/cmi_flu_strategy_e10_prepare.py
+      - scripts/cmi_flu_strategy_e10_prepare_v2.py
       - scripts/cmi_flu_strategy_e10_execute.py
       - scripts/cmi_flu_strategy_e10_sanitize.py
   pull_request:
@@ -16,6 +17,7 @@ on:
       - requests/cmi-flu-strategy-e10-pooled-domain-correction-001.json
       - payloads/cmi-flu-strategy-e10-pooled-domain-correction-001/**
       - scripts/cmi_flu_strategy_e10_prepare.py
+      - scripts/cmi_flu_strategy_e10_prepare_v2.py
       - scripts/cmi_flu_strategy_e10_execute.py
       - scripts/cmi_flu_strategy_e10_sanitize.py
 
@@ -54,7 +56,7 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e10-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e10-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(60_000_001)
           if len(data)>60_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
@@ -108,9 +110,10 @@ jobs:
           python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
           python3 -m py_compile \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_prepare_v2.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_execute.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_sanitize.py"
-          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_prepare.py" \
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_prepare_v2.py" \
             --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/runtime.py"
           python3 "${WORKDIR}/runtime.py" --self-test
           test ! -e "${WORKDIR}/synthetic"
@@ -196,7 +199,7 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e10-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e10-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(60_000_001)
           if len(data)>60_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
@@ -225,7 +228,7 @@ jobs:
           "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
           "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
           python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
-          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_prepare.py" \
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_prepare_v2.py" \
             --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/runtime.py"
           python3 "${WORKDIR}/runtime.py" --self-test
 
