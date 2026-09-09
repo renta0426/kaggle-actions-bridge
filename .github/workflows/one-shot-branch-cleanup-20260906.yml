@@ -1,4 +1,4 @@
-name: One-shot bridge branch cleanup 20260906
+name: One-shot merged branch cleanup 20260909
 
 on:
   push:
@@ -14,17 +14,15 @@ jobs:
   cleanup:
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
-      github.actor == 'renta0426' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
-      - name: Verify audited repository state and delete every non-main branch
+      - name: Delete only fully merged stale branches
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_BRANCH_SET_SHA256: 0493be7798b6b23daf2961dabde06897781cb4fc4976693f82b7dfdcc57315b2
-          EXPECTED_BRANCH_COUNT: "131"
+          ACTIVE_BRANCH: poisoned-chalice/p1-03-lumia-hs-runtime-50-v1-20260909
         run: |
           set -euo pipefail
 
@@ -33,39 +31,47 @@ jobs:
           git -C "${workdir}" init -q
           git -C "${workdir}" remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           git -C "${workdir}" config credential.helper '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f'
+          git -C "${workdir}" fetch -q --prune origin '+refs/heads/*:refs/remotes/origin/*'
 
-          git -C "${workdir}" ls-remote --heads origin \
-            | awk '{sub("refs/heads/", "", $2); print $2}' \
-            | sort > /tmp/branches.txt
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+            --jq '.[].head.ref' | sort -u > /tmp/open-pr-heads.txt
 
-          actual_count="$(wc -l < /tmp/branches.txt | tr -d ' ')"
-          actual_sha="$(sha256sum /tmp/branches.txt | awk '{print $1}')"
-          [[ "${actual_count}" == "${EXPECTED_BRANCH_COUNT}" ]] || {
-            echo "BRANCH_CLEANUP_REFUSED count_changed expected=${EXPECTED_BRANCH_COUNT} actual=${actual_count}"
-            exit 1
-          }
-          [[ "${actual_sha}" == "${EXPECTED_BRANCH_SET_SHA256}" ]] || {
-            echo "BRANCH_CLEANUP_REFUSED set_changed expected=${EXPECTED_BRANCH_SET_SHA256} actual=${actual_sha}"
-            exit 1
-          }
+          printf '%s\n' main "${ACTIVE_BRANCH}" > /tmp/explicit-preserve.txt
+          cat /tmp/open-pr-heads.txt >> /tmp/explicit-preserve.txt
+          sort -u -o /tmp/explicit-preserve.txt /tmp/explicit-preserve.txt
 
-          open_pr_count="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" --jq '.[].number' | wc -l | tr -d ' ')"
-          [[ "${open_pr_count}" == "0" ]] || {
-            echo "BRANCH_CLEANUP_REFUSED open_prs=${open_pr_count}"
-            exit 1
-          }
+          git -C "${workdir}" for-each-ref --format='%(refname:strip=3)' refs/remotes/origin \
+            | grep -v '^HEAD$' | sort -u > /tmp/branches.txt
 
-          grep -Fxq main /tmp/branches.txt
           delete_count=0
+          preserve_count=0
+          unmerged_count=0
           while IFS= read -r branch; do
-            [[ "${branch}" == "main" ]] && continue
-            git -C "${workdir}" push --quiet origin --delete "${branch}"
-            delete_count=$((delete_count + 1))
+            if grep -Fxq "${branch}" /tmp/explicit-preserve.txt; then
+              echo "BRANCH_PRESERVE explicit=${branch}"
+              preserve_count=$((preserve_count + 1))
+              continue
+            fi
+            if git -C "${workdir}" merge-base --is-ancestor \
+              "refs/remotes/origin/${branch}" refs/remotes/origin/main; then
+              git -C "${workdir}" push --quiet origin --delete "${branch}"
+              echo "BRANCH_DELETE merged=${branch}"
+              delete_count=$((delete_count + 1))
+            else
+              echo "BRANCH_PRESERVE unmerged=${branch}"
+              unmerged_count=$((unmerged_count + 1))
+            fi
           done < /tmp/branches.txt
 
           git -C "${workdir}" ls-remote --heads origin \
-            | awk '{sub("refs/heads/", "", $2); print $2}' \
-            | sort > /tmp/final-branches.txt
-          [[ "$(cat /tmp/final-branches.txt)" == "main" ]]
-          [[ "${delete_count}" == "130" ]]
-          echo "BRANCH_CLEANUP_COMPLETE deleted=${delete_count} remaining=1 branch=main"
+            | awk '{sub("refs/heads/", "", $2); print $2}' | sort > /tmp/final-branches.txt
+          grep -Fxq main /tmp/final-branches.txt
+          while IFS= read -r branch; do
+            [[ -z "${branch}" ]] && continue
+            grep -Fxq "${branch}" /tmp/final-branches.txt || {
+              echo "BRANCH_CLEANUP_REFUSED preserved_branch_missing=${branch}"
+              exit 1
+            }
+          done < /tmp/explicit-preserve.txt
+
+          echo "BRANCH_CLEANUP_COMPLETE deleted=${delete_count} explicit_preserved=${preserve_count} unmerged_preserved=${unmerged_count} remaining=$(wc -l < /tmp/final-branches.txt | tr -d ' ')"
