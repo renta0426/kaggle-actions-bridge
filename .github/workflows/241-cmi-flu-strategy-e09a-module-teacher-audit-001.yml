@@ -1,21 +1,23 @@
-name: CMI-Flu strategy E09a module teacher applicability CPU 001
+name: CMI-Flu strategy E09a module teacher applicability CPU 001 corrected
 
 on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/240-cmi-flu-strategy-e09a-module-teacher-audit-001.yml
+      - .github/workflows/241-cmi-flu-strategy-e09a-module-teacher-audit-001.yml
       - requests/cmi-flu-strategy-e09a-module-teacher-audit-001.json
       - payloads/cmi-flu-strategy-e09a-module-teacher-audit-001/**
       - scripts/cmi_flu_strategy_e09a_prepare.py
+      - scripts/cmi_flu_strategy_e09a_prepare_v2.py
       - scripts/cmi_flu_strategy_e09a_execute.py
       - scripts/cmi_flu_strategy_e09a_sanitize.py
   pull_request:
     paths:
-      - .github/workflows/240-cmi-flu-strategy-e09a-module-teacher-audit-001.yml
+      - .github/workflows/241-cmi-flu-strategy-e09a-module-teacher-audit-001.yml
       - requests/cmi-flu-strategy-e09a-module-teacher-audit-001.json
       - payloads/cmi-flu-strategy-e09a-module-teacher-audit-001/**
       - scripts/cmi_flu_strategy_e09a_prepare.py
+      - scripts/cmi_flu_strategy_e09a_prepare_v2.py
       - scripts/cmi_flu_strategy_e09a_execute.py
       - scripts/cmi_flu_strategy_e09a_sanitize.py
 
@@ -37,7 +39,7 @@ env:
 
 jobs:
   validate:
-    name: Validate exact E09a runtime on synthetic data
+    name: Validate corrected exact E09a runtime on synthetic data
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -57,7 +59,7 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e09a-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e09a-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(50_000_001)
           if len(data)>50_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
@@ -107,15 +109,16 @@ jobs:
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
 
-      - name: Build runtime and execute synthetic contract
+      - name: Build corrected runtime and execute synthetic contract
         shell: bash
         run: |
           set -euo pipefail
           python3 -m py_compile \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_prepare_v2.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_execute.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_sanitize.py"
-          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_prepare.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_prepare_v2.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
           python3 "${WORKDIR}/runtime.py" --self-test
           test ! -e "${WORKDIR}/synthetic"
           python3 "${WORKDIR}/runtime.py" --synthetic --output-dir "${WORKDIR}/synthetic"
@@ -142,7 +145,7 @@ jobs:
             "${WORKDIR}/runtime.py" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_"* >/dev/null
           grep -F 'Path("/tmp")' "${WORKDIR}/runtime.py" >/dev/null
           ! grep -F '/kaggle/working/e09a-runtime' "${WORKDIR}/runtime.py" >/dev/null
-          echo CMI_FLU_E09A_SYNTHETIC_PASS
+          echo CMI_FLU_E09A_CORRECTED_SYNTHETIC_PASS
 
       - name: Validate executor argv without credentials
         shell: bash
@@ -164,7 +167,7 @@ jobs:
           [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
 
   run:
-    name: Run one private CPU E09a audit and read aggregate result
+    name: Run one corrected private CPU E09a audit and read aggregate result
     needs: validate
     if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
     environment: kaggle-readonry
@@ -187,7 +190,7 @@ jobs:
           [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
           [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
           [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
-          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/240-cmi-flu-strategy-e09a-module-teacher-audit-001.yml@refs/heads/main" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/241-cmi-flu-strategy-e09a-module-teacher-audit-001.yml@refs/heads/main" ]]
 
       - name: Materialize exact bridge commit
         shell: bash
@@ -199,7 +202,7 @@ jobs:
           python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e09a-bridge/1"})
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e09a-bridge/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(50_000_001)
           if len(data)>50_000_000:raise SystemExit('bridge archive too large')
           with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
@@ -219,12 +222,12 @@ jobs:
           set -euo pipefail
           python3 "${WORKDIR}/bridge/scripts/kaggle_policy_preflight.py"
 
-      - name: Build exact E09a runtime
+      - name: Build corrected exact E09a runtime
         shell: bash
         run: |
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
-          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_prepare.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_prepare_v2.py" --repository-root "${WORKDIR}/bridge" --output "${WORKDIR}/runtime.py"
           python3 "${WORKDIR}/runtime.py" --self-test
 
       - name: Install locked Kaggle CLI
