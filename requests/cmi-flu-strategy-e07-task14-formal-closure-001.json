@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-cmi-flu-strategy-e07-task14-formal-closure-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e07-task14-formal-closure-20260909-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "a6cdc7c43bc487d88e9c15f2c63565ff8c702dac",
+  "science_transport": "agent_relay_exact_blobs",
+  "pinned_git_blobs": {
+    "src/cmi_flu/strategy_e07.py": "44ebdd2a1dc9ceeb771eaeb295c74545eb3cc1a4",
+    "src/cmi_flu/strategy_e07_synthetic.py": "b8971d05d0d1f094b03f861ec3438c6f17c8587a",
+    "src/cmi_flu/aliases.py": "5b9930c8e26f2b462ee8ce64fdfbdb76df2d1af3",
+    "src/cmi_flu/contracts.py": "6e2791e526255d9c534e71c9c0886f0c300df7bd",
+    "src/cmi_flu/targets.py": "154681d9a51e36abd635b596c6d8f7cee22c2d96"
+  },
+  "experiment_contract": {
+    "experiment": "strategy_v2_e07_task14_formal_closure",
+    "task": "Task1.4",
+    "contract_version": "e07_task14_zero_shot_audit_v1",
+    "public_training_aim_rows": 0,
+    "expected_challenge_aim_rows": 600,
+    "expected_challenge_subjects": 40,
+    "expected_stimulation_categories": 5,
+    "expected_baseline_timepoints": ["-14", "0", "Pre-vacc"],
+    "prevacc_arithmetic_tolerance": 1e-8,
+    "minimum_external_teacher_coverage": 28,
+    "epitope_hla_map_available": false,
+    "generic_tcr_clonality_teacher_forbidden": true,
+    "background_contrast_sensitivity_only": true,
+    "recommended_default_predictor": "raw_pre_vacc_conserved_anchor",
+    "public_probe_authorized": false,
+    "no_supervised_cv_without_compatible_aim_outcomes": true
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 10,
+    "hard_timeout_minutes": 30,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 60,
+    "poll_interval_seconds": 60,
+    "max_polls": 35,
+    "max_pages": 2
+  },
+  "required_competition_files": [
+    "2025LJI_aim.tsv",
+    "2025LJI_vdj.tsv",
+    "participants.tsv",
+    "participant_hla.tsv"
+  ],
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
+  "side_effects": ["create exactly one private CPU notebook version"],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0,
+  "rules_checked_at_utc": "2026-09-09T04:10:00Z"
+}
