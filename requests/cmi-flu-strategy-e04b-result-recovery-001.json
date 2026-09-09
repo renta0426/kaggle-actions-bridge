@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-cmi-flu-strategy-e04b-result-recovery-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "current_output_read",
+  "target": "renta0426/cmi-flu-e04b-task13-material-bridge-20260909-001",
+  "expected_kernel_version": 1,
+  "expected_output_sha256": {
+    "bridge-result.json": "9ee3bfe518454a92a095ca83926abdbed5906dff79e02c24e52308537560d8df",
+    "metrics.json": "d80c59eb4279a7d3cb0a89a20907fc1f4a7cea0ee95770e7e6198d147d2593ca",
+    "summary.md": "53ea67162d56cf391077a10f89cfad1be033ab61d0797f8b32ed7483b41339e3"
+  },
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "cc51692a66055ed1716fd6d66ac574c4a22f0dcc",
+  "source_execution_request": "20260909-cmi-flu-strategy-e04b-task13-material-bridge-001",
+  "source_execution_bridge_commit": "796674c8f821814c2083f5c4822ef2caddc27032",
+  "source_execution_run_id": 34305362279,
+  "failure_classification": "output_hygiene_sanitizer_raw_row_count_conflated_with_prediction_rows",
+  "repair": "validate_raw_alias_row_accounting_separately_from_40_donor_correction_rows",
+  "resource": {
+    "accelerator": "none",
+    "expected_runtime_minutes": 5,
+    "hard_timeout_minutes": 15,
+    "max_active_runs": 0
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 0,
+    "max_polls": 0,
+    "max_pages": 1
+  },
+  "allowed_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "side_effects": [],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "compute_retry": false,
+  "automatic_compute_retries": 0
+}
