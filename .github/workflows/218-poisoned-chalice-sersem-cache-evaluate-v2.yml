@@ -1,0 +1,350 @@
+name: Poisoned Chalice P1-03 SERSEM cache evaluation v2
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/poisoned_chalice_sersem_cache_recover.py'
+      - 'scripts/poisoned_chalice_sersem_cache_eval_standalone.py'
+      - 'scripts/kaggle_exact_identity.py'
+      - '.github/workflows/218-poisoned-chalice-sersem-cache-evaluate-v2.yml'
+      - 'requests/poisoned-chalice-sersem-cache-evaluate-v2.json'
+  push:
+    branches: [main]
+    paths:
+      - 'requests/poisoned-chalice-sersem-cache-evaluate-v2.json'
+
+permissions: {}
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: '1354356687'
+  EXPECTED_ACTOR_ID: '71638068'
+  SCIENCE_SHA: '44e602d1e61c5b5c603283c7d68a480ba626de70'
+  AUTHOR_SHA: '413f56040e5b4805bcf15ed794dec56bc4e16b41'
+  REQUEST_PATH: requests/poisoned-chalice-sersem-cache-evaluate-v2.json
+
+jobs:
+  validate:
+    name: Validate v2 recovery and evaluator without credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Materialize exact public bridge files and validate request
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/sersem-cache-eval-v2-validate"
+          [[ ! -e "${workdir}" ]]
+          mkdir -p "${workdir}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]
+          assert re.fullmatch(r'[0-9a-f]{40}',sha)
+          root=pathlib.Path(root)
+          for rel in [
+              'requests/poisoned-chalice-sersem-cache-evaluate-v2.json',
+              'scripts/poisoned_chalice_sersem_cache_recover.py',
+              'scripts/poisoned_chalice_sersem_cache_eval_standalone.py',
+              'scripts/kaggle_exact_identity.py',
+          ]:
+              with urllib.request.urlopen(
+                  f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',
+                  timeout=30,
+              ) as response:
+                  data=response.read(262145)
+              assert 0 < len(data) <= 262144
+              (root/pathlib.Path(rel).name).write_bytes(data)
+          PY
+          python3 -W error::SyntaxWarning -m py_compile \
+            "${workdir}/poisoned_chalice_sersem_cache_recover.py" \
+            "${workdir}/poisoned_chalice_sersem_cache_eval_standalone.py" \
+            "${workdir}/kaggle_exact_identity.py"
+          PYTHONPATH="${workdir}" python3 "${workdir}/poisoned_chalice_sersem_cache_recover.py" --self-test
+          PYTHONPATH="${workdir}" python3 - "${workdir}/poisoned-chalice-sersem-cache-evaluate-v2.json" <<'PY'
+          import pathlib,sys
+          from poisoned_chalice_sersem_cache_recover import _load_request
+          request=_load_request(pathlib.Path(sys.argv[1]))
+          expected_top={
+              'schema_version','request_id','operation','science_sha','environment',
+              'output_suffix_template','expected_total_shards','version_substitution_allowed',
+              'automatic_retries','kaggle_write_calls','kaggle_compute_started',
+              'membership_sources_allowed','performance_evaluation_allowed','api_budget',
+              'max_file_bytes','max_total_bytes','targets',
+          }
+          assert set(request)==expected_top
+          assert request['request_id']=='20260909-poisoned-chalice-p1-03-sersem-cache-evaluate-v2-001'
+          assert request['science_sha']=='44e602d1e61c5b5c603283c7d68a480ba626de70'
+          assert set(request['targets']['primary'])=={
+              'kernel','expected_current_version','expected_status','shard_start','shard_end'
+          }
+          assert set(request['targets']['continuation'])=={
+              'kernel','expected_current_version','expected_status','shard_start','shard_end'
+          }
+          assert request['targets']['continuation']['expected_current_version']==1
+          assert request['targets']['continuation']['expected_status']=='COMPLETE'
+          print('SERSEM_CACHE_EVAL_V2_REQUEST PASS continuation_version=1')
+          PY
+          python3 -m venv "${workdir}/test-venv"
+          "${workdir}/test-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input numpy==2.4.2 >/dev/null
+          "${workdir}/test-venv/bin/python" \
+            "${workdir}/poisoned_chalice_sersem_cache_eval_standalone.py" --self-test
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/sersem-cache-eval-v2-validate"
+
+  evaluate:
+    name: Recover exact 40 shards and evaluate SERSEM caller/helper variants
+    needs: validate
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.repository_id == '1354356687' && github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EVENT_SHA: ${{ github.sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      WORKFLOW_REF: ${{ github.workflow_ref }}
+      EVENT_REPOSITORY: ${{ github.repository }}
+      EVENT_REPOSITORY_ID: ${{ github.repository_id }}
+      EVENT_ACTOR: ${{ github.actor }}
+      EVENT_ACTOR_ID: ${{ github.actor_id }}
+      EVENT_SENDER_ID: ${{ github.event.sender.id }}
+    steps:
+      - name: Enforce protected read-only execution boundary
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == renta0426 ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == 'renta0426/kaggle-actions-bridge/.github/workflows/218-poisoned-chalice-sersem-cache-evaluate-v2.yml@refs/heads/main' ]]
+          [[ "${RUNNER_ENVIRONMENT}" == github-hosted ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]]
+          done
+
+      - name: Materialize only public pinned sources before secret exposure
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/sersem-cache-eval-v2"
+          [[ ! -e "${workdir}" ]]
+          mkdir -p "${workdir}/bridge" "${workdir}/author" "${workdir}/hf"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${AUTHOR_SHA}" "${workdir}" <<'PY'
+          import pathlib,re,sys,urllib.request
+          bridge_sha,author_sha,root=sys.argv[1:]
+          assert re.fullmatch(r'[0-9a-f]{40}',bridge_sha)
+          assert author_sha=='413f56040e5b4805bcf15ed794dec56bc4e16b41'
+          root=pathlib.Path(root)
+          for rel in [
+              'requests/poisoned-chalice-sersem-cache-evaluate-v2.json',
+              'scripts/poisoned_chalice_sersem_cache_recover.py',
+              'scripts/poisoned_chalice_sersem_cache_eval_standalone.py',
+              'scripts/kaggle_exact_identity.py',
+              'scripts/kaggle_policy_preflight.py',
+              'requirements/kaggle-2.2.4.lock',
+          ]:
+              with urllib.request.urlopen(
+                  f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{bridge_sha}/{rel}',
+                  timeout=30,
+              ) as response:
+                  data=response.read(262145)
+              assert 0 < len(data) <= 262144
+              (root/'bridge'/pathlib.Path(rel).name).write_bytes(data)
+          for rel in ['code/LumiaAttack.py','code/ASTExtractor.py','code/LinterExtractor.py']:
+              with urllib.request.urlopen(
+                  f'https://raw.githubusercontent.com/Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026/{author_sha}/{rel}',
+                  timeout=30,
+              ) as response:
+                  data=response.read(131073)
+              assert 0 < len(data) <= 131072
+              (root/'author'/pathlib.Path(rel).name).write_bytes(data)
+          PY
+          PYTHONPATH="${workdir}/bridge" python3 - "${workdir}/bridge/poisoned-chalice-sersem-cache-evaluate-v2.json" <<'PY'
+          import pathlib,sys
+          from poisoned_chalice_sersem_cache_recover import _load_request
+          request=_load_request(pathlib.Path(sys.argv[1]))
+          expected_top={
+              'schema_version','request_id','operation','science_sha','environment',
+              'output_suffix_template','expected_total_shards','version_substitution_allowed',
+              'automatic_retries','kaggle_write_calls','kaggle_compute_started',
+              'membership_sources_allowed','performance_evaluation_allowed','api_budget',
+              'max_file_bytes','max_total_bytes','targets',
+          }
+          if set(request)!=expected_top:
+              raise SystemExit('request field allowlist mismatch')
+          if request['request_id']!='20260909-poisoned-chalice-p1-03-sersem-cache-evaluate-v2-001':
+              raise SystemExit('request id mismatch')
+          if request['science_sha']!='44e602d1e61c5b5c603283c7d68a480ba626de70':
+              raise SystemExit('science provenance mismatch')
+          if request['targets']['continuation']['expected_current_version']!=1:
+              raise SystemExit('continuation version mismatch')
+          PY
+          python3 - "${workdir}/author" <<'PY'
+          import pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          lumia=(root/'LumiaAttack.py').read_text(encoding='utf-8')
+          ast=(root/'ASTExtractor.py').read_text(encoding='utf-8')
+          lint=(root/'LinterExtractor.py').read_text(encoding='utf-8')
+          assert 'def generate_char_weight_mask(self, text: str, language: str = None)' in lumia
+          assert 'char_weights = self.generate_char_weight_mask(text)' in lumia
+          assert 'if AST_AVAILABLE and language in PARSERS:' in ast
+          assert "if language == 'Python':" in lint
+          print('SERSEM_AUTHOR_CALLER_PATH PASS language_argument_omitted=1')
+          PY
+          python3 "${workdir}/bridge/kaggle_policy_preflight.py"
+
+      - name: Prepare SHA-locked Kaggle client before secret exposure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r "${WORKDIR}/bridge/kaggle-2.2.4.lock" >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Prepare exact public train, tokenizer, and SERSEM runtime before secret exposure
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libenchant-2-2 >/dev/null
+          python3 -m venv "${WORKDIR}/eval-venv"
+          "${WORKDIR}/eval-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
+            numpy==2.4.2 pandas==3.0.1 pyarrow==23.0.1 \
+            scikit-learn==1.8.0 scipy==1.17.1 joblib==1.5.3 \
+            datasets==4.6.1 huggingface-hub==0.30.0 \
+            transformers==4.52.0 tokenizers==0.21.0 \
+            tree-sitter==0.25.2 tree-sitter-go==0.25.0 tree-sitter-java==0.23.5 \
+            tree-sitter-python==0.25.0 tree-sitter-ruby==0.23.1 tree-sitter-rust==0.24.0 \
+            pyenchant==3.3.0 flake8==7.3.0 >/dev/null
+          "${WORKDIR}/eval-venv/bin/python" -m pip check >/dev/null
+          HF_HOME="${WORKDIR}/hf" "${WORKDIR}/eval-venv/bin/python" \
+            "${WORKDIR}/bridge/poisoned_chalice_sersem_cache_eval_standalone.py" --self-test
+          HF_HOME="${WORKDIR}/hf" "${WORKDIR}/eval-venv/bin/python" - <<'PY'
+          from pathlib import Path
+          import os
+          import pandas as pd
+          from datasets import load_dataset
+          from transformers import AutoTokenizer
+
+          root=Path(os.environ['WORKDIR'])
+          revision='2ed5468723efa5457a3665782c6979ea4dbac7c2'
+          parts=[]
+          expected={'Go':10000,'Java':10000,'Python':10000,'Ruby':10000,'Rust':9040}
+          for language,count in expected.items():
+              frame=load_dataset(
+                  'Poisoned-Chalice/ICSE-2027-public', language,
+                  split='train', revision=revision,
+              ).to_pandas()
+              if len(frame)!=count or frame['membership'].isna().any():
+                  raise SystemExit('public train partition mismatch')
+              frame['language']=language
+              parts.append(frame[['sample_id','content','membership','language']])
+          train=pd.concat(parts,ignore_index=True)
+          if len(train)!=49040 or train['sample_id'].duplicated().any():
+              raise SystemExit('public train contract mismatch')
+          train.to_parquet(root/'public-train.parquet',index=False)
+          AutoTokenizer.from_pretrained(
+              'bigcode/starcoder2-3b',
+              revision='733247c55e3f73af49ce8e9c7949bf14af205928',
+              trust_remote_code=True,
+          )
+          print('SERSEM_PUBLIC_PREP PASS rows=49040 tokenizer_revision_pinned=1')
+          PY
+
+      - name: Recover exact current-version 40 token-stat shards and remove credential
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          trap 'rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"' EXIT
+          mkdir -p "${HOME}/.kaggle"
+          umask 077
+          printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"
+          unset KAGGLE_API_TOKEN
+          PYTHONPATH="${WORKDIR}/bridge" \
+            "${WORKDIR}/kaggle-venv/bin/python" \
+            "${WORKDIR}/bridge/poisoned_chalice_sersem_cache_recover.py" \
+            --request "${WORKDIR}/bridge/poisoned-chalice-sersem-cache-evaluate-v2.json" \
+            --output-dir "${WORKDIR}/token-cache"
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+
+      - name: Run caller-literal and language-aware helper evaluation offline from Kaggle
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ ! -e "${HOME}/.kaggle/access_token" && ! -e "${HOME}/.kaggle/kaggle.json" ]]
+          [[ -z "${KAGGLE_API_TOKEN-}" ]]
+          export HF_HOME="${WORKDIR}/hf"
+          export HF_HUB_OFFLINE=1
+          export TRANSFORMERS_OFFLINE=1
+          "${WORKDIR}/eval-venv/bin/python" \
+            "${WORKDIR}/bridge/poisoned_chalice_sersem_cache_eval_standalone.py" \
+            --dataset-parquet "${WORKDIR}/public-train.parquet" \
+            --cache-dir "${WORKDIR}/token-cache" \
+            --output-json "${WORKDIR}/sersem-summary.json" \
+            --bootstrap-replicates 1000 \
+            --bootstrap-seed 20260909
+          "${WORKDIR}/eval-venv/bin/python" - "${WORKDIR}/sersem-summary.json" <<'PY'
+          import json,sys
+          summary=json.load(open(sys.argv[1],encoding='utf-8'))
+          if summary.get('samples')!=10000:
+              raise SystemExit('unexpected sample count')
+          if sorted(summary.get('languages',[]))!=['Go','Java','Python','Ruby','Rust']:
+              raise SystemExit('unexpected languages')
+          if summary.get('diagnostics',{}).get('caller_generic_linter_samples')!=10000:
+              raise SystemExit('caller literal path was not generic for every sample')
+          public={
+              'schema_version':1,
+              'protocol':summary['protocol'],
+              'author_repository':summary['author_repository'],
+              'author_commit':summary['author_commit'],
+              'science_provenance':'44e602d1e61c5b5c603283c7d68a480ba626de70',
+              'input_protocol':summary['input_protocol'],
+              'caller_path_finding':summary['caller_path_finding'],
+              'samples':summary['samples'],
+              'languages':summary['languages'],
+              'diagnostics':summary['diagnostics'],
+              'metrics':summary['metrics'],
+              'bootstrap':summary['bootstrap'],
+              'per_language_auc':summary['per_language_auc'],
+              'conservative_tp_at_1pct_fpr':summary['conservative_tp_at_1pct_fpr'],
+              'kaggle_writes':0,
+              'compute_started':False,
+              'raw_cache_uploaded':False,
+              'sample_predictions_uploaded':False,
+          }
+          print('SERSEM_CACHE_EVALUATION_V2_RESULT '+json.dumps(public,sort_keys=True))
+          PY
+
+      - name: Cleanup all credentials and local cache material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          rm -rf "${RUNNER_TEMP}/sersem-cache-eval-v2"
+          echo 'SERSEM_CACHE_EVAL_V2_CLEANUP PASS artifact_uploads=0 kaggle_writes=0 compute_started=0'
