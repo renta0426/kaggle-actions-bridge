@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e10-failure-diagnose-001",
+  "parent_request_id": "20260909-cmi-flu-strategy-e10-pooled-domain-correction-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_failure_diagnostic",
+  "target": "renta0426/cmi-flu-e10-pooled-domain-correction-20260909-002",
+  "expected_current_version": 1,
+  "failed_actions_run": 34364922051,
+  "failed_actions_job": 102511311607,
+  "science_source_commit": "3a8728879179115487f5ce0ba4a4a0467e1910bb",
+  "bridge_source_commit": "efa8c973eb5a541b98ca913837bd676cda2b7ee7",
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "raw_log_persisted": false,
+  "publish_only_redacted_failure_metadata": true
+}
