@@ -32,17 +32,18 @@ jobs:
   validate:
     name: Validate historical-alignment SERSEM v3 without credentials
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Materialize exact public helpers and run pure self-tests
+      - name: Materialize exact helpers and compile
         shell: bash
         run: |
           set -euo pipefail
           workdir="${RUNNER_TEMP}/sersem-cache-eval-v3-validate"
           [[ ! -e "${workdir}" ]]
           mkdir -p "${workdir}"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
           python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
           import pathlib,re,sys,urllib.request
           sha,root=sys.argv[1:]
@@ -68,15 +69,65 @@ jobs:
             "${workdir}/poisoned_chalice_sersem_cache_recover.py" \
             "${workdir}/kaggle_exact_identity.py"
           python3 "${workdir}/poisoned_chalice_historical_token_alignment.py" --self-test
-          python3 "${workdir}/poisoned_chalice_sersem_cache_eval_v3.py" --self-test
           PYTHONPATH="${workdir}" python3 "${workdir}/poisoned_chalice_sersem_cache_recover.py" --self-test
+
+      - name: Run evaluator self-test with declared numerical dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/selftest-venv"
+          "${WORKDIR}/selftest-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input numpy==2.4.2 >/dev/null
+          "${WORKDIR}/selftest-venv/bin/python" \
+            "${WORKDIR}/poisoned_chalice_sersem_cache_eval_v3.py" --self-test
+
+      - name: Resolve exact historical tokenizer runtime without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/historical-check"
+          "${WORKDIR}/historical-check/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
+            transformers==5.0.0 tokenizers==0.22.2 huggingface-hub==1.30.0 >/dev/null
+          "${WORKDIR}/historical-check/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/historical-check/bin/python" - <<'PY'
+          import importlib.metadata
+          assert importlib.metadata.version('transformers') == '5.0.0'
+          assert importlib.metadata.version('tokenizers') == '0.22.2'
+          assert importlib.metadata.version('huggingface-hub') == '1.30.0'
+          print('SERSEM_V3_HISTORICAL_RUNTIME_RESOLUTION PASS')
+          PY
+
+      - name: Resolve exact SERSEM author Python runtime without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/author-check"
+          "${WORKDIR}/author-check/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
+            numpy==2.4.2 pandas==3.0.1 pyarrow==23.0.1 \
+            scikit-learn==1.8.0 scipy==1.17.1 joblib==1.5.3 \
+            transformers==4.52.0 tokenizers==0.21.0 \
+            tree-sitter==0.25.2 tree-sitter-go==0.25.0 tree-sitter-java==0.23.5 \
+            tree-sitter-python==0.25.0 tree-sitter-ruby==0.23.1 tree-sitter-rust==0.24.0 \
+            pyenchant==3.3.0 flake8==7.3.0 >/dev/null
+          "${WORKDIR}/author-check/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/author-check/bin/python" - <<'PY'
+          import importlib.metadata
+          expected={
+              'transformers':'4.52.0','tokenizers':'0.21.0',
+              'tree-sitter':'0.25.2','pyenchant':'3.3.0','flake8':'7.3.0',
+          }
+          for package,version in expected.items():
+              assert importlib.metadata.version(package) == version
+          print('SERSEM_V3_AUTHOR_RUNTIME_RESOLUTION PASS')
+          PY
 
       - name: Validate immutable request when present
         shell: bash
         run: |
           set -euo pipefail
-          workdir="${RUNNER_TEMP}/sersem-cache-eval-v3-validate"
-          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          python3 - "${EVENT_SHA}" "${WORKDIR}" <<'PY'
           import pathlib,sys,urllib.error,urllib.request
           sha,root=sys.argv[1:]
           rel='requests/poisoned-chalice-sersem-cache-evaluate-v3.json'
@@ -94,8 +145,8 @@ jobs:
           assert 0 < len(data) <= 16384
           (pathlib.Path(root)/pathlib.Path(rel).name).write_bytes(data)
           PY
-          if [[ -f "${workdir}/poisoned-chalice-sersem-cache-evaluate-v3.json" ]]; then
-            PYTHONPATH="${workdir}" python3 - "${workdir}/poisoned-chalice-sersem-cache-evaluate-v3.json" <<'PY'
+          if [[ -f "${WORKDIR}/poisoned-chalice-sersem-cache-evaluate-v3.json" ]]; then
+            PYTHONPATH="${WORKDIR}" python3 - "${WORKDIR}/poisoned-chalice-sersem-cache-evaluate-v3.json" <<'PY'
           import pathlib,sys
           from poisoned_chalice_sersem_cache_recover import _load_request
           request=_load_request(pathlib.Path(sys.argv[1]))
@@ -112,10 +163,18 @@ jobs:
               raise SystemExit('request id mismatch')
           if request['science_sha']!='44e602d1e61c5b5c603283c7d68a480ba626de70':
               raise SystemExit('science provenance mismatch')
-          if request['targets']['primary']['expected_current_version']!=1:
-              raise SystemExit('primary version mismatch')
-          if request['targets']['continuation']['expected_current_version']!=1:
-              raise SystemExit('continuation version mismatch')
+          if request['targets']['primary']!={
+              'kernel':'renta0426/starter-plus-10k-v2',
+              'expected_current_version':1,'expected_status':'ERROR',
+              'shard_start':0,'shard_end':23,
+          }:
+              raise SystemExit('primary contract mismatch')
+          if request['targets']['continuation']!={
+              'kernel':'renta0426/starter-plus-10k-v2-continuation',
+              'expected_current_version':1,'expected_status':'COMPLETE',
+              'shard_start':24,'shard_end':39,
+          }:
+              raise SystemExit('continuation contract mismatch')
           print('SERSEM_V3_REQUEST_VALIDATION PASS')
           PY
           fi
@@ -300,6 +359,7 @@ jobs:
             --disable-pip-version-check --no-input \
             pandas==3.0.1 pyarrow==23.0.1 \
             transformers==5.0.0 tokenizers==0.22.2 huggingface-hub==1.30.0 >/dev/null
+          "${WORKDIR}/historical-venv/bin/python" -m pip check >/dev/null
           HF_HOME="${HF_HOME}" "${WORKDIR}/historical-venv/bin/python" \
             "${WORKDIR}/bridge/poisoned_chalice_historical_token_alignment.py" --self-test
           HF_HOME="${HF_HOME}" "${WORKDIR}/historical-venv/bin/python" - <<'PY'
@@ -326,12 +386,12 @@ jobs:
           "${WORKDIR}/eval-venv/bin/python" \
             "${WORKDIR}/bridge/poisoned_chalice_sersem_cache_eval_v3.py" --self-test
           "${WORKDIR}/eval-venv/bin/python" - <<'PY'
-          import enchant
-          import importlib.metadata
+          import enchant, importlib.metadata
           d=enchant.Dict('en_US')
           assert d.check('language')
           expected={
-              'transformers':'4.52.0','tokenizers':'0.21.0','pyenchant':'3.3.0','flake8':'7.3.0',
+              'transformers':'4.52.0','tokenizers':'0.21.0',
+              'pyenchant':'3.3.0','flake8':'7.3.0',
           }
           for package,version in expected.items():
               assert importlib.metadata.version(package)==version
