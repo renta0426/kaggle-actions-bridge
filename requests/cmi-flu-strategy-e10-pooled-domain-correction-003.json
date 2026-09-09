@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e10-pooled-domain-correction-003",
+  "parent_request_id": "20260909-cmi-flu-strategy-e10-pooled-domain-correction-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e10-pooled-domain-correction-20260910-003",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "3a8728879179115487f5ce0ba4a4a0467e1910bb",
+  "science_transport": "agent_relay_exact_blobs_plus_proven_e05_v6_runtime",
+  "strategy_e10_blob_sha": "638b09860f85689714cb0b354f4f377a405deeac",
+  "strategy_e10_synthetic_blob_sha": "f1f33f3909e64e69fb859d98b4163cdb4860d64d",
+  "dependency_blobs": {
+    "anchor_residual.py": "9a7814ecdf70e0b38b2740ade21e9db588869379",
+    "rank_transfer.py": "d5e07cdd09d2eabdc935eb1733ec238e26ab4c17",
+    "study_similarity.py": "27351df3d9187899c4bce2ff1a24b06efc160185",
+    "baseline_b021_robust.yaml": "170d3211e2795c0730e481056c7bb068accf97c9"
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 45,
+    "hard_timeout_minutes": 120,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 100,
+    "poll_interval_seconds": 120,
+    "max_polls": 65,
+    "max_pages": 2
+  },
+  "allowed_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "side_effects": [
+    "create exactly one fresh private CPU Notebook version and read only its current aggregate outputs"
+  ],
+  "repair_provenance": {
+    "consumed_failed_target": "renta0426/cmi-flu-e10-pooled-domain-correction-20260909-002",
+    "consumed_failed_version": 1,
+    "failed_actions_run": 34364922051,
+    "failed_actions_job": 102511311607,
+    "failure_stage": "validate_e10",
+    "failure_exception_type": "NameError",
+    "failure_error_code": "05e03c78697d5df8e699",
+    "root_cause": "generated aggregate validator referenced numpy as np without a guaranteed runtime import",
+    "repair_scope": "bridge_validator_runtime_imports_only"
+  },
+  "experiment_contract": {
+    "experiment": "strategy_v2_e10_pooled_domain_conditioned_residual",
+    "tasks": ["Task1.1", "Task1.2"],
+    "task11_base_kind": "b21",
+    "task11_base_model": "pls_2",
+    "task12_base_kind": "anchor_residual",
+    "task12_anchor_column": "flow_rank__Classical_monocytes",
+    "task12_residual_model": "et_d5_l5_sqrt",
+    "task12_residual_lambda": 0.5,
+    "candidates": ["xonly_weighted_shared", "shrunk_study_deviation"],
+    "ridge_alpha": 10.0,
+    "correction_shrinkage": 0.25,
+    "absolute_rank_correction_cap": 0.05,
+    "source_weight_clip": [0.5, 2.0],
+    "source_row_weight_mean": 1.0,
+    "deviation_scale": 0.25,
+    "effective_deviation_penalty_multiplier": 16.0,
+    "minimum_source_subjects": 5,
+    "inner_loso_crossfit_residual": true,
+    "held_outcomes_used_for_domain_weights": false,
+    "isolated_source_study_models_allowed": false,
+    "promotion_mean_delta": 0.02,
+    "promotion_minimum_study_delta": -0.10,
+    "promotion_requires_strict_majority_wins": true,
+    "public_probe_authorized": false,
+    "automatic_incumbent_change_authorized": false
+  },
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0,
+  "rules_checked_at_utc": "2026-09-09T15:45:12Z"
+}
