@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03-lumia-hidden-state-runtime-pilot-50-v1",
+  "operational_attempt": "v5_explicit_cuda_transfer_repair",
+  "as_of": "2026-09-09",
+  "status": "implementation_pending_execution",
+  "parent_contract": "configs/p1_03_lumia_hidden_state_runtime_pilot_50_v1_20260909.json",
+  "failed_v1_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v1",
+  "failed_v2_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v2",
+  "failed_v3_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v3",
+  "failed_v4_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v4",
+  "new_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v5",
+  "failed_v4_current_version": 1,
+  "failed_v4_terminal_status": "KERNELWORKERSTATUS.ERROR",
+  "confirmed_v4_failure": {
+    "stage": "after target-site import gate, public train load, tokenizer/model load; before runtime pilot forward",
+    "exception": "AssertionError at assert next(model.parameters()).device.type == 'cuda'",
+    "elapsed_seconds_approximately": 193,
+    "target_site_import_gate_passed": true,
+    "public_train_rows_loaded": 49040,
+    "model_from_pretrained_returned": true,
+    "first_parameter_on_cuda": false,
+    "gpu_model_forward_started": false
+  },
+  "root_cause": {
+    "classification": "model_device_placement_mismatch",
+    "evidence": [
+      "v4 fresh-child import gate passed with numpy 2.4.2, scipy 1.17.1, sklearn 1.8.0, torch 2.10.0+cu128 and transformers 4.52.0",
+      "all five public train configurations loaded successfully",
+      "AutoModelForCausalLM.from_pretrained returned, then the immediate CUDA-device assertion failed",
+      "v4 used device_map='cuda', while a previously successful StarCoder2-3B 10k Kaggle cache in this repository used from_pretrained(...).to('cuda').eval()"
+    ],
+    "interpretation": "The v4 isolation/bootstrap repair worked. The demonstrated remaining failure is model placement, not dependency ABI, dataset loading, LUMIA scoring, max_length, or VRAM during a model forward."
+  },
+  "repair_scope": "explicit_single_gpu_model_transfer_only",
+  "repair": {
+    "target_site_runtime_unchanged_from_v4": true,
+    "device_map_removed": true,
+    "model_loaded_fp16_then_explicit_to_cuda0": true,
+    "model_transfer_expression": "model.to('cuda:0').eval()",
+    "parameter_device_set_required": ["cuda:0"],
+    "buffer_device_set_allowed": [[], ["cuda:0"]],
+    "reuse_previously_successful_repo_pattern": "scripts/build_feature_cache_v2_notebook.py from_pretrained(...).to('cuda').eval()",
+    "single_t4_scoring_device": "cuda:0"
+  },
+  "scientific_contract_unchanged": {
+    "rows": 50,
+    "rows_per_language_label": 5,
+    "selection_seed": 20260909,
+    "selection_labels_removed_before_model_scoring": true,
+    "validation_rows_used": false,
+    "model_id": "bigcode/starcoder2-3b",
+    "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "author_commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+    "max_length": 8192,
+    "precision": "fp16",
+    "all_transformer_layers": true,
+    "pooling_outputs_checked": [
+      "mean",
+      "caller_literal_weighted_mean",
+      "helper_language_aware_weighted_mean"
+    ],
+    "same_forward_output_scores_finite_only": true,
+    "raw_activations_persisted": false,
+    "sample_scores_persisted": false,
+    "performance_metrics_computed": false,
+    "direct_1000_gate_estimated_wall_minutes_lte": 105
+  },
+  "resource": {
+    "accelerator": "Kaggle NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "scoring_gpu": "cuda:0",
+    "expected_runtime_minutes": 25,
+    "hard_timeout_minutes": 60,
+    "automatic_compute_retries": 0,
+    "enable_internet": true
+  },
+  "persistent_outputs": [
+    "lumia_hidden_state_runtime_pilot_50/runtime.json",
+    "lumia_hidden_state_runtime_pilot_50/run_manifest.json"
+  ],
+  "forbidden": [
+    "AUC",
+    "TPR",
+    "pAUC",
+    "probe training",
+    "validation rows or labels",
+    "Public Leaderboard feedback",
+    "competition submission",
+    "sample-level persistent outputs",
+    "silent max_length reduction",
+    "overwrite failed v1, v2, v3, or v4 target",
+    "device_map='cuda' model placement path",
+    "automatic compute retry"
+  ]
+}
