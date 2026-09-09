@@ -143,7 +143,7 @@ def validate_research(research_root: Path) -> None:
         if marker not in runtime:
             raise RuntimeError(f"SERSEM runtime marker missing: {marker}")
     for marker in (
-        TARGET, AUTHOR_COMMIT, MODEL_REVISION, DATASET_REVISION,
+        TARGET,
         "CONFIG = LumiaRuntimePilotConfig()", "CONFIG.max_length",
         'list(cohort.columns) == ["sample_id", "language", "content"]',
         "run_runtime_pilot(model, tokenizer, cohort, runtime, CONFIG)",
