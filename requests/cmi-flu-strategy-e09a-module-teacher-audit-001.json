@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-cmi-flu-strategy-e09a-module-teacher-audit-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e09a-module-teacher-audit-20260909-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "537cc7fbcf668d8729010c8be304c4b1bb9b63a5",
+  "science_transport": "agent_relay_exact_blobs_plus_frozen_e04b_runtime",
+  "strategy_e09a_blob_sha": "37270a0a8aafc070d91b5f43fbea3ba169cd61b0",
+  "strategy_e09a_synthetic_blob_sha": "231a3739fd6015c61d389cce12ffa1a7aefb3f38",
+  "pinned_dependency_blobs": {
+    "aliases.py": "5b9930c8e26f2b462ee8ce64fdfbdb76df2d1af3",
+    "contracts.py": "6e2791e526255d9c534e71c9c0886f0c300df7bd",
+    "strategy_e04.py": "73c112a8bb3b1ee7a6dd5bfbd5645a945bea6ebb",
+    "strategy_e04_contract.py": "3982541febfb4641fbf895438ae1a465bdbb3d5e",
+    "strategy_e04b.py": "72f936a7248dfa17338932077d17fb43123cb056",
+    "task13_harmonization.py": "5c6725dc757a5ba9dd21289b1c4f09997e1afdb8"
+  },
+  "experiment_contract": {
+    "experiment": "strategy_v2_e09a_module_teacher_applicability_audit",
+    "audit_type": "outcome_independent_presence_schema_and_measurement_compatibility",
+    "direct_tasks": ["Task1.3", "Task2.1", "Task2.2", "Task2.3"],
+    "minimum_direct_studies": 2,
+    "minimum_subjects_per_study": 8,
+    "minimum_total_subjects": 24,
+    "minimum_common_genes": 1000,
+    "challenge_expected_donors": 40,
+    "challenge_panel_derivation": "2025LJI_serology_metadata_only_assay_strain_vaccine_flag",
+    "historical_serology_outcome_values_read": false,
+    "model_fitting_authorized": false,
+    "module_gene_sets_frozen": false,
+    "batch_corrected_challenge_only_form_selected": false,
+    "missing_view_policy": "fallback_to_frozen_base",
+    "public_probe_authorized": false
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 90,
+    "hard_timeout_minutes": 150,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 100,
+    "poll_interval_seconds": 120,
+    "max_polls": 80,
+    "max_pages": 2
+  },
+  "watcher_contract": {
+    "watch_horizon_minutes": 160,
+    "actions_job_timeout_minutes": 180,
+    "poll_exhaustion_is_remote_failure": false,
+    "write_retry_on_watch_expiry": false,
+    "recovery_after_watch_expiry": "current_version_read_only"
+  },
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
+  "side_effects": ["create exactly one private CPU Notebook version/run on a fresh target"],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0
+}
