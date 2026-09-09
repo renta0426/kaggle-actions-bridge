@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03-lumia-hidden-state-runtime-pilot-50-v1",
+  "operational_attempt": "v3_isolated_runtime_repair",
+  "as_of": "2026-09-09",
+  "status": "implementation_pending_execution",
+  "parent_contract": "configs/p1_03_lumia_hidden_state_runtime_pilot_50_v1_20260909.json",
+  "failed_v1_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v1",
+  "failed_v2_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v2",
+  "new_target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v3",
+  "failed_v2_current_version": 1,
+  "failed_v2_terminal_status": "KERNELWORKERSTATUS.ERROR",
+  "confirmed_v2_failure": {
+    "stage": "first install/import cell before data/model work",
+    "exception": "ImportError: cannot import name '_center' from 'numpy._core.umath'",
+    "trace_path": "sklearn -> scipy -> numpy._core.strings -> numpy._core.umath",
+    "gpu_model_forward_started": false
+  },
+  "root_cause": {
+    "classification": "in_process_binary_abi_mutation",
+    "evidence": [
+      "v2 pip-installed numpy==2.4.2/scipy==1.17.1/scikit-learn==1.8.0 into the already-running Kaggle notebook interpreter",
+      "the failure occurred immediately after pip install while importing sklearn.metrics",
+      "NumPy Python code requested _center from the loaded numpy._core.umath extension and the symbol was absent"
+    ],
+    "interpretation": "The live interpreter observed a mixed NumPy Python/binary-extension state after in-place wheel replacement; this is operational, not a LUMIA/model/VRAM failure."
+  },
+  "repair_scope": "isolated_fresh_interpreter_runtime_only",
+  "repair": {
+    "live_kaggle_kernel_pip_mutation": false,
+    "isolated_venv": true,
+    "venv_system_site_packages": true,
+    "scientific_packages_installed_only_inside_venv": true,
+    "child_python_process_for_all_data_model_and_scoring_work": true,
+    "pip_no_deps": true,
+    "pip_force_reinstall_inside_venv": true,
+    "pre_data_import_gate": [
+      "numpy/pandas/scipy/sklearn import from isolated venv",
+      "torch tensor to NumPy bridge succeeds",
+      "sklearn.metrics.roc_curve import succeeds without being called",
+      "transformers.AutoTokenizer import succeeds",
+      "transformers.AutoModelForCausalLM import succeeds"
+    ]
+  },
+  "author_runtime_alignment": {
+    "numpy": "2.4.2",
+    "pandas": "3.0.1",
+    "pyarrow": "23.0.1",
+    "scikit-learn": "1.8.0",
+    "scipy": "1.17.1",
+    "joblib": "1.5.3",
+    "threadpoolctl": "3.6.0",
+    "transformers": "4.52.0",
+    "tokenizers": "0.21.0",
+    "huggingface-hub": "0.30.0",
+    "tree-sitter": "0.25.2",
+    "tree-sitter-go": "0.25.0",
+    "tree-sitter-java": "0.23.5",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-ruby": "0.23.1",
+    "tree-sitter-rust": "0.24.0",
+    "pyenchant": "3.3.0",
+    "flake8": "7.3.0"
+  },
+  "scientific_contract_unchanged": {
+    "rows": 50,
+    "rows_per_language_label": 5,
+    "selection_seed": 20260909,
+    "selection_labels_removed_before_model_scoring": true,
+    "validation_rows_used": false,
+    "model_id": "bigcode/starcoder2-3b",
+    "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "author_commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+    "max_length": 8192,
+    "precision": "fp16",
+    "all_transformer_layers": true,
+    "pooling_outputs_checked": [
+      "mean",
+      "caller_literal_weighted_mean",
+      "helper_language_aware_weighted_mean"
+    ],
+    "same_forward_output_scores_finite_only": true,
+    "raw_activations_persisted": false,
+    "sample_scores_persisted": false,
+    "performance_metrics_computed": false,
+    "direct_1000_gate_estimated_wall_minutes_lte": 105
+  },
+  "resource": {
+    "accelerator": "Kaggle NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 25,
+    "hard_timeout_minutes": 60,
+    "automatic_compute_retries": 0,
+    "enable_internet": true
+  },
+  "persistent_outputs": [
+    "lumia_hidden_state_runtime_pilot_50/runtime.json",
+    "lumia_hidden_state_runtime_pilot_50/run_manifest.json"
+  ],
+  "forbidden": [
+    "AUC",
+    "TPR",
+    "pAUC",
+    "probe training",
+    "validation rows or labels",
+    "Public Leaderboard feedback",
+    "competition submission",
+    "sample-level persistent outputs",
+    "silent max_length reduction",
+    "overwrite failed v1 or v2 target",
+    "pip install numerical ABI packages into the live notebook interpreter"
+  ]
+}
