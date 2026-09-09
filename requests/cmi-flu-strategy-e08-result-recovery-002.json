@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-cmi-flu-strategy-e08-result-recovery-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "current_output_read",
+  "target": "renta0426/cmi-flu-e08-task13-applicability-20260909-001",
+  "expected_kernel_version": 1,
+  "expected_output_sha256": {
+    "bridge-result.json": "ef532b131033cd49fa263402af319215ac7ccb4a4e91ae549cc19884de045eea",
+    "metrics.json": "8f0ac5adf9534fdfa82a76e902365eefdb33f238a75f50c28b963da214053212",
+    "summary.md": "187ff62489c6f266aeff5b11bb74e8e9b4d4212e525252b9e70789f59dbebd4f"
+  },
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "1343cb8a0aefc41a4da0ec98d8c606d61c13088d",
+  "source_execution_request": "20260909-cmi-flu-strategy-e08-task13-applicability-001",
+  "source_execution_bridge_commit": "8a91082b447853c8e7d9582f469921092c26cad8",
+  "source_execution_run_id": 34290147407,
+  "previous_recovery_request": "20260909-cmi-flu-strategy-e08-result-recovery-001",
+  "previous_recovery_run_id": 34294309719,
+  "failure_classification": "bridge_runtime_compatibility_local_output_directory_precreated",
+  "repair": "delegate_output_directory_creation_to_kaggle_current_output_read",
+  "resource": {
+    "accelerator": "none",
+    "expected_runtime_minutes": 5,
+    "hard_timeout_minutes": 15,
+    "max_active_runs": 0
+  },
+  "api_budget": {
+    "max_calls": 20,
+    "poll_interval_seconds": 0,
+    "max_polls": 0,
+    "max_pages": 1
+  },
+  "allowed_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "side_effects": [],
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "compute_retry": false,
+  "automatic_compute_retries": 0
+}
