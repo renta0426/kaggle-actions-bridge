@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "experiment": "strategy_v2_e09b_hipc9_rna_residual",
+  "frozen_date": "2026-09-09",
+  "literature": {
+    "title": "Multicohort analysis reveals baseline transcriptional predictors of influenza vaccination responses",
+    "journal": "Science Immunology",
+    "year": 2017,
+    "doi": "10.1126/sciimmunol.aal4656",
+    "pmid": "28842433",
+    "pmcid": "PMC5800877",
+    "note": "The paper identified nine baseline genes in multicohort discovery; independent validation used the seven-gene subset excluding RAB24 and DPP3 when those genes were not measured."
+  },
+  "gene_mapping": [
+    {"symbol": "RAB24", "ensembl_gene_id": "ENSG00000169228"},
+    {"symbol": "GRB2", "ensembl_gene_id": "ENSG00000177885"},
+    {"symbol": "DPP3", "ensembl_gene_id": "ENSG00000254986"},
+    {"symbol": "ACTB", "ensembl_gene_id": "ENSG00000075624"},
+    {"symbol": "MVP", "ensembl_gene_id": "ENSG00000013364"},
+    {"symbol": "DPP7", "ensembl_gene_id": "ENSG00000176978"},
+    {"symbol": "ARPC4", "ensembl_gene_id": "ENSG00000241553"},
+    {"symbol": "PLEKHB2", "ensembl_gene_id": "ENSG00000115762"},
+    {"symbol": "ARRB1", "ensembl_gene_id": "ENSG00000137486"}
+  ],
+  "validation_subset_symbols": ["GRB2", "ACTB", "MVP", "DPP7", "ARPC4", "PLEKHB2", "ARRB1"],
+  "mapping_source": "NCBI Gene Ensembl cross-references checked 2026-09-09",
+  "outcome_based_gene_selection": false,
+  "real_data_inspected_before_freeze": false
+}
