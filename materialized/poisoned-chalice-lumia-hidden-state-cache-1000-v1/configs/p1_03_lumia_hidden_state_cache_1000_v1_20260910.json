@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03-lumia-hidden-state-cache-1000-v1",
+  "as_of": "2026-09-10",
+  "status": "implementation_pending_execution",
+  "parent_scientific_config": "configs/p1_03_lumia_hidden_state_pilot_v1_20260909.json",
+  "runtime_gate_result": "configs/p1_03_lumia_hidden_state_runtime_pilot_50_v5_result_20260909.json",
+  "runtime_gate_pass": {
+    "rows": 50,
+    "max_length": 8192,
+    "estimated_1000_minutes_wall_linear": 11.223010791999968,
+    "predeclared_gate_minutes": 105.0,
+    "passed": true
+  },
+  "target": "renta0426/poisoned-chalice-lumia-hidden-state-cache-1000-v1",
+  "author_repository": "Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026",
+  "author_commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+  "model": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "precision": "fp16",
+    "max_length": 8192,
+    "placement": "explicit model.to('cuda:0').eval()",
+    "expected_layers": 30,
+    "expected_hidden_size": 3072
+  },
+  "cohort": {
+    "source": "pinned public train only",
+    "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "rows": 1000,
+    "languages": ["Go", "Java", "Python", "Ruby", "Rust"],
+    "rows_per_language": 200,
+    "rows_per_language_label": 100,
+    "selection_seed": 20260909,
+    "membership_use": "deterministic cohort balancing only before scoring",
+    "scoring_columns": ["sample_id", "language", "content"],
+    "validation_rows_used": false,
+    "public_lb_feedback_used": false
+  },
+  "activation_extraction": {
+    "one_forward_per_sample": true,
+    "all_decoder_layers": true,
+    "pooling_variants": ["mean", "caller_weighted", "helper_weighted"],
+    "feature_semantics": {
+      "mean": "ordinary sequence mean",
+      "caller_weighted": "released caller-literal weighting with language omitted",
+      "helper_weighted": "language-aware released helper weighting"
+    },
+    "same_forward_output_baselines": [
+      "zsigmoid_single_sequence",
+      "caller_literal_output_weighted_single_sequence",
+      "helper_language_aware_output_weighted_single_sequence"
+    ],
+    "failure_policy": "fail closed; no zero filling",
+    "performance_metrics_computed": false
+  },
+  "cache": {
+    "shard_size": 50,
+    "shard_count": 20,
+    "dtype": "float32",
+    "compression": "lossless npz_compressed",
+    "shape_per_variant_per_shard": [50, 30, 3072],
+    "uncompressed_hidden_bytes": 1105920000,
+    "raw_token_layer_activations_persisted": false,
+    "logits_persisted": false,
+    "sample_level_labels_persisted": false,
+    "atomic_whole_shards": true,
+    "whole_shard_resume_only_if_separately_authorized": true
+  },
+  "persistent_outputs": {
+    "top_level": [
+      "cache_manifest.json",
+      "cohort_manifest.jsonl",
+      "sample_metadata.jsonl",
+      "runtime.json",
+      "run_manifest.json"
+    ],
+    "shards": "shards/shard_0000.npz through shards/shard_0019.npz"
+  },
+  "observability": {
+    "bootstrap_wall": true,
+    "dataset_load_and_selection_wall": true,
+    "tokenizer_model_load_and_cuda_transfer_wall": true,
+    "scoring_loop_wall": true,
+    "forward_sum_median_max": true,
+    "serialization_wall": true,
+    "scoring_peak_cuda_allocated_reserved": true,
+    "token_count_and_at_max_length": true,
+    "per_sample_runtime_and_structural_backends": true
+  },
+  "resource": {
+    "accelerator": "Kaggle NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "scoring_gpu": "cuda:0",
+    "expected_runtime_minutes": 25,
+    "hard_timeout_minutes": 60,
+    "automatic_compute_retries": 0,
+    "enable_internet": true
+  },
+  "clean_room": {
+    "hidden_validation_labels_used": false,
+    "validation_rows_used": false,
+    "sample_id_hash_used_as_predictive_feature": false,
+    "row_order_used_as_predictive_feature": false,
+    "repository_provenance_used": false,
+    "public_leaderboard_feedback_used": false,
+    "competition_submission": false
+  },
+  "post_cache_boundary": {
+    "probe_training_in_this_gpu_run": false,
+    "labels_joined_only_after_cache_is_sealed_and_validated": true,
+    "frozen_evaluator": "src/poisoned_chalice/lumia_hidden_state_probe.py",
+    "evaluation_config": "configs/p1_03_lumia_hidden_state_pilot_v1_20260909.json"
+  }
+}

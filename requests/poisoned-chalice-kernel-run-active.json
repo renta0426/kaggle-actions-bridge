@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "request_id": "20260909-poisoned-chalice-lumia-hs-runtime-50-v5-001",
+  "request_id": "20260910-poisoned-chalice-lumia-hidden-state-cache-1000-v1-001",
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
-  "target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v5",
-  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_runtime_50_v5.py",
-  "launcher_blob_sha": "f9cc0f73cf3381e505b7229fe63c555cc02229e6",
+  "target": "renta0426/poisoned-chalice-lumia-hidden-state-cache-1000-v1",
+  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_cache_1000_v1.py",
+  "launcher_blob_sha": "df83946fa32525bdf940dbb1c0c82eeab438f707",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-  "research_commit": "1c22d77cf7d9960edb855d41a741f0478b957c6c",
+  "research_commit": "3f0370fd3366817abdec7e6241be3d299f959181",
   "research_files": [
     {
       "path": "src/poisoned_chalice/lumia_hidden_state_pilot.py",
@@ -28,21 +28,21 @@
       "snapshot_parts": 1
     },
     {
-      "path": "scripts/build_lumia_hidden_state_runtime_pilot_notebook_v4.py",
-      "git_blob_sha": "be98c24c68f74816972a395b7113bf366c4502a4",
-      "max_bytes": 65536,
+      "path": "src/poisoned_chalice/lumia_hidden_state_cache.py",
+      "git_blob_sha": "61182c7fcde131ed36c0791fa16928dcdc9b6e8b",
+      "max_bytes": 131072,
       "snapshot_parts": 1
     },
     {
-      "path": "scripts/build_lumia_hidden_state_runtime_pilot_notebook_v5.py",
-      "git_blob_sha": "9cc1d837523a3a8d202e82665d12ca716baa8549",
-      "max_bytes": 65536,
+      "path": "scripts/build_lumia_hidden_state_cache_1000_notebook_v1.py",
+      "git_blob_sha": "6ff76a25f235fb90ce9548c41ef23ba85593c787",
+      "max_bytes": 131072,
       "snapshot_parts": 1
     },
     {
-      "path": "configs/p1_03_lumia_hidden_state_runtime_pilot_50_v5_20260909.json",
-      "git_blob_sha": "bbc20d2a081e1cd1c8a845473147f119b1cdc4ba",
-      "max_bytes": 16384,
+      "path": "configs/p1_03_lumia_hidden_state_cache_1000_v1_20260910.json",
+      "git_blob_sha": "bc57bdd957591fc5c091f9d0ed396aa679876e10",
+      "max_bytes": 32768,
       "snapshot_parts": 1
     }
   ],
@@ -62,8 +62,31 @@
     "create one private notebook version"
   ],
   "persistent_outputs": [
-    "lumia_hidden_state_runtime_pilot_50/runtime.json",
-    "lumia_hidden_state_runtime_pilot_50/run_manifest.json"
+    "lumia_hidden_state_cache_1000_v1/cache_manifest.json",
+    "lumia_hidden_state_cache_1000_v1/cohort_manifest.jsonl",
+    "lumia_hidden_state_cache_1000_v1/sample_metadata.jsonl",
+    "lumia_hidden_state_cache_1000_v1/runtime.json",
+    "lumia_hidden_state_cache_1000_v1/run_manifest.json",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0000.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0001.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0002.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0003.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0004.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0005.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0006.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0007.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0008.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0009.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0010.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0011.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0012.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0013.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0014.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0015.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0016.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0017.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0018.npz",
+    "lumia_hidden_state_cache_1000_v1/shards/shard_0019.npz"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
@@ -80,10 +103,10 @@
     "automatic_promotion": false
   },
   "scientific_contract": {
-    "task_id": "P1-03-lumia-hidden-state-runtime-pilot-50-v1",
-    "purpose": "runtime_and_fidelity_only",
-    "rows": 50,
-    "rows_per_language_label": 5,
+    "task_id": "P1-03-lumia-hidden-state-cache-1000-v1",
+    "purpose": "frozen_label_clean_hidden_state_cache",
+    "rows": 1000,
+    "rows_per_language_label": 100,
     "selection_seed": 20260909,
     "selection_labels_removed_before_model_scoring": true,
     "model_id": "bigcode/starcoder2-3b",
@@ -93,16 +116,25 @@
     "max_length": 8192,
     "precision": "fp16",
     "all_transformer_layers": true,
+    "expected_layers": 30,
+    "expected_hidden_size": 3072,
     "pooling_outputs_checked": [
       "mean",
-      "caller_literal_weighted_mean",
-      "helper_language_aware_weighted_mean"
+      "caller_weighted",
+      "helper_weighted"
     ],
-    "same_forward_output_scores_finite_only": true,
-    "raw_activations_persisted": false,
-    "sample_scores_persisted": false,
+    "same_forward_output_baselines": [
+      "zsigmoid_single_sequence",
+      "caller_literal_output_weighted_single_sequence",
+      "helper_language_aware_output_weighted_single_sequence"
+    ],
+    "shard_size": 50,
+    "shard_count": 20,
+    "cache_dtype": "float32",
+    "lossless_compression": true,
+    "raw_token_layer_activations_persisted": false,
+    "logits_persisted": false,
     "performance_metrics_computed": false,
-    "direct_1000_gate_estimated_wall_minutes_lte": 105,
     "automatic_promotion": false,
     "competition_submission": false
   }
