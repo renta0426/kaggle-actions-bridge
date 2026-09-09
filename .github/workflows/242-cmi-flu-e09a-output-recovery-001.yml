@@ -59,13 +59,14 @@ jobs:
               if '..' in rel.parts:raise SystemExit('unsafe archive')
               out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
           PY
-      - name: Validate sanitizer repair is narrow
+      - name: Validate sanitizer and CLI-path repairs are narrow
         shell: bash
         run: |
           set -euo pipefail
           python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_sanitize_v2.py"
           grep -F '403488 if study == "2020_UGA" else 0' "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_sanitize_v2.py" >/dev/null
           grep -F 'other_checks=inherited' "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e09a_sanitize_v2.py" >/dev/null
+          grep -F 'echo "${WORKDIR}/venv/bin" >> "${GITHUB_PATH}"' "${WORKDIR}/bridge/.github/workflows/242-cmi-flu-e09a-output-recovery-001.yml" >/dev/null
           echo CMI_FLU_E09A_RECOVERY_VALIDATE_PASS
       - name: Cleanup validation content
         if: always()
@@ -133,6 +134,8 @@ jobs:
           python3 -m venv "${WORKDIR}/venv"
           "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
           "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          test -x "${WORKDIR}/venv/bin/kaggle"
+          echo "${WORKDIR}/venv/bin" >> "${GITHUB_PATH}"
       - name: Read current version 1 outputs without write or compute
         shell: bash
         env:
