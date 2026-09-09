@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e10-output-recovery-001",
+  "parent_request_id": "20260910-cmi-flu-strategy-e10-pooled-domain-correction-003",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_current_output_recovery",
+  "target": "renta0426/cmi-flu-e10-pooled-domain-correction-20260910-003",
+  "expected_current_version": 1,
+  "expected_terminal_status": "COMPLETE",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "3a8728879179115487f5ce0ba4a4a0467e1910bb",
+  "strategy_e10_blob_sha": "638b09860f85689714cb0b354f4f377a405deeac",
+  "strategy_e10_synthetic_blob_sha": "f1f33f3909e64e69fb859d98b4163cdb4860d64d",
+  "expected_outputs": {
+    "bridge-result.json": {
+      "bytes": 1825,
+      "sha256": "382eb3fbea3f7ed191012e12bbd18d20693e634bde55595ea87261478d94f06d"
+    },
+    "metrics.json": {
+      "bytes": 35262,
+      "sha256": "c0786e8ba1e3098b7b4ca2e9ccb904708deb652452267cae8a038a7c80562d8a"
+    },
+    "summary.md": {
+      "bytes": 1205,
+      "sha256": "09f0a164bb7bfee9f2d10a0628a8ca1300a81e6c5b70fc7c06d7011a07943b58"
+    }
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "raw_outputs_persisted": false,
+  "publish_only_aggregate_sanitized_result": true
+}
