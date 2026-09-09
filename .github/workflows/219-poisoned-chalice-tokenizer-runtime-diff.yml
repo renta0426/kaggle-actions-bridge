@@ -1,0 +1,129 @@
+name: Poisoned Chalice P1-03 tokenizer runtime differential
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/poisoned_chalice_tokenizer_runtime_probe.py'
+      - '.github/workflows/219-poisoned-chalice-tokenizer-runtime-diff.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/poisoned_chalice_tokenizer_runtime_probe.py'
+      - '.github/workflows/219-poisoned-chalice-tokenizer-runtime-diff.yml'
+
+permissions: {}
+concurrency:
+  group: poisoned-chalice-tokenizer-runtime-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    name: Compare historical and SERSEM tokenizer runtimes on public train
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      DATASET_REVISION: 2ed5468723efa5457a3665782c6979ea4dbac7c2
+      HF_HOME: ${{ runner.temp }}/pc-tokenizer-hf
+    steps:
+      - name: Materialize exact public probe source
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/pc-tokenizer-runtime-probe"
+          [[ ! -e "${workdir}" ]]
+          mkdir -p "${workdir}"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]
+          assert re.fullmatch(r'[0-9a-f]{40}',sha)
+          rel='scripts/poisoned_chalice_tokenizer_runtime_probe.py'
+          with urllib.request.urlopen(
+              f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',
+              timeout=30,
+          ) as response:
+              data=response.read(131073)
+          assert 0 < len(data) <= 131072
+          (pathlib.Path(root)/pathlib.Path(rel).name).write_bytes(data)
+          PY
+          python3 -W error::SyntaxWarning -m py_compile "${workdir}/poisoned_chalice_tokenizer_runtime_probe.py"
+          python3 "${workdir}/poisoned_chalice_tokenizer_runtime_probe.py" self-test
+
+      - name: Prepare pinned public train probe data
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/prep-venv"
+          "${WORKDIR}/prep-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
+            datasets==4.6.1 pandas==3.0.1 pyarrow==23.0.1 >/dev/null
+          "${WORKDIR}/prep-venv/bin/python" - <<'PY'
+          import os
+          from pathlib import Path
+          import pandas as pd
+          from datasets import load_dataset
+
+          root=Path(os.environ['WORKDIR'])
+          revision=os.environ['DATASET_REVISION']
+          expected={'Go':10000,'Java':10000,'Python':10000,'Ruby':10000,'Rust':9040}
+          parts=[]
+          for language,count in expected.items():
+              frame=load_dataset(
+                  'Poisoned-Chalice/ICSE-2027-public', language,
+                  split='train', revision=revision,
+              ).to_pandas()
+              if len(frame)!=count or frame['membership'].isna().any():
+                  raise SystemExit('public train partition mismatch')
+              frame['language']=language
+              parts.append(frame[['sample_id','content','language']])
+          full=pd.concat(parts,ignore_index=True)
+          if len(full)!=49040 or full['sample_id'].duplicated().any():
+              raise SystemExit('public train contract mismatch')
+          full.to_parquet(root/'public-train.parquet',index=False)
+          print('POISONED_CHALICE_TOKENIZER_PUBLIC_DATA PASS rows=49040')
+          PY
+
+      - name: Probe historical Starter++ tokenizer runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/historical-venv"
+          "${WORKDIR}/historical-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
+            pandas==3.0.1 pyarrow==23.0.1 transformers==5.0.0 >/dev/null
+          "${WORKDIR}/historical-venv/bin/python" \
+            "${WORKDIR}/poisoned_chalice_tokenizer_runtime_probe.py" probe \
+            --dataset-parquet "${WORKDIR}/public-train.parquet" \
+            --output-json "${WORKDIR}/historical.json" \
+            --expected-transformers 5.0.0
+
+      - name: Probe SERSEM author tokenizer runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/sersem-venv"
+          "${WORKDIR}/sersem-venv/bin/python" -m pip install \
+            --disable-pip-version-check --no-input \
+            pandas==3.0.1 pyarrow==23.0.1 \
+            transformers==4.52.0 tokenizers==0.21.0 >/dev/null
+          "${WORKDIR}/sersem-venv/bin/python" \
+            "${WORKDIR}/poisoned_chalice_tokenizer_runtime_probe.py" probe \
+            --dataset-parquet "${WORKDIR}/public-train.parquet" \
+            --output-json "${WORKDIR}/sersem.json" \
+            --expected-transformers 4.52.0
+
+      - name: Compare token IDs and offsets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/poisoned_chalice_tokenizer_runtime_probe.py" compare \
+            --historical-json "${WORKDIR}/historical.json" \
+            --sersem-json "${WORKDIR}/sersem.json" \
+            --output-json "${WORKDIR}/summary.json"
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "${RUNNER_TEMP}/pc-tokenizer-runtime-probe" "${HF_HOME}"
