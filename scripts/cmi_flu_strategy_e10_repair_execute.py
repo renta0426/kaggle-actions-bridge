@@ -18,11 +18,16 @@ for key, value in _EXPECTED_PRIOR.items():
         raise SystemExit(f"E10 repair executor ancestry changed:{key}")
 
 base = prior.base
+watcher = prior.prior.prior.prior
 if base.EXPECTED_VERSION != 1:
     raise SystemExit("E10 repair executor version contract changed")
 if "exact_metadata_eventually" not in base.kernel_meta.__code__.co_names:
     raise SystemExit("E10 repair executor lacks bounded exact metadata reconciliation")
+if base.wait is not watcher.wait:
+    raise SystemExit("E10 repair inherited watcher identity changed")
 
+# E10-001 already installed the proven v1 E06a watcher into `base`. Retarget
+# every module whose globals that watcher can resolve; do not replace `wait`.
 prior.REQUEST_ID = REQUEST_ID
 prior.TARGET = TARGET
 prior.TITLE = TITLE
@@ -32,6 +37,9 @@ prior.prior.TITLE = TITLE
 prior.prior.prior.REQUEST_ID = REQUEST_ID
 prior.prior.prior.TARGET = TARGET
 prior.prior.prior.TITLE = TITLE
+watcher.REQUEST_ID = REQUEST_ID
+watcher.TARGET = TARGET
+watcher.TITLE = TITLE
 base.REQUEST_ID = REQUEST_ID
 base.TARGET = TARGET
 base.TARGET_SLUG = TARGET.split("/", 1)[1]
@@ -51,7 +59,6 @@ def prewrite_guard(api):
 
 
 base.prewrite_guard = prewrite_guard
-base.wait = prior.prior.prior.wait
 
 
 def main() -> int:
