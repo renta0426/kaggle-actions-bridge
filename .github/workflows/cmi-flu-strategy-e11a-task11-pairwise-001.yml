@@ -1,0 +1,282 @@
+name: CMI-Flu strategy E11a Task1.1 pairwise CPU 001
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-strategy-e11a-task11-pairwise-001.yml
+      - requests/cmi-flu-strategy-e11a-task11-pairwise-001.json
+      - payloads/cmi-flu-strategy-e11a-task11-pairwise-001/**
+      - scripts/cmi_flu_strategy_e11a_prepare.py
+      - scripts/cmi_flu_strategy_e11a_execute.py
+      - scripts/cmi_flu_strategy_e11a_sanitize.py
+      - scripts/cmi_flu_strategy_e11a_validator_contract_test.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-strategy-e11a-task11-pairwise-001.yml
+      - requests/cmi-flu-strategy-e11a-task11-pairwise-001.json
+      - payloads/cmi-flu-strategy-e11a-task11-pairwise-001/**
+      - scripts/cmi_flu_strategy_e11a_prepare.py
+      - scripts/cmi_flu_strategy_e11a_execute.py
+      - scripts/cmi_flu_strategy_e11a_sanitize.py
+      - scripts/cmi_flu_strategy_e11a_validator_contract_test.py
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-e11a-task11-pairwise-001-${{ github.event_name }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_ID: 20260910-cmi-flu-strategy-e11a-task11-pairwise-001
+  SCIENCE_COMMIT: 4d8c568e3b26ad6ba48c076bcb28fda64a0dc72f
+  E11_BLOB: ec7e709ac83f9792b6cc4d63ad398a8a68e16e7b
+  E11_SYNTH_BLOB: ff5c7cbc5aea7ebdbb9e16853d26ec8179cf2d6c
+  TARGET_KERNEL: renta0426/cmi-flu-e11a-task11-pairwise-20260910-001
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate exact E11a runtime, CPU feasibility, and full validator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e11a-bridge/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(60_000_001)
+          if len(data)>60_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              if not m.name.startswith(prefix):raise SystemExit('archive prefix')
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Verify exact science relay and frozen request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge" <<'PY'
+          import hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          def git_blob(path):
+              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          payload=root/'payloads/cmi-flu-strategy-e11a-task11-pairwise-001'
+          assert git_blob(payload/'strategy_e11.py')=='ec7e709ac83f9792b6cc4d63ad398a8a68e16e7b'
+          assert git_blob(payload/'strategy_e11_synthetic.py')=='ff5c7cbc5aea7ebdbb9e16853d26ec8179cf2d6c'
+          request=json.loads((root/'requests/cmi-flu-strategy-e11a-task11-pairwise-001.json').read_text())
+          assert request['request_id']=='20260910-cmi-flu-strategy-e11a-task11-pairwise-001'
+          assert request['target']=='renta0426/cmi-flu-e11a-task11-pairwise-20260910-001'
+          assert request['science_source_commit']=='4d8c568e3b26ad6ba48c076bcb28fda64a0dc72f'
+          assert request['strategy_e11_blob_sha']=='ec7e709ac83f9792b6cc4d63ad398a8a68e16e7b'
+          assert request['strategy_e11_synthetic_blob_sha']=='ff5c7cbc5aea7ebdbb9e16853d26ec8179cf2d6c'
+          assert request['resource']=={'accelerator':'cpu','expected_runtime_minutes':15,'hard_timeout_minutes':45,'max_active_runs':1}
+          assert request['expected_kernel_version']==1 and request['enable_internet'] is False
+          assert request['competition_submission_attempted'] is False
+          assert request['leaderboard_used_for_selection'] is False
+          assert request['automatic_compute_retries']==0
+          c=request['experiment_contract']
+          assert c['task']=='Task1.1' and c['base_model']=='pls_2'
+          assert c['pair_policy']=='within_source_study_only_symmetric'
+          assert c['cross_study_pair_labels_used'] is False
+          assert c['held_outcomes_used_for_fit'] is False and c['held_outcomes_used_for_scoring'] is False
+          assert c['classifier']=='HistGradientBoostingClassifier'
+          assert c['public_probe_authorized'] is False
+          PY
+
+      - name: Build runtime and execute synthetic plus full-validator regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_execute.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_sanitize.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_validator_contract_test.py"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_prepare.py" \
+            --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/runtime.py"
+          python3 "${WORKDIR}/runtime.py" --self-test
+          test ! -e "${WORKDIR}/synthetic"
+          python3 "${WORKDIR}/runtime.py" --synthetic --output-dir "${WORKDIR}/synthetic"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_validator_contract_test.py" --runtime "${WORKDIR}/runtime.py"
+          python3 - "${WORKDIR}/synthetic" <<'PY'
+          import hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          assert sorted(p.name for p in root.iterdir())==['bridge-result.json','metrics.json','summary.md']
+          b=json.loads((root/'bridge-result.json').read_text()); m=json.loads((root/'metrics.json').read_text())
+          assert b['synthetic'] is True and b['science_commit']=='4d8c568e3b26ad6ba48c076bcb28fda64a0dc72f'
+          assert b['strategy_e11_blob_sha']=='ec7e709ac83f9792b6cc4d63ad398a8a68e16e7b'
+          assert b['strategy_e11_synthetic_blob_sha']=='ff5c7cbc5aea7ebdbb9e16853d26ec8179cf2d6c'
+          assert b['metrics_sha256']==hashlib.sha256((root/'metrics.json').read_bytes()).hexdigest()
+          assert m['experiment']=='synthetic_e11a_pairwise_contract'
+          assert m['feasibility_ready'] is True and m['subject_overlap_max']==0
+          assert m['cross_study_pair_labels_used'] is False
+          assert m['positive_pairs']==m['negative_pairs'] and m['held_spearman']>=0.80
+          assert m['held_outcomes_used_for_fit'] is False and m['held_outcomes_used_for_scoring'] is False
+          text=(root/'metrics.json').read_text()
+          for token in ('"participant_id"','"subject_group"','ROW_','SUB_','"challenge_predictions"'): assert token not in text
+          PY
+          ! grep -R -E 'kaggle[[:space:]]+competitions[[:space:]]+submit|competition_submit\(' \
+            "${WORKDIR}/runtime.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_execute.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_sanitize.py" >/dev/null
+          grep -F 'Path("/tmp")' "${WORKDIR}/runtime.py" >/dev/null
+          echo CMI_FLU_E11A_SECRET_FREE_VALIDATE_PASS
+
+      - name: Validate fresh executor argv without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/argv-venv"
+          "${WORKDIR}/argv-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/argv-venv/bin/python" -m pip check >/dev/null
+          help_text="$(PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/argv-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_execute.py" --help)"
+          grep -F -- '--runtime' <<<"${help_text}" >/dev/null
+          grep -F -- '--bridge-root' <<<"${help_text}" >/dev/null
+          grep -F -- '--output-dir' <<<"${help_text}" >/dev/null
+          ! grep -F -- '--reference-dir' <<<"${help_text}" >/dev/null
+          echo CMI_FLU_E11A_EXECUTOR_ARGV_PASS
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  run:
+    name: Run one private CPU E11a and read aggregate result
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    concurrency:
+      group: kaggle-resource-global
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-strategy-e11a-task11-pairwise-001.yml@refs/heads/main" ]]
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e11a-bridge/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(60_000_001)
+          if len(data)>60_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              if not m.name.startswith(prefix):raise SystemExit('archive prefix')
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Check current public Kaggle policy pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/kaggle_policy_preflight.py"
+
+      - name: Build exact E11a runtime and rerun secret-free validators
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_prepare.py" \
+            --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/runtime.py"
+          python3 "${WORKDIR}/runtime.py" --self-test
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_validator_contract_test.py" --runtime "${WORKDIR}/runtime.py"
+
+      - name: Install locked Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          test -x "${WORKDIR}/venv/bin/kaggle"
+          echo "${WORKDIR}/venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Run one approved E11a CPU kernel
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_execute.py" \
+            --runtime "${WORKDIR}/runtime.py" --bridge-root "${WORKDIR}/bridge" --output-dir "${WORKDIR}/output"
+          unset KAGGLE_API_TOKEN
+
+      - name: Validate aggregate-only E11a result
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11a_sanitize.py" --input-dir "${WORKDIR}/output"
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
