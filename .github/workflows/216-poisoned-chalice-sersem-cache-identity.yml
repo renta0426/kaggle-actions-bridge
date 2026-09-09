@@ -1,0 +1,183 @@
+name: Poisoned Chalice P1-03 SERSEM cache identity only
+
+on:
+  pull_request:
+    paths:
+      - 'requests/poisoned-chalice-sersem-cache-identity-v1.json'
+      - 'scripts/poisoned_chalice_sersem_cache_identity.py'
+      - 'scripts/kaggle_exact_identity.py'
+      - '.github/workflows/216-poisoned-chalice-sersem-cache-identity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'requests/poisoned-chalice-sersem-cache-identity-v1.json'
+
+permissions: {}
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: '1354356687'
+  EXPECTED_ACTOR_ID: '71638068'
+  REQUEST_PATH: requests/poisoned-chalice-sersem-cache-identity-v1.json
+
+jobs:
+  validate:
+    name: Validate metadata-only identity diagnostic without credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Materialize exact public sources and validate contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/sersem-cache-identity-validate"
+          [[ ! -e "${workdir}" ]]
+          mkdir -p "${workdir}"
+          python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
+          import pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]
+          assert re.fullmatch(r'[0-9a-f]{40}',sha)
+          root=pathlib.Path(root)
+          paths=[
+              'requests/poisoned-chalice-sersem-cache-identity-v1.json',
+              'scripts/poisoned_chalice_sersem_cache_identity.py',
+              'scripts/kaggle_exact_identity.py',
+          ]
+          for rel in paths:
+              with urllib.request.urlopen(
+                  f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',
+                  timeout=30,
+              ) as response:
+                  data=response.read(131073)
+              assert 0 < len(data) <= 131072
+              (root/pathlib.Path(rel).name).write_bytes(data)
+          PY
+          python3 -W error::SyntaxWarning -m py_compile \
+            "${workdir}/poisoned_chalice_sersem_cache_identity.py" \
+            "${workdir}/kaggle_exact_identity.py"
+          PYTHONPATH="${workdir}" python3 "${workdir}/poisoned_chalice_sersem_cache_identity.py" --self-test
+          PYTHONPATH="${workdir}" python3 - "${workdir}/poisoned-chalice-sersem-cache-identity-v1.json" <<'PY'
+          import pathlib,sys
+          from poisoned_chalice_sersem_cache_identity import _load_request
+          request=_load_request(pathlib.Path(sys.argv[1]))
+          assert request['science_sha']=='44e602d1e61c5b5c603283c7d68a480ba626de70'
+          assert request['targets']['continuation']['identity_mode']=='observe_only_then_freeze_in_separate_request'
+          PY
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/sersem-cache-identity-validate"
+
+  diagnose:
+    name: Observe exact current identities; no outputs
+    needs: validate
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.repository_id == '1354356687' && github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EVENT_SHA: ${{ github.sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      WORKFLOW_REF: ${{ github.workflow_ref }}
+      EVENT_REPOSITORY: ${{ github.repository }}
+      EVENT_REPOSITORY_ID: ${{ github.repository_id }}
+      EVENT_ACTOR: ${{ github.actor }}
+      EVENT_ACTOR_ID: ${{ github.actor_id }}
+      EVENT_SENDER_ID: ${{ github.event.sender.id }}
+    steps:
+      - name: Enforce protected read-only boundary
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == renta0426 ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == 'renta0426/kaggle-actions-bridge/.github/workflows/216-poisoned-chalice-sersem-cache-identity.yml@refs/heads/main' ]]
+          [[ "${RUNNER_ENVIRONMENT}" == github-hosted ]]
+          for name in RESEARCH_REPO_READ_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]]
+          done
+
+      - name: Materialize exact sources, preflight, and install locked SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/sersem-cache-identity"
+          [[ ! -e "${workdir}" ]]
+          mkdir -p "${workdir}/bridge"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import pathlib,re,sys,urllib.request
+          sha,root=sys.argv[1:]
+          assert re.fullmatch(r'[0-9a-f]{40}',sha)
+          root=pathlib.Path(root)
+          paths=[
+              'requests/poisoned-chalice-sersem-cache-identity-v1.json',
+              'scripts/poisoned_chalice_sersem_cache_identity.py',
+              'scripts/kaggle_exact_identity.py',
+              'scripts/kaggle_policy_preflight.py',
+              'requirements/kaggle-2.2.4.lock',
+          ]
+          for rel in paths:
+              with urllib.request.urlopen(
+                  f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',
+                  timeout=30,
+              ) as response:
+                  data=response.read(262145)
+              assert 0 < len(data) <= 262144
+              (root/pathlib.Path(rel).name).write_bytes(data)
+          PY
+          PYTHONPATH="${workdir}/bridge" python3 "${workdir}/bridge/poisoned_chalice_sersem_cache_identity.py" --self-test
+          python3 "${workdir}/bridge/kaggle_policy_preflight.py"
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            --no-deps \
+            --only-binary=:all: \
+            --require-hashes \
+            -r "${workdir}/bridge/kaggle-2.2.4.lock" \
+            >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Observe two exact identities and remove credential
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          trap 'rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"' EXIT
+          mkdir -p "${HOME}/.kaggle"
+          umask 077
+          printf '%s' "${KAGGLE_API_TOKEN}" > "${HOME}/.kaggle/access_token"
+          unset KAGGLE_API_TOKEN
+          PYTHONPATH="${WORKDIR}/bridge" \
+            "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/poisoned_chalice_sersem_cache_identity.py" \
+            --request "${WORKDIR}/bridge/poisoned-chalice-sersem-cache-identity-v1.json"
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+
+      - name: Cleanup all local diagnostic materials
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.kaggle/access_token" "${HOME}/.kaggle/kaggle.json"
+          rm -rf "${RUNNER_TEMP}/sersem-cache-identity"
+          echo 'SERSEM_CACHE_IDENTITY_CLEANUP PASS outputs_listed=0 outputs_downloaded=0 kaggle_writes=0 compute_started=0'
