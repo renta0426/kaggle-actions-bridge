@@ -4,8 +4,8 @@
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
   "target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v4",
-  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_runtime_50_v4.py",
-  "launcher_blob_sha": "8afcb089467be66bd6b1bb9fc30b34793778e416",
+  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_runtime_50_v4_repair.py",
+  "launcher_blob_sha": "2366029ef9df0593d4f3705f2a944c47c60d2665",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
   "research_commit": "6be6df5b9f4dffd44c23340a5bd573141f2810e4",
   "research_files": [
