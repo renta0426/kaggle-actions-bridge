@@ -1,0 +1,266 @@
+name: CMI-Flu strategy E10 pooled domain correction CPU 003
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-strategy-e10-pooled-domain-correction-003.yml
+      - requests/cmi-flu-strategy-e10-pooled-domain-correction-003.json
+      - scripts/cmi_flu_strategy_e10_validator_repair_prepare.py
+      - scripts/cmi_flu_strategy_e10_validator_contract_test.py
+      - scripts/cmi_flu_strategy_e10_validator_repair_execute.py
+      - scripts/cmi_flu_strategy_e10_validator_repair_sanitize.py
+  pull_request:
+    paths:
+      - .github/workflows/cmi-flu-strategy-e10-pooled-domain-correction-003.yml
+      - requests/cmi-flu-strategy-e10-pooled-domain-correction-003.json
+      - scripts/cmi_flu_strategy_e10_validator_repair_prepare.py
+      - scripts/cmi_flu_strategy_e10_validator_contract_test.py
+      - scripts/cmi_flu_strategy_e10_validator_repair_execute.py
+      - scripts/cmi_flu_strategy_e10_validator_repair_sanitize.py
+
+permissions: {}
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_ID: 20260910-cmi-flu-strategy-e10-pooled-domain-correction-003
+  SCIENCE_COMMIT: 3a8728879179115487f5ce0ba4a4a0467e1910bb
+  E10_BLOB: 638b09860f85689714cb0b354f4f377a405deeac
+  E10_SYNTH_BLOB: f1f33f3909e64e69fb859d98b4163cdb4860d64d
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate E10-003 runtime and full aggregate validator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do [[ -z "${!name-}" ]] || exit 1; done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e10-validator-repair/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(60_000_001)
+          if len(data)>60_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              if not m.name.startswith(prefix):raise SystemExit('archive prefix')
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Verify exact science relay and repair provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge" <<'PY'
+          import hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          def git_blob(path):
+              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          payload=root/'payloads/cmi-flu-strategy-e10-pooled-domain-correction-002'
+          assert git_blob(payload/'strategy_e10.py')=='638b09860f85689714cb0b354f4f377a405deeac'
+          assert git_blob(payload/'strategy_e10_synthetic.py')=='f1f33f3909e64e69fb859d98b4163cdb4860d64d'
+          request=json.loads((root/'requests/cmi-flu-strategy-e10-pooled-domain-correction-003.json').read_text())
+          parent=json.loads((root/'requests/cmi-flu-strategy-e10-pooled-domain-correction-002.json').read_text())
+          assert request['request_id']=='20260910-cmi-flu-strategy-e10-pooled-domain-correction-003'
+          assert request['parent_request_id']==parent['request_id']
+          assert request['target']=='renta0426/cmi-flu-e10-pooled-domain-correction-20260910-003'
+          assert request['science_source_commit']=='3a8728879179115487f5ce0ba4a4a0467e1910bb'
+          assert request['strategy_e10_blob_sha']=='638b09860f85689714cb0b354f4f377a405deeac'
+          assert request['strategy_e10_synthetic_blob_sha']=='f1f33f3909e64e69fb859d98b4163cdb4860d64d'
+          for key in ('dependency_blobs','resource','api_budget','allowed_output_paths','experiment_contract'):
+              assert request[key]==parent[key], key
+          assert request['automatic_compute_retries']==0
+          assert request['competition_submission_attempted'] is False
+          assert request['leaderboard_used_for_selection'] is False
+          p=request['repair_provenance']
+          assert p['failure_stage']=='validate_e10' and p['failure_exception_type']=='NameError'
+          assert p['failure_error_code']=='05e03c78697d5df8e699'
+          assert p['repair_scope']=='bridge_validator_runtime_imports_only'
+          PY
+
+      - name: Build runtime and execute synthetic plus full-validator regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_contract_test.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_execute.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_sanitize.py"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_prepare.py" \
+            --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/runtime.py"
+          python3 "${WORKDIR}/runtime.py" --self-test
+          grep -F 'import numpy as np' "${WORKDIR}/runtime.py" >/dev/null
+          grep -F 'import math' "${WORKDIR}/runtime.py" >/dev/null
+          test ! -e "${WORKDIR}/synthetic"
+          python3 "${WORKDIR}/runtime.py" --synthetic --output-dir "${WORKDIR}/synthetic"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_contract_test.py" --runtime "${WORKDIR}/runtime.py"
+          python3 - "${WORKDIR}/synthetic" <<'PY'
+          import hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); assert sorted(p.name for p in root.iterdir())==['bridge-result.json','metrics.json','summary.md']
+          b=json.loads((root/'bridge-result.json').read_text()); m=json.loads((root/'metrics.json').read_text())
+          assert b['synthetic'] is True and b['science_commit']=='3a8728879179115487f5ce0ba4a4a0467e1910bb'
+          assert b['strategy_e10_blob_sha']=='638b09860f85689714cb0b354f4f377a405deeac'
+          assert b['strategy_e10_synthetic_blob_sha']=='f1f33f3909e64e69fb859d98b4163cdb4860d64d'
+          assert b['metrics_sha256']==hashlib.sha256((root/'metrics.json').read_bytes()).hexdigest()
+          assert m['experiment']=='synthetic_e10_contract' and m['held_outcomes_used'] is False
+          assert m['minimum_source_counts']=={'A':5,'B':8} and m['minimum_source_contract_supported'] is True
+          assert m['weighted_pooled_model_count']==1 and m['weighted_isolated_source_models']==0
+          assert m['hierarchical_pooled_model_count']==1 and m['hierarchical_isolated_source_models']==0
+          assert m['hierarchical_unseen_deviation']=='all_zero'
+          assert m['movement_cap'] <= 0.050000000001 and m['promotion_passed'] is True
+          PY
+          ! grep -R -E 'kaggle[[:space:]]+competitions[[:space:]]+submit|competition_submit\(' \
+            "${WORKDIR}/runtime.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_"* >/dev/null
+          echo CMI_FLU_E10_VALIDATOR_REPAIR_VALIDATE_PASS
+
+      - name: Validate fresh executor argv without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/argv-venv"
+          "${WORKDIR}/argv-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/argv-venv/bin/python" -m pip check >/dev/null
+          help_text="$(PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/argv-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_execute.py" --help)"
+          grep -F -- '--runtime' <<<"${help_text}" >/dev/null
+          grep -F -- '--bridge-root' <<<"${help_text}" >/dev/null
+          grep -F -- '--output-dir' <<<"${help_text}" >/dev/null
+          ! grep -F -- '--reference-dir' <<<"${help_text}" >/dev/null
+          echo CMI_FLU_E10_VALIDATOR_REPAIR_EXECUTOR_ARGV_PASS
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  run:
+    name: Run one private CPU E10-003 and read aggregate result
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    concurrency:
+      group: kaggle-resource-global
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-strategy-e10-pooled-domain-correction-003.yml@refs/heads/main" ]]
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e10-validator-repair/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(60_000_001)
+          if len(data)>60_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              if not m.name.startswith(prefix):raise SystemExit('archive prefix')
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Check current public Kaggle policy pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/kaggle_policy_preflight.py"
+
+      - name: Build exact E10-003 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_prepare.py" \
+            --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output "${WORKDIR}/runtime.py"
+          python3 "${WORKDIR}/runtime.py" --self-test
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_contract_test.py" --runtime "${WORKDIR}/runtime.py"
+
+      - name: Install locked Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          test -x "${WORKDIR}/venv/bin/kaggle"
+          echo "${WORKDIR}/venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Run one approved E10-003 CPU kernel
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_execute.py" \
+            --runtime "${WORKDIR}/runtime.py" --bridge-root "${WORKDIR}/bridge" --output-dir "${WORKDIR}/output"
+
+      - name: Validate aggregate-only E10-003 result
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e10_validator_repair_sanitize.py" --input-dir "${WORKDIR}/output"
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
