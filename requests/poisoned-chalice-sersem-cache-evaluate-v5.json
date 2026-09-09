@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-poisoned-chalice-p1-03-sersem-cache-evaluate-v5-001",
+  "operation": "recover_exact_sersem_token_cache",
+  "science_sha": "44e602d1e61c5b5c603283c7d68a480ba626de70",
+  "environment": "kaggle-readonry",
+  "output_suffix_template": "starter_plus_10k/parts/token_statistics.part{shard:03d}.parquet",
+  "expected_total_shards": 40,
+  "version_substitution_allowed": false,
+  "automatic_retries": 0,
+  "kaggle_write_calls": 0,
+  "kaggle_compute_started": false,
+  "membership_sources_allowed": [
+    "public_train_only_after_credential_removal"
+  ],
+  "performance_evaluation_allowed": true,
+  "api_budget": {
+    "get_kernel": 2,
+    "status": 2,
+    "max_list_pages_per_target": 3,
+    "downloads": 40
+  },
+  "max_file_bytes": 67108864,
+  "max_total_bytes": 2147483648,
+  "targets": {
+    "primary": {
+      "kernel": "renta0426/starter-plus-10k-v2",
+      "expected_current_version": 1,
+      "expected_status": "ERROR",
+      "shard_start": 0,
+      "shard_end": 23
+    },
+    "continuation": {
+      "kernel": "renta0426/starter-plus-10k-v2-continuation",
+      "expected_current_version": 1,
+      "expected_status": "COMPLETE",
+      "shard_start": 24,
+      "shard_end": 39
+    }
+  }
+}
