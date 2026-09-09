@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-poisoned-chalice-p1-03-sersem-cache-identity-001",
+  "operation": "observe_exact_current_identity_only",
+  "science_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "science_sha": "44e602d1e61c5b5c603283c7d68a480ba626de70",
+  "targets": {
+    "primary": {
+      "kernel": "renta0426/starter-plus-10k-v2",
+      "expected_current_version": 1,
+      "expected_status": "ERROR",
+      "identity_mode": "verify_known_identity"
+    },
+    "continuation": {
+      "kernel": "renta0426/starter-plus-10k-v2-continuation",
+      "identity_mode": "observe_only_then_freeze_in_separate_request"
+    }
+  },
+  "exact_get_kernel_invocations": 2,
+  "exact_status_invocations": 2,
+  "output_list_invocations": 0,
+  "output_download_invocations": 0,
+  "automatic_retries": 0,
+  "kaggle_write_calls": 0,
+  "kaggle_compute_started": false,
+  "performance_evaluation_allowed": false,
+  "membership_sources_allowed": false,
+  "version_substitution_allowed": false,
+  "downstream_use_of_observed_identity_allowed_in_this_run": false,
+  "environment": "kaggle-readonry"
+}
