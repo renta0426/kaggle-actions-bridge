@@ -1,41 +1,41 @@
 {
   "schema_version": 1,
-  "request_id": "20260908-poisoned-chalice-context-contrast-10k-v1-001",
+  "request_id": "20260909-poisoned-chalice-lumia-hs-runtime-50-v1-001",
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
-  "target": "renta0426/poisoned-chalice-context-contrast-10k-v1",
-  "launcher_path": "runners/poisoned_chalice/context_contrast_10k_v1.py",
-  "launcher_blob_sha": "2c0a4ad541dcd8971033412020c849c2b167a3e3",
+  "target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v1",
+  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_runtime_50_v1.py",
+  "launcher_blob_sha": "e1aeddebf8d41313a94f0b5f57a9b0ee210932bd",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-  "research_commit": "7492fc68784c505cce409bd5f1e1072cc0e44511",
+  "research_commit": "ce447351fabb89fb43363ac551ff7b703d6c53fa",
   "research_files": [
     {
-      "path": "src/poisoned_chalice/context_contrast.py",
-      "git_blob_sha": "8322b344156713308042b1da725369abbd78f6b3",
+      "path": "src/poisoned_chalice/lumia_hidden_state_pilot.py",
+      "git_blob_sha": "d33fa4f4b0d258083d1503e4b4b883461f41ed8f",
       "max_bytes": 65536,
       "snapshot_parts": 1
     },
     {
-      "path": "src/poisoned_chalice/minkpp_paper.py",
-      "git_blob_sha": "cd6479564ebec0818e42a6612f242d00642301ea",
+      "path": "src/poisoned_chalice/sersem_author_faithful.py",
+      "git_blob_sha": "91f0fcdccd646902ccc939e0835090a517505347",
       "max_bytes": 65536,
       "snapshot_parts": 1
     },
     {
-      "path": "src/poisoned_chalice/evaluation.py",
-      "git_blob_sha": "cb3afd4f3e3ecafe0e0677eda4fda30e93b04ba8",
+      "path": "src/poisoned_chalice/sersem_author_runtime.py",
+      "git_blob_sha": "024156b0723cdc084803b400f6705bc76fbfbfc6",
       "max_bytes": 65536,
       "snapshot_parts": 1
     },
     {
-      "path": "scripts/build_context_contrast_10k_notebook.py",
-      "git_blob_sha": "efaf92327ad2f71fa1c67cd3317a40a05c7b529a",
+      "path": "scripts/build_lumia_hidden_state_runtime_pilot_notebook.py",
+      "git_blob_sha": "372ab39d53cbf02c45c530a0e3681f9354fa596e",
       "max_bytes": 65536,
       "snapshot_parts": 1
     },
     {
-      "path": "experiments/matched-target-context-contrast-v1-10k/experiment.json",
-      "git_blob_sha": "50e53418a99abf800528ed818650acb03f920795",
+      "path": "configs/p1_03_lumia_hidden_state_runtime_pilot_50_v1_20260909.json",
+      "git_blob_sha": "2650c54ff08a17cf28303f1fb1d0e354e026df77",
       "max_bytes": 32768,
       "snapshot_parts": 1
     }
@@ -44,10 +44,10 @@
     "accelerator": "gpu",
     "machine_shape": "NvidiaTeslaT4",
     "expected_visible_gpu_count": 2,
-    "expected_runtime_minutes": 90,
-    "hard_timeout_minutes": 180,
-    "max_active_runs": 2,
-    "min_remaining_quota_hours": 2.0
+    "expected_runtime_minutes": 25,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 1,
+    "min_remaining_quota_hours": 1.0
   },
   "api_budget": {
     "max_calls": 60
@@ -56,23 +56,8 @@
     "create one private notebook version"
   ],
   "persistent_outputs": [
-    "matched-target-context-contrast-v1-10k/sample_manifest.parquet",
-    "matched-target-context-contrast-v1-10k/file_features.parquet",
-    "matched-target-context-contrast-v1-10k/span_contrasts.parquet",
-    "matched-target-context-contrast-v1-10k/baseline_features.parquet",
-    "matched-target-context-contrast-v1-10k/fidelity.json",
-    "matched-target-context-contrast-v1-10k/runtime.json",
-    "matched-target-context-contrast-v1-10k/coverage_by_language_label.csv",
-    "matched-target-context-contrast-v1-10k/predictor_metrics.csv",
-    "matched-target-context-contrast-v1-10k/language_metrics.csv",
-    "matched-target-context-contrast-v1-10k/length_metrics.csv",
-    "matched-target-context-contrast-v1-10k/strict_metrics.csv",
-    "matched-target-context-contrast-v1-10k/detection_jaccard.csv",
-    "matched-target-context-contrast-v1-10k/unique_true_positives.csv",
-    "matched-target-context-contrast-v1-10k/bootstrap.json",
-    "matched-target-context-contrast-v1-10k/evaluation_summary.json",
-    "matched-target-context-contrast-v1-10k/run_manifest.json",
-    "matched-target-context-contrast-v1-10k/REPORT.md"
+    "lumia_hidden_state_runtime_pilot_50/runtime.json",
+    "lumia_hidden_state_runtime_pilot_50/run_manifest.json"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
@@ -85,33 +70,33 @@
     "validation_rows_used": false,
     "codeparrot_rows_or_labels_used": false,
     "row_level_persisted_membership_labels": false,
+    "performance_metrics_computed": false,
     "automatic_promotion": false
   },
   "scientific_contract": {
-    "task_id": "P2-01",
-    "rows": 10000,
-    "samples_per_language": 2000,
-    "per_language_per_label": 1000,
-    "selection_seed": 2027,
+    "task_id": "P1-03-lumia-hidden-state-runtime-pilot-50-v1",
+    "purpose": "runtime_and_fidelity_only",
+    "rows": 50,
+    "rows_per_language_label": 5,
+    "selection_seed": 20260909,
     "selection_labels_removed_before_model_scoring": true,
     "model_id": "bigcode/starcoder2-3b",
     "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
     "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
-    "context_budgets": [32, 128, 512],
-    "target_tokens": 256,
-    "min_target_tokens": 64,
-    "spans_per_file": 3,
-    "primary_features": [
-      "delta_512_32_mean_logp__max_span",
-      "delta_512_32_paper_minkpp10__max_span",
-      "delta_512_32_local64__max_span"
+    "author_commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+    "max_length": 8192,
+    "precision": "fp16",
+    "all_transformer_layers": true,
+    "pooling_outputs_checked": [
+      "mean",
+      "caller_literal_weighted_mean",
+      "helper_language_aware_weighted_mean"
     ],
-    "fallback_never_imputed_as_primary": true,
-    "baseline_scores": ["loss_multiwindow", "paper_minkpp10", "local_64"],
-    "historical_loss_local_first8_fidelity_required": true,
-    "max_batch_tokens": 12288,
-    "samples_per_shard": 250,
-    "bootstrap_replicates": 1000,
+    "same_forward_output_scores_finite_only": true,
+    "raw_activations_persisted": false,
+    "sample_scores_persisted": false,
+    "performance_metrics_computed": false,
+    "direct_1000_gate_estimated_wall_minutes_lte": 105,
     "automatic_promotion": false,
     "competition_submission": false
   }
