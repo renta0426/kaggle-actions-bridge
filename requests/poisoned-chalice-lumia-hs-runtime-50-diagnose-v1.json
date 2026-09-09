@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "request_id": "20260909-poisoned-chalice-lumia-hs-runtime-50-diagnose-v1",
+  "parent_request_id": "20260909-poisoned-chalice-lumia-hs-runtime-50-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_failure_diagnostic",
+  "target": "renta0426/poisoned-chalice-lumia-hs-runtime-50-v1",
+  "expected_current_version": 1,
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "raw_log_persisted": false,
+  "publish_only_redacted_failure_metadata": true
+}
