@@ -59,7 +59,10 @@ def _load_cache(cache_dir: Path):
         if not path.is_file():
             raise RuntimeError("historical_alignment_cache_shard_missing")
         frame = pd.read_parquet(path)
-        frame["_shard"] = shard
+        # Do not use a leading-underscore column here: pandas.itertuples()
+        # rewrites invalid/underscore-prefixed field names, which would make
+        # source provenance ambiguous in the failure-only diagnostic path.
+        frame["shard_index"] = shard
         pieces.append(frame)
     cache = pd.concat(pieces, ignore_index=True)
     required = {
@@ -69,7 +72,7 @@ def _load_cache(cache_dir: Path):
         "window_start",
         "target_token_ids",
         "correct_z",
-        "_shard",
+        "shard_index",
     }
     if not required.issubset(cache.columns):
         raise RuntimeError("historical_alignment_cache_schema_mismatch")
@@ -175,7 +178,7 @@ def build_alignment(
             if not matched:
                 mismatch_windows += 1
                 sample_failed = True
-                origin = "primary" if int(token_row._shard) < 24 else "continuation"
+                origin = "primary" if int(token_row.shard_index) < 24 else "continuation"
                 mismatch_by_origin[origin] += 1
                 continue
             aligned_windows += 1
@@ -185,7 +188,7 @@ def build_alignment(
                     "language": str(row.language),
                     "position": str(token_row.position),
                     "window_start": int(token_row.window_start),
-                    "shard": int(token_row._shard),
+                    "shard": int(token_row.shard_index),
                     "target_offsets": target_offsets,
                     "target_token_count": len(target_offsets),
                     "full_token_count": len(full_ids),
