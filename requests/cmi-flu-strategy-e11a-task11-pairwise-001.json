@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e11a-task11-pairwise-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e11a-task11-pairwise-20260910-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "4d8c568e3b26ad6ba48c076bcb28fda64a0dc72f",
+  "science_transport": "agent_relay_exact_blobs_plus_proven_e10_validator_runtime",
+  "strategy_e11_blob_sha": "ec7e709ac83f9792b6cc4d63ad398a8a68e16e7b",
+  "strategy_e11_synthetic_blob_sha": "ff5c7cbc5aea7ebdbb9e16853d26ec8179cf2d6c",
+  "dependency_blobs": {
+    "baseline_b021_robust.yaml": "170d3211e2795c0730e481056c7bb068accf97c9"
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 15,
+    "hard_timeout_minutes": 45,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 70,
+    "poll_interval_seconds": 120,
+    "max_polls": 25,
+    "max_pages": 2
+  },
+  "side_effects": [
+    "create exactly one fresh private CPU Notebook version and read only its current aggregate outputs"
+  ],
+  "allowed_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "experiment_contract": {
+    "experiment": "strategy_v2_e11a_task11_pairwise_ranker",
+    "task": "Task1.1",
+    "comparison_contract": "paired_subject_purged_v2",
+    "base_model_set": "task_11",
+    "base_model": "pls_2",
+    "expected_train_rows": 127,
+    "expected_train_studies": 4,
+    "expected_challenge_rows": 40,
+    "pair_policy": "within_source_study_only_symmetric",
+    "pair_tie_tolerance": 1e-12,
+    "max_rows_per_study": 80,
+    "max_transformed_features": 512,
+    "minimum_directed_pairs": 100,
+    "reference_aggregation": "study_equal",
+    "classifier": "HistGradientBoostingClassifier",
+    "classifier_params": {
+      "learning_rate": 0.05,
+      "max_iter": 150,
+      "max_leaf_nodes": 15,
+      "min_samples_leaf": 10,
+      "l2_regularization": 1.0,
+      "early_stopping": false,
+      "random_state": 20260910
+    },
+    "cross_study_pair_labels_used": false,
+    "held_outcomes_used_for_fit": false,
+    "held_outcomes_used_for_scoring": false,
+    "promotion_mean_delta": 0.02,
+    "promotion_minimum_study_delta": -0.1,
+    "promotion_requires_strict_majority_wins": true,
+    "public_probe_authorized": false,
+    "automatic_incumbent_change_authorized": false
+  },
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "automatic_compute_retries": 0,
+  "rules_checked_at_utc": "2026-09-09T16:50:00Z"
+}
