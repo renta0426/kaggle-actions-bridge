@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Delete only fully merged stale branches
+      - name: Delete verified merged stale branches
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -40,10 +40,47 @@ jobs:
           cat /tmp/open-pr-heads.txt >> /tmp/explicit-preserve.txt
           sort -u -o /tmp/explicit-preserve.txt /tmp/explicit-preserve.txt
 
+          # These branch tips are not ancestors of current main because of their
+          # historical merge topology, but each exact tip is the head of a PR
+          # GitHub records as merged. Verify all three facts before deletion.
+          cat > /tmp/verified-merged-stale.tsv <<'EOF'
+          feature/poisoned-chalice-minkpp-paper-pilot-500	132	1c4b10568414f95355b3efff11ded92959ecdcdb
+          fix/poisoned-chalice-minkpp-paper-pilot-500-v2	133	d40128402a2445cb1c5ea33bda45190eab930499
+          fix/poisoned-chalice-minkpp-paper-pilot-500-no-external-action	134	e5418381f5f2e77b09461578e74713c61897a9fe
+          fix/stable-poisoned-chalice-kernel-runner	136	352746475a4857e6e29afef9549ff4a2b483f41e
+          poisoned-chalice/p1-02-readonly-recovery-20260908-001	183	a4964b55586832dc1e9ae297a07cf346de517ffa
+          EOF
+          sed -i 's/^          //' /tmp/verified-merged-stale.tsv
+
+          explicit_deleted=0
+          while IFS=$'\t' read -r branch pr expected_sha; do
+            [[ -n "${branch}" && -n "${pr}" && -n "${expected_sha}" ]]
+            if grep -Fxq "${branch}" /tmp/open-pr-heads.txt; then
+              echo "BRANCH_CLEANUP_REFUSED stale_branch_has_open_pr=${branch}"
+              exit 1
+            fi
+            current_sha="$(git -C "${workdir}" rev-parse "refs/remotes/origin/${branch}")"
+            [[ "${current_sha}" == "${expected_sha}" ]] || {
+              echo "BRANCH_CLEANUP_REFUSED branch_tip_changed=${branch}"
+              exit 1
+            }
+            pr_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq '.head.ref')"
+            pr_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq '.head.sha')"
+            merged_at="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq '.merged_at // ""')"
+            [[ "${pr_head}" == "${branch}" && "${pr_sha}" == "${expected_sha}" && -n "${merged_at}" ]] || {
+              echo "BRANCH_CLEANUP_REFUSED merged_pr_contract_failed=${branch} pr=${pr}"
+              exit 1
+            }
+            git -C "${workdir}" push --quiet origin --delete "${branch}"
+            echo "BRANCH_DELETE verified_merged=${branch} pr=${pr}"
+            explicit_deleted=$((explicit_deleted + 1))
+          done < /tmp/verified-merged-stale.tsv
+
+          git -C "${workdir}" fetch -q --prune origin '+refs/heads/*:refs/remotes/origin/*'
           git -C "${workdir}" for-each-ref --format='%(refname:strip=3)' refs/remotes/origin \
             | grep -v '^HEAD$' | sort -u > /tmp/branches.txt
 
-          delete_count=0
+          ancestor_deleted=0
           preserve_count=0
           unmerged_count=0
           while IFS= read -r branch; do
@@ -55,8 +92,8 @@ jobs:
             if git -C "${workdir}" merge-base --is-ancestor \
               "refs/remotes/origin/${branch}" refs/remotes/origin/main; then
               git -C "${workdir}" push --quiet origin --delete "${branch}"
-              echo "BRANCH_DELETE merged=${branch}"
-              delete_count=$((delete_count + 1))
+              echo "BRANCH_DELETE ancestor=${branch}"
+              ancestor_deleted=$((ancestor_deleted + 1))
             else
               echo "BRANCH_PRESERVE unmerged=${branch}"
               unmerged_count=$((unmerged_count + 1))
@@ -74,4 +111,4 @@ jobs:
             }
           done < /tmp/explicit-preserve.txt
 
-          echo "BRANCH_CLEANUP_COMPLETE deleted=${delete_count} explicit_preserved=${preserve_count} unmerged_preserved=${unmerged_count} remaining=$(wc -l < /tmp/final-branches.txt | tr -d ' ')"
+          echo "BRANCH_CLEANUP_COMPLETE verified_merged_deleted=${explicit_deleted} ancestor_deleted=${ancestor_deleted} explicit_preserved=${preserve_count} unmerged_preserved=${unmerged_count} remaining=$(wc -l < /tmp/final-branches.txt | tr -d ' ')"
