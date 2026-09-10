@@ -1,0 +1,218 @@
+name: CMI-Flu strategy E11b push failure diagnostic 001
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - requests/cmi-flu-strategy-e11b-push-failure-diagnose-001.json
+      - .github/workflows/cmi-flu-strategy-e11b-push-failure-diagnose-001.yml
+  push:
+    branches: [main]
+    paths:
+      - requests/cmi-flu-strategy-e11b-push-failure-diagnose-001.json
+      - .github/workflows/cmi-flu-strategy-e11b-push-failure-diagnose-001.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-readonly-cmi-flu-e11b-push-failure-diagnose-001
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-strategy-e11b-push-failure-diagnose-001.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+  TARGET_OWNER: renta0426
+  TARGET_SLUG: cmi-flu-e11b-tabpfn3-20260910-002
+  TARGET_KERNEL: renta0426/cmi-flu-e11b-tabpfn3-20260910-002
+  MODEL_SOURCE: prior-labsai/tabpfn-3/pytorch/default/1
+
+jobs:
+  validate:
+    name: Validate secret-free E11b push diagnostic
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Validate fixed request and read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"; if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            "https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${source_sha}/${REQUEST_PATH}" -o "${workdir}/request.json"
+          python3 - "${workdir}/request.json" <<'PY'
+          import json,sys
+          request=json.load(open(sys.argv[1],encoding='utf-8'))
+          expected={
+            'schema_version':1,
+            'request_id':'20260910-cmi-flu-strategy-e11b-push-failure-diagnose-001',
+            'parent_request_id':'20260910-cmi-flu-strategy-e11b-tabpfn3-002',
+            'competition':'cmi-flu-first-prediction-challenge',
+            'operation':'kernel_push_failure_diagnostic',
+            'target':'renta0426/cmi-flu-e11b-tabpfn3-20260910-002',
+            'failed_actions_run':34430166816,
+            'failed_actions_job':102733973098,
+            'observed_model_access_return_code':0,
+            'observed_push_return_code':1,
+            'observed_push_write_attempted':True,
+            'runtime_sha256':'995b68ed8aa68fed204a062bb1a9a0d18734b4be003ba81698463ede496ccb1b',
+            'push_stderr_bytes':102,
+            'push_stderr_sha256':'ef812bc9f178b83f556046dfa3dc61b4d05a90e4003989ea212e7552cf7b8f2c',
+            'model_source':'prior-labsai/tabpfn-3/pytorch/default/1',
+            'checkpoint_filename':'tabpfn-v3-regressor-v3_default.ckpt',
+            'checkpoint_bytes':233289807,
+            'api_budget':{'max_calls':12,'max_pages':1},
+            'side_effects':[],
+            'automatic_compute_retries':0,
+            'competition_submission':False,
+            'raw_kernel_output_persisted':False,
+            'publish_only_aggregate_failure_metadata':True,
+          }
+          assert request==expected
+          print('CMI_FLU_E11B_PUSH_DIAGNOSTIC_VALIDATE PASS side_effects=0 retries=0')
+          PY
+
+      - name: Validate locked CLI metadata parsing locally
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          source_sha="${EVENT_SHA}"; if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          lock_file="${RUNNER_TEMP}/kaggle-2.2.4.lock"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            "https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${source_sha}/${LOCK_PATH}" -o "${lock_file}"
+          python3 -m venv "${RUNNER_TEMP}/kaggle-local-validate"
+          "${RUNNER_TEMP}/kaggle-local-validate/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${lock_file}" >/dev/null
+          "${RUNNER_TEMP}/kaggle-local-validate/bin/python" -m pip check >/dev/null
+          "${RUNNER_TEMP}/kaggle-local-validate/bin/python" - <<'PY'
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api=KaggleApi()
+          api.validate_kernel_string('renta0426/cmi-flu-e11b-tabpfn3-20260910-002')
+          api.validate_model_instance_version_string('prior-labsai/tabpfn-3/pytorch/default/1')
+          print('CMI_FLU_E11B_PUSH_DIAGNOSTIC_LOCAL_METADATA PASS model_source_syntax=true target_syntax=true')
+          PY
+
+  diagnose:
+    name: Read exact E11b target state after failed push
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce protected read-only boundary and materialize commit
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-strategy-e11b-push-failure-diagnose-001.yml@refs/heads/main" ]]
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${EVENT_SHA}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+          python3 "${workdir}/repo/${POLICY_PATH}"
+          echo 'CMI_FLU_E11B_PUSH_DIAGNOSTIC_BOUNDARY PASS side_effects=0'
+
+      - name: Prepare locked Kaggle client
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/repo/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Read model access and exact target state only
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          import hashlib,json,os
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api=KaggleApi(); api.authenticate()
+          target=os.environ['TARGET_KERNEL']; owner=os.environ['TARGET_OWNER']; slug=os.environ['TARGET_SLUG']; model=os.environ['MODEL_SOURCE']
+          try:
+              files=api.model_instance_version_files(model, page_size=20)
+              payload=files.to_dict() if hasattr(files,'to_dict') else files
+              serialized=json.dumps(payload,sort_keys=True,default=str)
+              model_ok='tabpfn-v3-regressor-v3_default.ckpt' in serialized
+          except Exception as exc:
+              print('CMI_FLU_E11B_PUSH_DIAGNOSTIC_MODEL_ACCESS status=error type='+type(exc).__name__+' hash='+hashlib.sha256(str(exc).encode()).hexdigest()[:20])
+              raise
+          print(f'CMI_FLU_E11B_PUSH_DIAGNOSTIC_MODEL_ACCESS status=ok checkpoint_visible={str(model_ok).lower()}')
+          if not model_ok: raise SystemExit('expected checkpoint not visible')
+
+          discovered=api.kernels_list(user=owner,search=slug,page_size=10) or []
+          exact=[item for item in discovered if str(getattr(item,'ref','') or '')==target]
+          print(f'CMI_FLU_E11B_PUSH_DIAGNOSTIC_SEARCH exact_count={len(exact)}')
+          if len(exact)>1: raise SystemExit('duplicate exact target')
+          if len(exact)==0:
+              try:
+                  with api.build_kaggle_client() as client:
+                      req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+                      meta=client.kernels.kernels_api_client.get_kernel(req).metadata
+              except Exception as exc:
+                  print('CMI_FLU_E11B_PUSH_DIAGNOSTIC_EXACT state=absent exception_type='+type(exc).__name__+' error_hash='+hashlib.sha256(str(exc).encode()).hexdigest()[:20])
+                  print('CMI_FLU_E11B_PUSH_DIAGNOSTIC_CLASSIFICATION target_created=false version_consumed=false compute_started=false')
+                  raise SystemExit(0)
+              raise SystemExit('search absent but exact metadata unexpectedly present')
+
+          with api.build_kaggle_client() as client:
+              req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
+              meta=client.kernels.kernels_api_client.get_kernel(req).metadata
+          current=int(getattr(meta,'current_version_number',0) or 0)
+          status=str(getattr(api.kernels_status(target),'status','') or '').upper()
+          model_sources=list(getattr(meta,'model_data_sources',[]) or [])
+          competition_sources=list(getattr(meta,'competition_data_sources',[]) or [])
+          print('CMI_FLU_E11B_PUSH_DIAGNOSTIC_EXACT state=present '
+                f'version={current} status={status} private={str(bool(getattr(meta,"is_private",False))).lower()} '
+                f'model_attached={str(model in model_sources).lower()} competition_attached={str("cmi-flu-first-prediction-challenge" in competition_sources).lower()}')
+          print('CMI_FLU_E11B_PUSH_DIAGNOSTIC_CLASSIFICATION '
+                f'target_created=true version_consumed={str(current>0).lower()} compute_started={str(any(x in status for x in ("RUNNING","QUEUED","PENDING","COMPLETE","ERROR","FAIL"))).lower()}')
+          PY
+          unset KAGGLE_API_TOKEN
+
+      - name: Cleanup diagnostic material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+          echo 'CMI_FLU_E11B_PUSH_DIAGNOSTIC_CLEANUP PASS'
