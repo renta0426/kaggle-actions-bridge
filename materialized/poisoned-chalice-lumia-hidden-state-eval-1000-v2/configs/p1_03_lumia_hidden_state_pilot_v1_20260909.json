@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03-lumia-hidden-state-pilot-v1",
+  "as_of": "2026-09-09",
+  "status": "frozen_next_experiment_not_yet_executed",
+  "motivation": "The completed historical 768-token output-cache SERSEM weighting study did not beat its z-sigmoid baseline, but the public LUMIA hidden-state signal family and 8192-token input protocol remain untested.",
+  "author_repository": "Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026",
+  "author_commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+  "model": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "sersem_transformers": "4.52.0",
+    "sersem_tokenizers": "0.21.0",
+    "precision": "fp16",
+    "max_length": 8192
+  },
+  "cohort": {
+    "source": "pinned public train only",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "rows": 1000,
+    "languages": ["Go", "Java", "Python", "Ruby", "Rust"],
+    "rows_per_language": 200,
+    "rows_per_language_label": 100,
+    "selection": "deterministic seed 20260909, balanced by language x membership",
+    "validation_labels": "forbidden",
+    "public_lb_feedback": "forbidden"
+  },
+  "activation_extraction": {
+    "single_model_forward_per_sample": true,
+    "all_transformer_layers": true,
+    "author_literal_character_weights": "generate_char_weight_mask(text) without language, matching current released caller",
+    "helper_language_aware_character_weights": "secondary mechanism branch with explicit known language",
+    "pooling": {
+      "mean": "sequence mean of layer output",
+      "author_literal_weighted": "weighted mean using caller-literal token weights",
+      "helper_language_aware_weighted": "weighted mean using language-aware helper token weights"
+    },
+    "feature_sets": {
+      "mean_only": "mean activation only; hidden-state baseline ablation",
+      "lumia_caller_literal": "concatenate mean and caller-literal weighted activation",
+      "lumia_helper_language_aware": "concatenate mean and helper-language-aware weighted activation"
+    },
+    "failure_policy": "fail closed on model/tokenization/shape failures; do not zero-fill failed samples for scientific evaluation",
+    "raw_activations_uploaded": false
+  },
+  "probe": {
+    "architecture": "Linear(input_dim,128)-ReLU-Dropout(0.5)-Linear(128,1)-Sigmoid",
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "loss": "BCELoss",
+    "epochs_max": 100,
+    "batch_size": 32,
+    "validation_every_epochs": 5,
+    "early_stopping_patience_checks": 5,
+    "ensemble_size": 5
+  },
+  "evaluation": {
+    "outer_split": "5-fold stratified by language x label; every row scored exactly once OOF",
+    "inner_split_per_outer_train": "stratified 60% probe-train / 20% early-stop-val / 20% layer-selection",
+    "layer_selection": "top 5 by inner selection AUC only",
+    "outer_holdout_use": "score only; never used for probe weights, early stopping, or layer selection",
+    "variants": [
+      "mean_only_best_layer",
+      "mean_only_top5_ensemble",
+      "lumia_caller_literal_best_layer",
+      "lumia_caller_literal_top5_ensemble",
+      "lumia_helper_language_aware_best_layer",
+      "lumia_helper_language_aware_top5_ensemble"
+    ],
+    "same_input_output_baselines": [
+      "zsigmoid_single_sequence",
+      "caller_literal_output_weighted_single_sequence",
+      "helper_language_aware_output_weighted_single_sequence"
+    ],
+    "metrics": [
+      "roc_auc",
+      "standardized_pauc_at_0.01_fpr",
+      "tpr_at_0.001_fpr",
+      "tpr_at_0.005_fpr",
+      "tpr_at_0.01_fpr",
+      "tpr_at_0.02_fpr",
+      "conservative_tp_at_0.01_fpr",
+      "per_language_auc",
+      "unique_tp_and_jaccard_vs_same_input_zsigmoid"
+    ],
+    "bootstrap_replicates": 1000,
+    "bootstrap_seed": 20260909,
+    "paired_bootstrap_required": true
+  },
+  "pilot_scale_gate": {
+    "scale_to_2000_or_more_if_any": [
+      "caller-literal top5 ensemble OOF AUC >= same-input zsigmoid AUC + 0.015",
+      "caller-literal top5 ensemble TPR@1% FPR >= same-input zsigmoid + 0.01 absolute",
+      "caller-literal top5 ensemble adds >= 10 unique conservative true positives at 1% FPR",
+      "helper-language-aware branch shows a reproducible language-specific gain that survives outer OOF and paired bootstrap"
+    ],
+    "do_not_scale_if": [
+      "activation extraction has fidelity failures",
+      "all hidden-state variants are near random or clearly dominated by same-input output baselines",
+      "apparent improvement comes only from inner layer-selection metrics rather than outer OOF"
+    ]
+  },
+  "resource_contract": {
+    "new_model_forward_required": true,
+    "gpu_required": true,
+    "preferred_initial_accelerator": "single Kaggle T4 unless admission/runtime pilot shows it is insufficient",
+    "automatic_compute_retries": 0,
+    "submission": false,
+    "visible_validation_tuning": false,
+    "public_lb_tuning": false
+  },
+  "scientific_boundary": "Activation extraction and probe architecture follow the released mechanism; outer OOF is intentionally stricter than the author runner because the author internal test split is used for layer selection and is therefore not an unbiased final performance estimate."
+}
