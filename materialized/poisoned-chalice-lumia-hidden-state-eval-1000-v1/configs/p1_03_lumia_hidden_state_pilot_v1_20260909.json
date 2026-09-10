@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03-lumia-hidden-state-pilot-v1",
+  "as_of": "2026-09-09",
+  "status": "frozen_before_gpu_execution",
+  "author_source": {
+    "repository": "Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026",
+    "commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+    "method": "LUMIA hidden-state probe with released structural weighting helpers"
+  },
+  "target_model": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "precision": "fp16",
+    "max_length": 8192,
+    "all_transformer_layers": true
+  },
+  "dataset": {
+    "id": "Poisoned-Chalice/ICSE-2027-public",
+    "revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "split": "train",
+    "pilot_rows": 50,
+    "selection": "5 languages x 2 labels x 5 rows, deterministic seed, label removed before scoring",
+    "selection_seed": 20260909,
+    "validation_rows_used": false,
+    "public_lb_feedback_used": false
+  },
+  "extraction": {
+    "one_forward_per_sample": true,
+    "pooling_outputs": [
+      "mean",
+      "caller_weighted",
+      "helper_weighted"
+    ],
+    "same_forward_output_baselines": [
+      "zsigmoid_single_sequence",
+      "caller_literal_output_weighted_single_sequence",
+      "helper_language_aware_output_weighted_single_sequence"
+    ],
+    "caller_literal_branch": "released caller omits language: regex AST fallback + generic linter",
+    "helper_language_aware_branch": "released helper semantics with competition language: Tree-sitter/PyEnchant + Python flake8 when available",
+    "fail_closed": true,
+    "zero_fill_failed_samples": false,
+    "performance_metrics_computed_in_runtime_gate": false,
+    "sample_level_outputs_persisted_in_runtime_gate": false
+  },
+  "runtime_gate": {
+    "resource": "Kaggle T4",
+    "rows": 50,
+    "hard_timeout_minutes": 30,
+    "expected_runtime_minutes": 15,
+    "scale_to_1000_if_estimated_minutes_le": 105.0,
+    "do_not_interpret_membership_signal": true
+  },
+  "scientific_gate_after_1000": {
+    "probe_architecture": "released two-layer MLP, 128 hidden units, ReLU, dropout 0.5, sigmoid",
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "max_epochs": 100,
+    "batch_size": 32,
+    "early_stopping": "validation AUC every 5 epochs, patience 5 checks, deep-copied best state",
+    "outer_protocol": "5-fold OOF, strict inner train/early-stop/layer-selection split",
+    "primary_comparison": "caller top5 ensemble versus same-input zsigmoid baseline",
+    "metrics": [
+      "ROC-AUC",
+      "standardized pAUC@1% FPR",
+      "TPR@0.1/0.5/1/2% FPR",
+      "conservative TP@1% FPR",
+      "per-language AUC",
+      "unique TP and Jaccard versus zsigmoid"
+    ],
+    "paired_bootstrap_replicates": 1000,
+    "bootstrap_seed": 20260909,
+    "scale_gate": "pre-registered separately before 1000 cache execution; see configs/p1_03_lumia_hidden_state_evaluation_v1_20260910.json"
+  },
+  "clean_room": {
+    "public_train_labels_allowed_for_train_based_evaluation": true,
+    "labels_joined_only_after_cache_sealed": true,
+    "sample_id_used_as_predictor": false,
+    "hidden_validation_labels_used": false,
+    "validation_rows_used": false,
+    "public_lb_feedback_used": false,
+    "result_derived_formula_allowed": false
+  }
+}
