@@ -158,10 +158,11 @@ def main() -> int:
 
     installer = r'''def install_tabpfn_wheel() -> dict:
     import importlib.metadata as _metadata
+    import subprocess as _subprocess
     root=Path("/tmp")/"cmi-flu-e11b-tabpfn-site"
     if root.exists(): shutil.rmtree(root)
     root.mkdir(parents=True)
-    download=subprocess.run(
+    download=_subprocess.run(
         [sys.executable,"-m","pip","download","--disable-pip-version-check","--no-input","--no-deps","--only-binary=:all:","--dest",str(root),f"tabpfn=={TABPFN_PACKAGE_VERSION}"],
         capture_output=True,text=True,timeout=180,check=False,
     )
@@ -178,7 +179,7 @@ def main() -> int:
     if hashlib.sha256(wheel_bytes).hexdigest()!=TABPFN_WHEEL_SHA256:
         raise BridgeContractError("e11b_tabpfn_wheel_sha")
     site=root/"site"; site.mkdir()
-    install=subprocess.run(
+    install=_subprocess.run(
         [sys.executable,"-m","pip","install","--disable-pip-version-check","--no-input","--no-deps","--target",str(site),str(wheel_path)],
         capture_output=True,text=True,timeout=180,check=False,
     )
@@ -215,7 +216,7 @@ def main() -> int:
         raise SystemExit(f"E11b 004 runtime remains too large:{len(raw)}")
     if encoded[:128] in runtime or len(encoded) < 1_000_000:
         raise SystemExit("E11b 004 embedded wheel payload removal failed")
-    if 'TABPFN_WHEEL_B64 = ""' not in runtime or 'pip","download"' not in runtime:
+    if 'TABPFN_WHEEL_B64 = ""' not in runtime or '"pip","download"' not in runtime:
         raise SystemExit("E11b 004 online wheel installer anchors missing")
 
     out = args.output.resolve()
