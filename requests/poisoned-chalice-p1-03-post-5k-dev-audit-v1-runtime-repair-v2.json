@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-poisoned-chalice-p1-03-post-5k-dev-audit-v1-003",
+  "parent_request_id": "20260910-poisoned-chalice-p1-03-post-5k-dev-audit-v1-002",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "save_kernel_once",
+  "target": "renta0426/poisoned-chalice-p1-03-post-5k-dev-audit-v1",
+  "title": "Poisoned Chalice P1-03 Post-5K Dev Audit V1",
+  "expected_current_version_before_write": 1,
+  "expected_version_after_write": 2,
+  "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "research_commit": "7c16edd388165955a0aeed1e4eed69e0b06a136c",
+  "research_files": [
+    {
+      "path": "scripts/run_p1_03_post_5k_development_audit_v1.py",
+      "git_blob_sha": "3d0a45b20c93554e293b4db9c243cd1133f1fef9"
+    },
+    {
+      "path": "scripts/build_p1_03_post_5k_development_audit_notebook_v1.py",
+      "git_blob_sha": "e9272cbee32d03f52dff758f0b87079c3f9bbfa2"
+    },
+    {
+      "path": "configs/p1_03_post_5k_development_audit_v1_20260910.json",
+      "git_blob_sha": "322487c8f0a932160ab825775ca80687ce295579"
+    }
+  ],
+  "inputs": {
+    "dataset": {
+      "ref": "renta0426/stage1-raw-fim-submission-v1-output",
+      "version": 1
+    },
+    "kernels": [
+      {
+        "ref": "renta0426/poisoned-chalice-lumia-hidden-state-cache-5000-v1",
+        "version": 1
+      },
+      {
+        "ref": "renta0426/poisoned-chalice-lumia-hidden-state-eval-5000-v1",
+        "version": 1
+      }
+    ]
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 50,
+    "hard_timeout_minutes": 120,
+    "max_active_runs": 1
+  },
+  "side_effects": [
+    "create exactly one new private notebook version 2 under the existing approved target"
+  ],
+  "persistent_outputs": [
+    "p1_03_post_5k_development_audit_v1/content_control_audit.json",
+    "p1_03_post_5k_development_audit_v1/content_control_oof_scores.parquet",
+    "p1_03_post_5k_development_audit_v1/fusion_audit.json",
+    "p1_03_post_5k_development_audit_v1/fusion_common_scores.parquet",
+    "p1_03_post_5k_development_audit_v1/portable_scalar_audit.json",
+    "p1_03_post_5k_development_audit_v1/portable_scalar_oof_scores.parquet",
+    "p1_03_post_5k_development_audit_v1/portable_scalar_table.parquet",
+    "p1_03_post_5k_development_audit_v1/run_manifest.json",
+    "p1_03_post_5k_development_audit_v1/static_feature_table.parquet"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "select_as_final": false,
+  "clean_room": {
+    "development_only": true,
+    "promotion_allowed": false,
+    "fresh_holdout_consumed": false,
+    "new_target_model_forward": false,
+    "validation_rows_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "public_leaderboard_feedback_used": false
+  },
+  "scientific_contract": {
+    "stage1_oof_reproduction_auc": 0.68013844,
+    "hidden_oof_sha256": "c6d35c24087eac4809678bb5cae3d02fef630d07eb6f4033c50b8e285ce56fb4",
+    "hidden_cache_manifest_sha256": "380e553cea43c0bb4a649e7d6b696786b4e5178d45ee116efbd5e99cceeab6aa",
+    "fusion_hidden_rank_weights": [0.25, 0.5, 0.75],
+    "portable_features_per_pooling_variant": 96,
+    "content_controls": [
+      "C0_static",
+      "C1_hashed_char_token_ngram",
+      "SimHash_group_diagnostic"
+    ]
+  },
+  "runtime_repair": {
+    "kind": "single_import_location_fix",
+    "failed_target_version": 1,
+    "required_failed_status_before_write": "ERROR",
+    "previous_launch_workflow_run": 34475469934,
+    "previous_launch_job": 102865147273,
+    "previous_write_observed": true,
+    "previous_compute_started": true,
+    "previous_result_valid": false,
+    "uploaded_log_sha256": "9a7aae26dd04b2dce15905f98eefac9606a01c7709fb617ec660f77c8608c52b",
+    "failure_class": "ImportError",
+    "failure_symbol": "FeatureUnion",
+    "old_import_module": "sklearn.feature_extraction.text",
+    "new_import_module": "sklearn.pipeline",
+    "old_runtime_git_blob_sha": "76e09a937c0b257787bec7269716ff8cb7cb1e6d",
+    "new_runtime_git_blob_sha": "3d0a45b20c93554e293b4db9c243cd1133f1fef9",
+    "builder_changed": false,
+    "config_changed": false,
+    "science_formulas_changed": false,
+    "clean_room_changed": false,
+    "fresh_holdout_consumed": false,
+    "automatic_retry": false
+  }
+}
