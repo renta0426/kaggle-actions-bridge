@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e11a-failure-diagnose-001",
+  "parent_request_id": "20260910-cmi-flu-strategy-e11a-task11-pairwise-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_failure_diagnostic",
+  "target": "renta0426/cmi-flu-e11a-task11-pairwise-20260910-001",
+  "expected_current_version": 1,
+  "failed_actions_run": 34380270124,
+  "failed_actions_job": 102563363475,
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "raw_log_persisted": false,
+  "publish_only_redacted_failure_metadata": true
+}
