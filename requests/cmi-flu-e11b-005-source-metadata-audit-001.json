@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-e11b-005-source-metadata-audit-001",
+  "parent_request_id": "20260910-cmi-flu-strategy-e11b-tabpfn3-005",
+  "operation": "kernel_metadata_source_projection_read",
+  "target": "renta0426/cmi-flu-e11b-tabpfn3-20260910-005",
+  "expected_kernel_version": 1,
+  "competition": "cmi-flu-first-prediction-challenge",
+  "expected_model_source": "prior-labsai/tabpfn-3/pytorch/default/1",
+  "failed_bridge_run_id": 34448017644,
+  "failed_bridge_job_id": 102777247400,
+  "failed_bridge_commit": "a4a488df14f1774cc69c98202eeba29442c210a1",
+  "failure_classification": "bridge_runtime_compatibility_metadata_source_projection",
+  "known_failure": {
+    "stage": "post_savekernel_source_attachment_validation",
+    "exception": "RuntimeError: source attachment mismatch",
+    "savekernel_succeeded": true,
+    "kernel_version_consumed": true,
+    "scientific_result_validated_separately": true,
+    "repair_not_yet_authorized": true
+  },
+  "science_provenance": {
+    "repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+    "e11b_source_commit": "95c692bf2e27f6d07ea31a45fd788293666ea94a",
+    "strategy_e11b_blob_sha": "8a291ae4952786bf16ee667caa5557599310e3fd"
+  },
+  "allowed_reads": [
+    "KaggleApi.authenticate",
+    "KaggleApi.kernel_metadata"
+  ],
+  "forbidden_operations": [
+    "SaveKernel",
+    "kernels_push",
+    "kernels_output",
+    "kernel_output_download",
+    "competition_submit",
+    "submission",
+    "kernel_rerun",
+    "compute_start"
+  ],
+  "audit_scope": {
+    "top_level_metadata_fields": [
+      "ref",
+      "current_version_number",
+      "is_private",
+      "enable_gpu",
+      "enable_tpu",
+      "enable_internet"
+    ],
+    "source_collections": [
+      "model_data_sources",
+      "competition_data_sources"
+    ],
+    "item_projection_policy": "direct_string_or_allowlisted_public_scalar_attributes_only",
+    "allowlisted_item_attributes": [
+      "ref",
+      "id",
+      "source",
+      "name",
+      "owner",
+      "slug",
+      "version",
+      "version_number",
+      "model_ref",
+      "model_slug",
+      "model_instance_slug",
+      "model_variation_slug",
+      "model_version",
+      "competition_ref",
+      "competition_name",
+      "dataset_ref",
+      "dataset_slug",
+      "url"
+    ],
+    "arbitrary_object_dict_dump_allowed": false,
+    "arbitrary_repr_dump_allowed": false,
+    "validator_repair_authorized_by_this_request": false
+  },
+  "allowed_output_paths": [
+    "source-metadata-audit.json"
+  ],
+  "output_max_bytes": 65536,
+  "new_write_attempted": false,
+  "new_compute_requested": false,
+  "competition_submission_attempted": false,
+  "output_download_requested": false,
+  "internet_requested": false,
+  "automatic_compute_retries": 0,
+  "consumed_target_rerun_authorized": false,
+  "publish_only_sanitized_aggregate": true,
+  "side_effects": []
+}
