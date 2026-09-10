@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e11a-failed-output-recovery-003",
+  "parent_request_id": "20260910-cmi-flu-strategy-e11a-task11-pairwise-001",
+  "prior_recovery_request_ids": [
+    "20260910-cmi-flu-strategy-e11a-failed-output-recovery-001",
+    "20260910-cmi-flu-strategy-e11a-failed-output-recovery-002"
+  ],
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "failed_kernel_current_output_recovery",
+  "target": "renta0426/cmi-flu-e11a-task11-pairwise-20260910-001",
+  "expected_current_version": 1,
+  "expected_terminal_status": "error_or_fail",
+  "failed_actions_run": 34380270124,
+  "failed_actions_job": 102563363475,
+  "failure_stage": "write_outputs",
+  "failure_exception_type": "KeyError",
+  "failure_error_code": "6d98aeb26dde4e8134ee",
+  "failure_exact_message": "'tasks'",
+  "prior_recovery_evidence": {
+    "unfiltered_output_rc": 0,
+    "unfiltered_file_count": 4,
+    "filtered_output_rc": 0,
+    "filtered_file_count": 4
+  },
+  "transport_log_policy": {
+    "source_path": "scripts/kaggle_current_output_read.py",
+    "source_blob_sha": "37caa4dbbd42f2970b5d950ab6adbc08c6a6097d",
+    "rule": "only a root-level .log file may be ignored as Kaggle transport log; all other undeclared files fail closed"
+  },
+  "expected_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "raw_output_persisted": false,
+  "publish_only_sanitized_aggregate": true
+}

@@ -1,0 +1,225 @@
+name: CMI-Flu strategy E11a failed output recovery 003
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - requests/cmi-flu-strategy-e11a-failed-output-recovery-003.json
+      - .github/workflows/cmi-flu-strategy-e11a-failed-output-recovery-003.yml
+  push:
+    branches: [main]
+    paths:
+      - requests/cmi-flu-strategy-e11a-failed-output-recovery-003.json
+      - .github/workflows/cmi-flu-strategy-e11a-failed-output-recovery-003.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-readonly-cmi-flu-e11a-failed-output-recovery-003
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-strategy-e11a-failed-output-recovery-003.json
+  SANITIZER_PATH: scripts/cmi_flu_strategy_e11a_sanitize.py
+  CURRENT_READER_PATH: scripts/kaggle_current_output_read.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+  TARGET_OWNER: renta0426
+  TARGET_SLUG: cmi-flu-e11a-task11-pairwise-20260910-001
+  TARGET_KERNEL: renta0426/cmi-flu-e11a-task11-pairwise-20260910-001
+
+jobs:
+  validate:
+    name: Validate secret-free E11a transport-log-aware recovery
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate fixed request, established transport-log policy, and sanitizer
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
+          for path in "${REQUEST_PATH}" "${SANITIZER_PATH}" "${CURRENT_READER_PATH}" "${POLICY_PATH}"; do
+            curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+              "https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${source_sha}/${path}" \
+              -o "${workdir}/$(basename "${path}")"
+          done
+          python3 "${workdir}/kaggle_policy_preflight.py"
+          python3 -m py_compile "${workdir}/cmi_flu_strategy_e11a_sanitize.py" "${workdir}/kaggle_current_output_read.py"
+          python3 - "${workdir}/$(basename "${REQUEST_PATH}")" "${workdir}/kaggle_current_output_read.py" <<'PY'
+          import hashlib,json,pathlib,sys
+          request=json.load(open(sys.argv[1],encoding='utf-8'))
+          reader=pathlib.Path(sys.argv[2]).read_bytes()
+          assert request['schema_version']==1
+          assert request['request_id']=='20260910-cmi-flu-strategy-e11a-failed-output-recovery-003'
+          assert request['parent_request_id']=='20260910-cmi-flu-strategy-e11a-task11-pairwise-001'
+          assert request['prior_recovery_request_ids']==['20260910-cmi-flu-strategy-e11a-failed-output-recovery-001','20260910-cmi-flu-strategy-e11a-failed-output-recovery-002']
+          assert request['target']=='renta0426/cmi-flu-e11a-task11-pairwise-20260910-001'
+          assert request['expected_current_version']==1
+          assert request['failure_stage']=='write_outputs'
+          assert request['failure_exception_type']=='KeyError'
+          assert request['failure_error_code']=='6d98aeb26dde4e8134ee'
+          assert request['failure_exact_message']=="'tasks'"
+          assert request['prior_recovery_evidence']=={'unfiltered_output_rc':0,'unfiltered_file_count':4,'filtered_output_rc':0,'filtered_file_count':4}
+          policy=request['transport_log_policy']
+          assert policy['source_path']=='scripts/kaggle_current_output_read.py'
+          assert policy['source_blob_sha']=='37caa4dbbd42f2970b5d950ab6adbc08c6a6097d'
+          git_blob=hashlib.sha1(b'blob '+str(len(reader)).encode()+b'\0'+reader).hexdigest()
+          assert git_blob==policy['source_blob_sha']
+          text=reader.decode('utf-8')
+          assert 'len(relative.parts) == 1 and path.suffix == ".log"' in text
+          assert 'p.name not in allow and not _is_transport_log(p, download)' in text
+          assert request['expected_output_paths']==['bridge-result.json','metrics.json','summary.md']
+          assert request['side_effects']==[] and request['automatic_compute_retries']==0
+          assert request['competition_submission'] is False and request['raw_output_persisted'] is False
+          assert request['publish_only_sanitized_aggregate'] is True
+          print('CMI_FLU_E11A_TRANSPORT_RECOVERY_VALIDATE PASS side_effects=0 retries=0 established_transport_policy=true')
+          PY
+
+  recover:
+    name: Recover declared E11a aggregates while ignoring transport log only
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-strategy-e11a-failed-output-recovery-003.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${EVENT_SHA}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+          python3 "${workdir}/repo/${POLICY_PATH}"
+          echo 'CMI_FLU_E11A_TRANSPORT_RECOVERY_BOUNDARY PASS write=false compute=false raw_output_persisted=false'
+
+      - name: Prepare locked Kaggle client
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/repo/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo 'CMI_FLU_E11A_TRANSPORT_RECOVERY_CLIENT PASS kaggle_cli=2.2.4'
+
+      - name: Fetch current failed output, select allowlist, and sanitize once
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          import os
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api=KaggleApi(); api.authenticate(); target=os.environ['TARGET_KERNEL']
+          discovered=api.kernels_list(user=os.environ['TARGET_OWNER'],search=os.environ['TARGET_SLUG'],page_size=10) or []
+          refs=[str(getattr(item,'ref','') or '') for item in discovered]
+          if refs.count(target)!=1: raise SystemExit(f'exact target mismatch count={refs.count(target)}')
+          status=str(getattr(api.kernels_status(target),'status','') or '').upper()
+          with api.build_kaggle_client() as client:
+              req=ApiGetKernelRequest(); req.user_name=os.environ['TARGET_OWNER']; req.kernel_slug=os.environ['TARGET_SLUG']
+              metadata=client.kernels.kernels_api_client.get_kernel(req).metadata
+          current=int(getattr(metadata,'current_version_number',0) or 0)
+          if str(metadata.ref)!=target or not bool(metadata.is_private) or current!=1:
+              raise SystemExit(f'exact current identity mismatch current={current}')
+          if 'ERROR' not in status and 'FAIL' not in status:
+              raise SystemExit(f'expected failed terminal status, got {status}')
+          print(f'CMI_FLU_E11A_TRANSPORT_RECOVERY_STATUS state=error version={current}')
+          PY
+          mkdir -p "${WORKDIR}/download"
+          set +e
+          "${WORKDIR}/kaggle-venv/bin/kaggle" kernels output "${TARGET_KERNEL}" -p "${WORKDIR}/download" >"${WORKDIR}/output.stdout" 2>"${WORKDIR}/output.stderr"
+          rc=$?
+          set -e
+          stdout_bytes=$(wc -c <"${WORKDIR}/output.stdout"); stderr_bytes=$(wc -c <"${WORKDIR}/output.stderr")
+          rm -f "${WORKDIR}/output.stdout" "${WORKDIR}/output.stderr"
+          echo "CMI_FLU_E11A_TRANSPORT_RECOVERY_FETCH rc=${rc} stdout_bytes=${stdout_bytes} stderr_bytes=${stderr_bytes}"
+          [[ "${rc}" -eq 0 ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - "${WORKDIR}/download" "${WORKDIR}/safe" <<'PY'
+          import pathlib,shutil,sys
+          root=pathlib.Path(sys.argv[1]); safe=pathlib.Path(sys.argv[2])
+          paths=list(root.rglob('*'))
+          if any(p.is_symlink() for p in paths): raise SystemExit('symlink_in_saved_output')
+          files=[p for p in paths if p.is_file()]
+          allow=('bridge-result.json','metrics.json','summary.md')
+          def transport_log(p):
+              rel=p.relative_to(root)
+              return len(rel.parts)==1 and p.suffix=='.log'
+          unexpected=[p for p in files if p.name not in allow and not transport_log(p)]
+          if unexpected: raise SystemExit(f'unexpected_saved_output_count={len(unexpected)}')
+          transport=[p for p in files if transport_log(p)]
+          if len(transport)>1: raise SystemExit(f'transport_log_count={len(transport)}')
+          total=sum(p.stat().st_size for p in files)
+          if total<=0 or total>4_000_000: raise SystemExit(f'download_byte_contract total={total}')
+          safe.mkdir()
+          for name in allow:
+              matches=[p for p in files if p.name==name]
+              if len(matches)!=1: raise SystemExit(f'allowlisted_output_missing_or_ambiguous:{name}:{len(matches)}')
+              size=matches[0].stat().st_size
+              if size<=0 or size>1_000_000: raise SystemExit(f'allowlisted_output_size_invalid:{name}:{size}')
+              shutil.copyfile(matches[0],safe/name)
+          print(f'CMI_FLU_E11A_TRANSPORT_RECOVERY_FILES selected=3 transport_logs={len(transport)} downloaded_files={len(files)} total_bytes={total}')
+          PY
+          python3 "${WORKDIR}/repo/${SANITIZER_PATH}" --input-dir "${WORKDIR}/safe"
+          "${WORKDIR}/kaggle-venv/bin/python" - "${WORKDIR}/safe" <<'PY'
+          import hashlib,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          for name in ('bridge-result.json','metrics.json','summary.md'):
+              p=root/name; data=p.read_bytes()
+              print(f'CMI_FLU_E11A_TRANSPORT_RECOVERY_HASH name={name} bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}')
+          PY
+          rm -rf "${WORKDIR}/download" "${WORKDIR}/safe"
+          unset KAGGLE_API_TOKEN
+          echo 'CMI_FLU_E11A_TRANSPORT_RECOVERY_COMPLETE aggregate_only=true compute_replayed=false'
+
+      - name: Cleanup all recovery material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'CMI_FLU_E11A_TRANSPORT_RECOVERY_CLEANUP PASS retention_days=0'
