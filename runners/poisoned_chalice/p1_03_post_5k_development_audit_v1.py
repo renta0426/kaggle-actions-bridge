@@ -34,20 +34,10 @@ EXPECTED_BLOBS = {
     "scripts/build_p1_03_post_5k_development_audit_notebook_v1.py": "e9272cbee32d03f52dff758f0b87079c3f9bbfa2",
     "configs/p1_03_post_5k_development_audit_v1_20260910.json": "322487c8f0a932160ab825775ca80687ce295579",
 }
-SNAPSHOT_PARTS = {
-    "scripts/run_p1_03_post_5k_development_audit_v1.py": [
-        f"{SNAPSHOT_ROOT}/scripts/run_p1_03_post_5k_development_audit_v1.py.part01",
-        f"{SNAPSHOT_ROOT}/scripts/run_p1_03_post_5k_development_audit_v1.py.part02",
-        f"{SNAPSHOT_ROOT}/scripts/run_p1_03_post_5k_development_audit_v1.py.part03",
-        f"{SNAPSHOT_ROOT}/scripts/run_p1_03_post_5k_development_audit_v1.py.part04",
-    ],
-    "scripts/build_p1_03_post_5k_development_audit_notebook_v1.py": [
-        f"{SNAPSHOT_ROOT}/scripts/build_p1_03_post_5k_development_audit_notebook_v1.py.part01",
-        f"{SNAPSHOT_ROOT}/scripts/build_p1_03_post_5k_development_audit_notebook_v1.py.part02",
-    ],
-    "configs/p1_03_post_5k_development_audit_v1_20260910.json": [
-        f"{SNAPSHOT_ROOT}/configs/p1_03_post_5k_development_audit_v1_20260910.json",
-    ],
+SNAPSHOT_FILES = {
+    "scripts/run_p1_03_post_5k_development_audit_v1.py": f"{SNAPSHOT_ROOT}/exact/run_p1_03_post_5k_development_audit_v1.py",
+    "scripts/build_p1_03_post_5k_development_audit_notebook_v1.py": f"{SNAPSHOT_ROOT}/exact/build_p1_03_post_5k_development_audit_notebook_v1.py",
+    "configs/p1_03_post_5k_development_audit_v1_20260910.json": f"{SNAPSHOT_ROOT}/configs/p1_03_post_5k_development_audit_v1_20260910.json",
 }
 PERSISTENT_OUTPUTS = [
     f"{OUTPUT_PREFIX}/content_control_audit.json",
@@ -94,7 +84,7 @@ def safe_snapshot_path(path: str) -> str:
         raise RuntimeError("snapshot path outside frozen root")
     return normalized
 
-def fetch_bridge_snapshot(path: str, maximum: int = 131_072) -> bytes:
+def fetch_bridge_snapshot(path: str, maximum: int = 262_144) -> bytes:
     safe = safe_snapshot_path(path)
     sha = bridge_source_sha()
     url = f"https://raw.githubusercontent.com/{BRIDGE_REPO}/{sha}/{safe}"
@@ -116,12 +106,10 @@ def fetch_bridge_snapshot(path: str, maximum: int = 131_072) -> bytes:
     raise RuntimeError(f"bounded bridge snapshot fetch failed: {type(last).__name__}")
 
 def reconstruct_science_file(path: str) -> bytes:
-    parts = SNAPSHOT_PARTS.get(path)
-    if not parts or len(parts) > 16:
+    snapshot = SNAPSHOT_FILES.get(path)
+    if not snapshot:
         raise RuntimeError(f"snapshot manifest missing: {path}")
-    data = b"".join(fetch_bridge_snapshot(part) for part in parts)
-    if not data or len(data) > 262_144:
-        raise RuntimeError(f"reconstructed science file byte budget failed: {path}")
+    data = fetch_bridge_snapshot(snapshot)
     expected = EXPECTED_BLOBS[path]
     observed = git_blob_sha(data)
     if observed != expected:
@@ -174,7 +162,7 @@ def validate_request(request: dict) -> None:
         raise RuntimeError("active request differs from exact frozen P1-03 post-5k contract")
 
 def materialize_research(root: Path) -> None:
-    if set(SNAPSHOT_PARTS) != set(EXPECTED_BLOBS):
+    if set(SNAPSHOT_FILES) != set(EXPECTED_BLOBS):
         raise RuntimeError("snapshot/research manifest key mismatch")
     for path in EXPECTED_BLOBS:
         data = reconstruct_science_file(path)
