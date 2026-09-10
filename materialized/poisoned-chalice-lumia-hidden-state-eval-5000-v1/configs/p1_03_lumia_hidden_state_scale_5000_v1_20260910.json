@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03a-lumia-hidden-state-scale-5000-v1",
+  "as_of": "2026-09-10",
+  "status": "frozen_before_5000_cache_execution",
+  "parent_result": "experiments/p1-03-lumia-hidden-state-evaluation-1000-v1/REPORT.md",
+  "parent_result_commit": "694780fe3a3a19d131fd453bafa8da05f1075e35",
+  "purpose": "scale_and_stability_confirmation_of_same_model_hidden_state_signal",
+  "not_independent_model_holdout": true,
+  "author_repository": "Serdark4ra/SERSEM-Poisoned-Chalice-Competition-2026",
+  "author_commit": "413f56040e5b4805bcf15ed794dec56bc4e16b41",
+  "model": {
+    "id": "bigcode/starcoder2-3b",
+    "revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
+    "precision": "fp16",
+    "max_length": 8192,
+    "placement": "explicit model.to('cuda:0').eval()",
+    "expected_layers": 30,
+    "expected_hidden_size": 3072
+  },
+  "cohort": {
+    "source": "pinned public train only",
+    "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "rows": 5000,
+    "languages": ["Go", "Java", "Python", "Ruby", "Rust"],
+    "rows_per_language": 1000,
+    "rows_per_language_label": 500,
+    "selection_seed": 20260909,
+    "membership_use": "deterministic cohort balancing only before model scoring",
+    "scoring_columns": ["sample_id", "language", "content"],
+    "validation_rows_used": false,
+    "public_lb_feedback_used": false
+  },
+  "activation_extraction": {
+    "one_forward_per_sample": true,
+    "all_decoder_layers": true,
+    "pooling_variants": ["mean", "caller_weighted", "helper_weighted"],
+    "feature_semantics": {
+      "mean": "ordinary sequence mean",
+      "caller_weighted": "released caller-literal weighting with language omitted",
+      "helper_weighted": "language-aware released helper weighting"
+    },
+    "same_forward_output_baselines": [
+      "zsigmoid_single_sequence",
+      "caller_literal_output_weighted_single_sequence",
+      "helper_language_aware_output_weighted_single_sequence"
+    ],
+    "failure_policy": "fail closed; no zero filling",
+    "performance_metrics_computed_in_cache_run": false
+  },
+  "cache": {
+    "target": "renta0426/poisoned-chalice-lumia-hidden-state-cache-5000-v1",
+    "output_dir": "/kaggle/working/lumia_hidden_state_cache_5000_v1",
+    "shard_size": 250,
+    "shard_count": 20,
+    "dtype": "float32",
+    "compression": "lossless npz_compressed",
+    "shape_per_variant_per_shard": [250, 30, 3072],
+    "uncompressed_hidden_bytes": 5529600000,
+    "estimated_compressed_bytes_from_1k_linear": 4512738290,
+    "operational_shard_change_from_1k": "50 rows to 250 rows solely to keep the exact persistent-output allowlist below the bridge 32-entry bound; numerical representation is unchanged",
+    "raw_token_layer_activations_persisted": false,
+    "logits_persisted": false,
+    "sample_level_labels_persisted": false,
+    "atomic_whole_shards": true
+  },
+  "resource_preflight": {
+    "kaggle_working_preserved_output_limit_gb": 20,
+    "estimated_output_gb_decimal": 4.6,
+    "accelerator": "Kaggle NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "scoring_gpu": "cuda:0",
+    "expected_runtime_minutes": 105,
+    "hard_timeout_minutes": 150,
+    "automatic_compute_retries": 0,
+    "enable_internet": true
+  },
+  "evaluation": {
+    "status": "frozen_before_cache_execution",
+    "outer_oof_folds": 5,
+    "outer_holdout_rows_per_fold": 1000,
+    "outer_holdout_use": "score only",
+    "inner_per_outer_fit": {
+      "probe_train_rows": 2400,
+      "early_stop_rows": 800,
+      "layer_selection_rows": 800,
+      "stratify": "language x membership label"
+    },
+    "probe": {
+      "architecture": "Linear(input_dim,128)-ReLU-Dropout(0.5)-Linear(128,1)-Sigmoid",
+      "optimizer": "Adam",
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001,
+      "epochs_max": 100,
+      "batch_size": 32,
+      "validation_every_epochs": 5,
+      "early_stopping_patience_checks": 5,
+      "best_weights": "deep-copied state at best early-stop AUC"
+    },
+    "layer_selection": "rank all 30 layers by inner selection AUC only",
+    "best_layer": "top 1 selection-AUC layer",
+    "top5_ensemble": "unweighted mean of top 5 selection-AUC layer predictions",
+    "bootstrap_replicates": 1000,
+    "bootstrap_seed": 20260909,
+    "metrics": [
+      "roc_auc",
+      "standardized_pauc_at_0.01_fpr",
+      "tpr_at_0.001_fpr",
+      "tpr_at_0.005_fpr",
+      "tpr_at_0.01_fpr",
+      "tpr_at_0.02_fpr",
+      "conservative_tp_at_0.01_fpr",
+      "per_language_auc",
+      "unique_tp_and_jaccard_vs_same_input_zsigmoid"
+    ]
+  },
+  "predeclared_decision": {
+    "same_model_signal_confirmed_if_all": [
+      "caller top5 OOF AUC >= 0.62",
+      "caller top5 minus same-input zsigmoid paired-bootstrap AUC delta lower_95 > 0",
+      "caller top5 per-language AUC > 0.55 for all five languages"
+    ],
+    "weighting_increment_supported_if": "caller top5 minus mean-only top5 OR helper top5 minus mean-only top5 paired-bootstrap AUC delta lower_95 > 0",
+    "low_fpr_confirmation_if": "at least one frozen hidden anchor has TPR@1% FPR >= zsigmoid + 0.01 and its paired-bootstrap TPR delta lower_95 >= 0",
+    "tail_failure_does_not_negate_auc_signal": true,
+    "no_automatic_cross_model_promotion": true
+  },
+  "anti_posthoc": {
+    "no_layer_choice_from_outer_holdout": true,
+    "no_hyperparameter_change_after_cache_labels_are_joined": true,
+    "no_result_derived_output_formula": true,
+    "no_visible_validation_use": true,
+    "no_public_lb_use": true
+  },
+  "clean_room": {
+    "hidden_validation_labels_used": false,
+    "validation_rows_used": false,
+    "sample_id_hash_used_as_predictive_feature": false,
+    "row_order_used_as_predictive_feature": false,
+    "repository_provenance_used": false,
+    "public_leaderboard_feedback_used": false,
+    "competition_submission": false
+  }
+}
