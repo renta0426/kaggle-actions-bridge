@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "experiment_id": "E11c",
+  "title": "Task1.1 robust TabPFN fusion and source-study stability",
+  "date": "2026-09-10",
+  "parent_experiment": "E11b",
+  "parent_result_record": "reports/strategy-e11b-aggregate-record.json",
+  "task": "Task1.1",
+  "comparison_contract": "paired_subject_purged_v2",
+  "base": {
+    "kind": "b21",
+    "model": "pls_2",
+    "target_transform": "log",
+    "weight_in_fusion": 0.75
+  },
+  "tabpfn": {
+    "package": "tabpfn",
+    "package_version": "8.5.0",
+    "source_commit": "9ed44abd5882140b88c9f2816c5791987ce059b9",
+    "wheel_filename": "tabpfn-8.5.0-py3-none-any.whl",
+    "wheel_sha256": "4c076a019cfa5520e9c41405cecda845bdd09d909ede4a60c43839bbc83bf7a0",
+    "kaggle_model_source": "prior-labsai/tabpfn-3/pytorch/default/1",
+    "checkpoint_filename": "tabpfn-v3-regressor-v3_default.ckpt",
+    "checkpoint_bytes": 233289807,
+    "checkpoint_sha256": "311ce18d97e9533d8585eaadafe040fbdd8070533209ed8696641dadc97a7301",
+    "params": {
+      "device": "cpu",
+      "fit_mode": "fit_preprocessors",
+      "ignore_pretraining_limits": false,
+      "memory_saving_mode": "auto",
+      "n_estimators": 8,
+      "n_preprocessing_jobs": 1,
+      "random_state": 20260910,
+      "show_progress_bar": false
+    },
+    "weight_in_fusion": 0.25
+  },
+  "expected_data": {
+    "train_rows": 127,
+    "train_studies": 4,
+    "challenge_rows": 40,
+    "max_raw_features": 200
+  },
+  "conditions": [
+    {
+      "id": "C0",
+      "name": "b21_pls2_reference",
+      "eligible_for_e12": false
+    },
+    {
+      "id": "C1",
+      "name": "tabpfn_full_reproduction_control",
+      "eligible_for_e12": false
+    },
+    {
+      "id": "C2",
+      "name": "pls75_tabpfn25_full_rank_fusion",
+      "eligible_for_e12": true,
+      "formula": "0.75*percentile_rank(base)+0.25*percentile_rank(tabpfn_full)"
+    },
+    {
+      "id": "C3",
+      "name": "tabpfn_source_study_jackknife_rank_median",
+      "eligible_for_e12": false,
+      "outer_source_drop_rule": "for each of the 3 outer-source studies, omit exactly that study, fit on the other 2, predict held, percentile-rank, elementwise median all 3"
+    },
+    {
+      "id": "C4",
+      "name": "pls75_tabpfn25_jackknife_rank_fusion",
+      "eligible_for_e12": true,
+      "formula": "0.75*percentile_rank(base)+0.25*median_source_dropout_tabpfn_rank"
+    }
+  ],
+  "raw_output_mapping": {
+    "method": "base_marginal_rank_remap",
+    "description": "assign the sorted frozen B2.1 raw predictions to rows in fused-rank order; preserve the base prediction multiset",
+    "used_for_secondary_rmse": true
+  },
+  "outcome_independent_audit": {
+    "used_for_candidate_routing": false,
+    "fit_dynamic_gate": false,
+    "numeric": [
+      "mean_absolute_held_median_shift_in_source_median_iqr_units",
+      "p90_absolute_held_median_shift_in_source_median_iqr_units",
+      "mean_absolute_missingness_rate_delta",
+      "zero_iqr_feature_count"
+    ],
+    "categorical": [
+      "held_unseen_level_count",
+      "held_unseen_level_fraction",
+      "mean_category_total_variation_distance",
+      "max_category_total_variation_distance"
+    ],
+    "prediction_disagreement": [
+      "base_vs_full_tabpfn_rank_spearman",
+      "base_vs_jackknife_tabpfn_rank_spearman",
+      "full_vs_jackknife_tabpfn_rank_spearman",
+      "mean_and_max_absolute_percentile_shift",
+      "source_dropout_pairwise_rank_spearman_min_median"
+    ]
+  },
+  "promotion": {
+    "reference": "C0",
+    "eligible_conditions": [
+      "C2",
+      "C4"
+    ],
+    "mean_study_delta_min": 0.02,
+    "minimum_study_delta_min": -0.1,
+    "strict_majority_wins": true,
+    "expected_required_wins": 3,
+    "study_equal_primary": true,
+    "row_weighted_diagnostic_only": true,
+    "if_both_pass": "carry_both_to_E12_no_E11c_winner_selection"
+  },
+  "forbidden_selection": [
+    "exclude_SDY515",
+    "row_count_weight_primary",
+    "fusion_weight_sweep",
+    "tabpfn_checkpoint_sweep",
+    "n_estimators_sweep",
+    "seed_sweep",
+    "prediction_sign_flip",
+    "public_leaderboard_parameter_selection",
+    "challenge_label_selection"
+  ],
+  "challenge_policy": {
+    "construct_only_if_local_gate_passes": true,
+    "public_probe_authorized": false,
+    "competition_submission_authorized": false,
+    "C2_final": "full B2.1 plus full TabPFN 75/25 rank fusion and base-marginal rank remap",
+    "C4_final": "full B2.1 plus four leave-one-source-study TabPFN predictions, median ranks, 75/25 fusion and base-marginal rank remap"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "automatic_compute_retries": 0,
+    "max_active_runs": 1,
+    "max_real_tabpfn_fits_if_final_constructed": 21
+  },
+  "bridge_preflight": {
+    "e11b_005_target_consumed": true,
+    "rerun_e11b_005": false,
+    "read_only_inspect_actual_source_metadata_before_new_write": true,
+    "repair_scope": "source_attachment_metadata_representation_only",
+    "fresh_target_required": true
+  },
+  "stopping_rule": {
+    "if_no_eligible_condition_passes": "close_Task1.1_E11_and_proceed_E12",
+    "if_one_or_more_pass": "carry_only_gate_passing_candidates_to_E12",
+    "no_followup_tabpfn_hpo_after_failure": true,
+    "future_reentry_requires_independent_mechanism_evidence": true
+  }
+}
