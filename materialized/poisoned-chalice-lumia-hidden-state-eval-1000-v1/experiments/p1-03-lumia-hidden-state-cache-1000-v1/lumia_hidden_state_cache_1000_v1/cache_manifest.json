@@ -44,7 +44,11 @@
       "path": "shards/shard_0000.npz",
       "rows": 50,
       "sha256": "08dcff80c9fc03e54019968d40826425cf97b1359365beebc2c4642da418aad3",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 0,
       "start_index": 0,
       "stop_index_exclusive": 50
@@ -55,7 +59,11 @@
       "path": "shards/shard_0001.npz",
       "rows": 50,
       "sha256": "fd8bea400c4c3d22cf8ace54440366b01f709b9a6a273df8bee6e86f66b9fa49",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 1,
       "start_index": 50,
       "stop_index_exclusive": 100
@@ -66,7 +74,11 @@
       "path": "shards/shard_0002.npz",
       "rows": 50,
       "sha256": "9b584efaaa12eea33e18c189c6ac87b3bcaeb7f8647491bc974cc5b1c9b3ce9f",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 2,
       "start_index": 100,
       "stop_index_exclusive": 150
@@ -77,7 +89,11 @@
       "path": "shards/shard_0003.npz",
       "rows": 50,
       "sha256": "c39ae67370e824ccbd6df88c17e3624520e1341184ebfdba375780eec5ced9dc",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 3,
       "start_index": 150,
       "stop_index_exclusive": 200
@@ -88,7 +104,11 @@
       "path": "shards/shard_0004.npz",
       "rows": 50,
       "sha256": "d16484ce4381c1d313d028efec69ed31e41f5e8812c0f3cf508e9f286b5c339c",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 4,
       "start_index": 200,
       "stop_index_exclusive": 250
@@ -99,7 +119,11 @@
       "path": "shards/shard_0005.npz",
       "rows": 50,
       "sha256": "099a881adb2ed2f17916cb7f3f8688be7f1f2cd0bbecbe89ba11a833f3478595",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 5,
       "start_index": 250,
       "stop_index_exclusive": 300
@@ -110,7 +134,11 @@
       "path": "shards/shard_0006.npz",
       "rows": 50,
       "sha256": "af3934f9a6c52ae0f11c0132a965e3bc4fc31fd5edad93f9ab72684669f86a3d",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 6,
       "start_index": 300,
       "stop_index_exclusive": 350
@@ -121,7 +149,11 @@
       "path": "shards/shard_0007.npz",
       "rows": 50,
       "sha256": "032c459fed822e83eb420587ae5f80efd3969e8c44c2ba6ff8a45b587aaa44ed",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 7,
       "start_index": 350,
       "stop_index_exclusive": 400
@@ -132,7 +164,11 @@
       "path": "shards/shard_0008.npz",
       "rows": 50,
       "sha256": "57e2ba547d59d76f799d2b12674f7ade406d7d7bb404a367e7fbe9b49b549c47",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 8,
       "start_index": 400,
       "stop_index_exclusive": 450
@@ -143,7 +179,11 @@
       "path": "shards/shard_0009.npz",
       "rows": 50,
       "sha256": "235db3044fd8e9fa0170d38f5525f8cdc3500f8f55990cf706a52064789552ea",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 9,
       "start_index": 450,
       "stop_index_exclusive": 500
@@ -154,7 +194,11 @@
       "path": "shards/shard_0010.npz",
       "rows": 50,
       "sha256": "5ab908945a2f19c038e5b5d6db3e32531a753fc86b42f9bc23941331ee11cbc0",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 10,
       "start_index": 500,
       "stop_index_exclusive": 550
@@ -165,7 +209,11 @@
       "path": "shards/shard_0011.npz",
       "rows": 50,
       "sha256": "8e892625644bbf98d2e6e04f7b3cc0497fded1e6db3474d5d4cc97046994ce60",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 11,
       "start_index": 550,
       "stop_index_exclusive": 600
@@ -176,7 +224,11 @@
       "path": "shards/shard_0012.npz",
       "rows": 50,
       "sha256": "639eb00517bd2d07e0ac232d50aaa97a31a3e64353762085212600217b42a9ae",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 12,
       "start_index": 600,
       "stop_index_exclusive": 650
@@ -187,7 +239,11 @@
       "path": "shards/shard_0013.npz",
       "rows": 50,
       "sha256": "527ba80b50183d53050cffe1d072bf271d15e9fd5b1c8885f742fe9401a30f25",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 13,
       "start_index": 650,
       "stop_index_exclusive": 700
@@ -198,7 +254,11 @@
       "path": "shards/shard_0014.npz",
       "rows": 50,
       "sha256": "4332651751dac05e38a20eac0cd1c0d197300bcd825c35ff97e0e867f216ae1a",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 14,
       "start_index": 700,
       "stop_index_exclusive": 750
@@ -209,7 +269,11 @@
       "path": "shards/shard_0015.npz",
       "rows": 50,
       "sha256": "06a8d96fff2ef0d055abc4895b1a522d10f403c89a5ee4f5f59ba9a1c5626af9",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 15,
       "start_index": 750,
       "stop_index_exclusive": 800
@@ -220,7 +284,11 @@
       "path": "shards/shard_0016.npz",
       "rows": 50,
       "sha256": "b589a395ae38426674a353744f16746f33879b4cea78ae50cad1b6400fcb81c9",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 16,
       "start_index": 800,
       "stop_index_exclusive": 850
@@ -231,7 +299,11 @@
       "path": "shards/shard_0017.npz",
       "rows": 50,
       "sha256": "2d01ba10d2e783ce35d55f75792d4c04cfabb1c84a62ef8150f6e4c5fc2cf23d",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 17,
       "start_index": 850,
       "stop_index_exclusive": 900
@@ -242,7 +314,11 @@
       "path": "shards/shard_0018.npz",
       "rows": 50,
       "sha256": "dfb1c742c916239a0f4ace2361edeaedc4b96d69cd62434361a124f2eeba0851",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 18,
       "start_index": 900,
       "stop_index_exclusive": 950
@@ -253,7 +329,11 @@
       "path": "shards/shard_0019.npz",
       "rows": 50,
       "sha256": "ec07c4b374fbaccd61d0621a9ca8e5e16957c9005ceb09e194c493ffc2207abc",
-      "shape_per_variant": [50, 30, 3072],
+      "shape_per_variant": [
+        50,
+        30,
+        3072
+      ],
       "shard_index": 19,
       "start_index": 950,
       "stop_index_exclusive": 1000
