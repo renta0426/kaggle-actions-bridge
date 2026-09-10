@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E11b full-validator regression with active-AST stale-writer detection."""
+"""E11b full-validator regression with active-AST and frozen-package bootstrap."""
 from __future__ import annotations
 
 import hashlib
@@ -21,7 +21,11 @@ def patched_source() -> str:
     source = data.decode("utf-8")
     if source.count("import importlib.util\n") != 1:
         raise SystemExit("E11b validator-v2 import anchor changed")
-    source = source.replace("import importlib.util\n", "import importlib.util\nimport ast\n", 1)
+    source = source.replace(
+        "import importlib.util\n",
+        "import importlib.util\nimport ast\nimport sys\nimport tempfile\n",
+        1,
+    )
     old = '''    if "result['tasks']" in text:
         raise SystemExit("E11b validator runtime retains stale tasks writer access")
 '''
@@ -41,6 +45,20 @@ def patched_source() -> str:
     if source.count(old) != 1:
         raise SystemExit("E11b validator-v2 stale-check anchor changed")
     source = source.replace(old, new, 1)
+
+    old_bootstrap = '''    runtime = load_runtime(runtime_path)
+    run_e11b, run_synthetic, e11b = runtime.load_e11b_modules()
+'''
+    new_bootstrap = '''    runtime = load_runtime(runtime_path)
+    package_root = Path(tempfile.mkdtemp(prefix="cmi-flu-e11b-validator-"))
+    package_path = package_root / "cmi_flu_bundle.zip"
+    package_path.write_bytes(runtime.package_bytes())
+    sys.path.insert(0, str(package_path))
+    run_e11b, run_synthetic, e11b = runtime.load_e11b_modules()
+'''
+    if source.count(old_bootstrap) != 1:
+        raise SystemExit("E11b validator-v2 package-bootstrap anchor changed")
+    source = source.replace(old_bootstrap, new_bootstrap, 1)
     compile(source, str(V1), "exec")
     return source
 
@@ -53,7 +71,10 @@ def main() -> int:
     }
     exec(compile(source, str(V1), "exec"), namespace, namespace)
     rc = int(namespace["main"]())
-    print("CMI_FLU_E11B_VALIDATOR_V2_PASS active_ast_tasks_check=true")
+    print(
+        "CMI_FLU_E11B_VALIDATOR_V2_PASS active_ast_tasks_check=true "
+        "frozen_package_bootstrap=true"
+    )
     return rc
 
 
