@@ -153,6 +153,8 @@ def leave_one_language_out_splits(frame: pd.DataFrame):
 
 
 def length_holdout_splits(frame: pd.DataFrame, bins: int = 5):
+    # Bucket the observed lengths directly so equal token counts never cross a
+    # length holdout boundary. ``duplicates=drop`` handles degenerate caches.
     bucket = pd.qcut(frame.token_count, bins, labels=False, duplicates="drop")
     if bucket.isna().any() or bucket.nunique() < 2:
         raise ValueError("token_count does not support at least two length holdouts")
@@ -181,6 +183,7 @@ def conservative_detection_set(sample_ids: Sequence[str], y_true: Sequence[int],
     negatives = np.sort(score[y == 0])[::-1]
     allowed = max(1, int(math.floor(target_fpr * len(negatives))))
     threshold = negatives[allowed - 1]
+    # Strict comparison is conservative when scores tie at the boundary.
     return set(ids[(y == 1) & (score > threshold)])
 
 
