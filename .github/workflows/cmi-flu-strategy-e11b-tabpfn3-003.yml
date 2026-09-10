@@ -1,0 +1,266 @@
+name: CMI-Flu strategy E11b Task1.1 TabPFN3 CPU 003
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-strategy-e11b-tabpfn3-003.yml
+      - requests/cmi-flu-strategy-e11b-tabpfn3-003.json
+      - scripts/cmi_flu_strategy_e11b_prepare_v4.py
+      - scripts/cmi_flu_strategy_e11b_execute_v3.py
+      - scripts/cmi_flu_strategy_e11b_sanitize_v3.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-strategy-e11b-tabpfn3-003.yml
+      - requests/cmi-flu-strategy-e11b-tabpfn3-003.json
+      - scripts/cmi_flu_strategy_e11b_prepare_v4.py
+      - scripts/cmi_flu_strategy_e11b_execute_v3.py
+      - scripts/cmi_flu_strategy_e11b_sanitize_v3.py
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-e11b-tabpfn3-003-${{ github.event_name }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_ID: 20260910-cmi-flu-strategy-e11b-tabpfn3-003
+  SCIENCE_COMMIT: 95c692bf2e27f6d07ea31a45fd788293666ea94a
+  E11B_BLOB: 8a291ae4952786bf16ee667caa5557599310e3fd
+  E11B_SYNTH_BLOB: f25d04d75db584db78d26a232ab84dc5ab1bbf7d
+  TARGET_KERNEL: renta0426/cmi-flu-e11b-tabpfn3-20260910-003
+  TABPFN_WHEEL_FILENAME: tabpfn-8.5.0-py3-none-any.whl
+  TABPFN_WHEEL_SHA256: 4c076a019cfa5520e9c41405cecda845bdd09d909ede4a60c43839bbc83bf7a0
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate E11b 003 direct SaveKernel transport and exact runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY TABPFN_TOKEN HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e11b-003/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(70_000_001)
+          if len(data)>70_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Verify frozen science and 003 repair provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge" <<'PY'
+          import hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); req=json.loads((root/'requests/cmi-flu-strategy-e11b-tabpfn3-003.json').read_text())
+          assert req['request_id']=='20260910-cmi-flu-strategy-e11b-tabpfn3-003'
+          assert req['parent_request_id']=='20260910-cmi-flu-strategy-e11b-tabpfn3-002'
+          assert req['target']=='renta0426/cmi-flu-e11b-tabpfn3-20260910-003'
+          assert req['science_source_commit']=='95c692bf2e27f6d07ea31a45fd788293666ea94a'
+          assert req['strategy_e11b_blob_sha']=='8a291ae4952786bf16ee667caa5557599310e3fd'
+          assert req['strategy_e11b_synthetic_blob_sha']=='f25d04d75db584db78d26a232ab84dc5ab1bbf7d'
+          assert req['experiment_contract']['base_model']=='pls_2'
+          assert req['experiment_contract']['tabpfn_params']['n_estimators']==8
+          assert req['experiment_contract']['promotion_mean_delta']==0.02
+          assert req['experiment_contract']['promotion_minimum_study_delta']==-0.1
+          p=req['repair_provenance']
+          assert p['failed_actions_run']==34430166816 and p['failed_actions_job']==102733973098
+          assert p['target_created'] is False and p['kernel_version_consumed'] is False and p['kaggle_compute_consumed'] is False
+          assert p['diagnostic_actions_run']==34434976964 and p['diagnostic_actions_job']==102738087104
+          assert req['transport']['kernel_write_method']=='KaggleApi.kernels_push'
+          assert req['transport']['cli_kernels_push_used'] is False
+          assert req['automatic_compute_retries']==0 and req['competition_submission_attempted'] is False
+          def git_blob(path):
+            data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          payload=root/'payloads/cmi-flu-strategy-e11b-tabpfn3-001'
+          assert git_blob(payload/'strategy_e11b.py')=='8a291ae4952786bf16ee667caa5557599310e3fd'
+          assert git_blob(payload/'strategy_e11b_synthetic.py')=='f25d04d75db584db78d26a232ab84dc5ab1bbf7d'
+          print('CMI_FLU_E11B_003_REQUEST_PASS science_change=false transport_change=true')
+          PY
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_prepare_v4.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_execute_v3.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_sanitize_v3.py"
+
+      - name: Acquire exact wheel and build 003 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${WORKDIR}/wheel"
+          python3 -m pip download --disable-pip-version-check --no-input --no-deps --only-binary=:all: --dest "${WORKDIR}/wheel" 'tabpfn==8.5.0' >/dev/null
+          echo "${TABPFN_WHEEL_SHA256}  ${WORKDIR}/wheel/${TABPFN_WHEEL_FILENAME}" | sha256sum -c -
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_prepare_v4.py" \
+            --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" \
+            --tabpfn-wheel "${WORKDIR}/wheel/${TABPFN_WHEEL_FILENAME}" --output "${WORKDIR}/runtime.py"
+          python3 "${WORKDIR}/runtime.py" --self-test
+          grep -F "${REQUEST_ID}" "${WORKDIR}/runtime.py" >/dev/null
+          grep -F "${TARGET_KERNEL}" "${WORKDIR}/runtime.py" >/dev/null
+          ! grep -F '20260910-cmi-flu-strategy-e11b-tabpfn3-002' "${WORKDIR}/runtime.py" >/dev/null
+          ! grep -F 'renta0426/cmi-flu-e11b-tabpfn3-20260910-002' "${WORKDIR}/runtime.py" >/dev/null
+          python3 "${WORKDIR}/runtime.py" --synthetic --output-dir "${WORKDIR}/synthetic"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_validator_contract_test_v2.py" --runtime "${WORKDIR}/runtime.py"
+
+      - name: Validate locked Kaggle API and direct transport without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" - <<'PY'
+          import inspect
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          import cmi_flu_strategy_e11b_execute_v3 as mod
+          assert 'kernels_push' in KaggleApi.__dict__
+          source=inspect.getsource(mod.push)
+          assert 'api.kernels_push(str(kernel_dir))' in source
+          assert 'kaggle", "kernels", "push' not in source
+          assert mod.TARGET.endswith('-003') and mod.REQUEST_ID.endswith('-003')
+          assert mod.prior.MODEL_SOURCE=='prior-labsai/tabpfn-3/pytorch/default/1'
+          assert 'raw_server_error_persisted' in inspect.getsource(mod._error_receipt)
+          print('CMI_FLU_E11B_003_DIRECT_TRANSPORT_PASS')
+          PY
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  run:
+    name: Run one private CPU E11b 003 with direct SaveKernel and read aggregate result
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    concurrency:
+      group: kaggle-resource-global
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Enforce protected execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-strategy-e11b-tabpfn3-003.yml@refs/heads/main" ]]
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]; target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://api.github.com/repos/{repo}/tarball/{ref}",headers={"User-Agent":"cmi-flu-e11b-003/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as r:data=r.read(70_000_001)
+          if len(data)>70_000_000:raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tf:
+            files=[m for m in tf.getmembers() if m.isfile()]; prefixes={m.name.split('/',1)[0] for m in files}
+            if len(prefixes)!=1:raise SystemExit('archive layout')
+            prefix=next(iter(prefixes))+'/'
+            for m in files:
+              rel=pathlib.PurePosixPath(m.name[len(prefix):])
+              if '..' in rel.parts:raise SystemExit('unsafe archive')
+              out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(tf.extractfile(m).read())
+          PY
+
+      - name: Rebuild exact 003 runtime before credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/kaggle_policy_preflight.py"
+          mkdir -p "${WORKDIR}/wheel"
+          python3 -m pip download --disable-pip-version-check --no-input --no-deps --only-binary=:all: --dest "${WORKDIR}/wheel" 'tabpfn==8.5.0' >/dev/null
+          echo "${TABPFN_WHEEL_SHA256}  ${WORKDIR}/wheel/${TABPFN_WHEEL_FILENAME}" | sha256sum -c -
+          python3 -m pip install --disable-pip-version-check --no-input numpy==2.3.5 pandas==2.2.3 scipy==1.17.0 scikit-learn==1.8.0 PyYAML==6.0.3 >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_prepare_v4.py" \
+            --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" \
+            --tabpfn-wheel "${WORKDIR}/wheel/${TABPFN_WHEEL_FILENAME}" --output "${WORKDIR}/runtime.py"
+          python3 "${WORKDIR}/runtime.py" --self-test
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_validator_contract_test_v2.py" --runtime "${WORKDIR}/runtime.py"
+
+      - name: Install locked Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "${WORKDIR}/venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Run one approved E11b 003 CPU kernel
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_execute_v3.py" \
+            --runtime "${WORKDIR}/runtime.py" --bridge-root "${WORKDIR}/bridge" --output-dir "${WORKDIR}/output"
+          unset KAGGLE_API_TOKEN
+
+      - name: Validate aggregate-only E11b 003 result
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11b_sanitize_v3.py" --output-dir "${WORKDIR}/output"
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
