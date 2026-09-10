@@ -1,0 +1,70 @@
+        if int(shard.get("shard_index", -1)) != expected_idx or sha256_file(path) != shard.get("sha256"): raise RuntimeError(f"cache shard identity failed at {expected_idx}")
+        with np.load(path, allow_pickle=False) as archive:
+            for variant in POOLING_VARIANTS:
+                block, names, equivalence = scalarize_hidden(np.asarray(archive[variant], dtype=np.float32)); feature_names = names if feature_names is None else feature_names
+                if names != feature_names: raise RuntimeError("portable scalar schema drift")
+                max_equivalence = max(max_equivalence, equivalence); variant_parts[variant].append(block.astype(np.float32))
+    assert feature_names is not None
+    table = hidden[["sample_id", "language", "label"]].copy()
+    for variant in POOLING_VARIANTS:
+        values = np.vstack(variant_parts[variant])
+        if values.shape[0] != len(table): raise RuntimeError("portable scalar row coverage changed")
+        block = pd.DataFrame(values, columns=[f"{variant}__{name}" for name in feature_names]); table = pd.concat([table, block], axis=1)
+    return table, {"profile_grid_points": 16, "scalar_features_per_pooling_variant": len(feature_names), "pooling_variants": list(POOLING_VARIANTS), "l2_over_sqrt_d_equals_rms_max_abs_error": max_equivalence, "l2_over_sqrt_d_omitted_from_learner_as_exact_redundancy": True, "architecture_portability": "hidden-size-normalized norms plus normalized-relative-depth interpolation; raw hidden dimensions never enter the learner"}
+
+
+def scalar_oof(table: pd.DataFrame, variant: str, splits) -> np.ndarray:
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    columns = [c for c in table.columns if c.startswith(f"{variant}__")]; X = table[columns]; y = table.label.to_numpy(int); pred = np.full(len(table), np.nan)
+    for fold, (fit, hold) in enumerate(splits):
+        model = make_pipeline(SimpleImputer(strategy="median"), StandardScaler(), LogisticRegression(C=0.2, max_iter=2000, random_state=SEED + 500 + fold)); model.fit(X.iloc[fit], y[fit]); pred[hold] = model.predict_proba(X.iloc[hold])[:, 1]
+    if not np.isfinite(pred).all(): raise RuntimeError(f"portable scalar OOF incomplete: {variant}")
+    return pred
+
+
+def portable_audit(hidden: pd.DataFrame, scalar_table: pd.DataFrame, diag: dict) -> tuple[dict, pd.DataFrame]:
+    splits = stratified_indices(hidden, SEED); scores = {}; metrics = {}
+    for variant in POOLING_VARIANTS:
+        pred = scalar_oof(scalar_table, variant, splits); scores[variant] = pred; metrics[variant] = low_fpr_metrics(hidden.label, pred) | {"per_language": per_language(hidden, pred)}
+    primary = scores["mean"]; hidden_score = hidden[MEAN_TOP5].to_numpy(float)
+    result = {"diagnostics": diag, "primary": "mean", "learner": "median_imputation + standard_scaling + logistic_regression(C=0.2)", "metrics": metrics, "paired_bootstrap_primary_vs_raw_hidden_probe": paired_bootstrap(hidden, primary, hidden_score, seed=BOOTSTRAP_SEED + 400), "caller_helper_are_ablation_only": True, "development_only": True}
+    scores_table = hidden[["sample_id", "language", "label"]].copy()
+    for variant, pred in scores.items(): scores_table[f"portable_{variant}_oof"] = pred
+    return result, scores_table
+
+
+def load_public_content(hidden: pd.DataFrame) -> pd.DataFrame:
+    from datasets import load_dataset
+    ids = set(hidden.sample_id.astype(str)); parts = []
+    for language in LANGUAGES:
+        frame = load_dataset(DATASET_ID, language, split="train", revision=DATASET_REVISION).to_pandas()
+        if len(frame) != EXPECTED_PUBLIC_ROWS[language]: raise RuntimeError(f"public train row count changed for {language}")
+        if not {"sample_id", "membership", "content"}.issubset(frame.columns): raise RuntimeError(f"public train columns missing for {language}")
+        frame = frame[frame.sample_id.astype(str).isin(ids)][["sample_id", "membership", "content"]].copy(); frame["language"] = language; parts.append(frame)
+    public = pd.concat(parts, ignore_index=True)
+    if len(public) != len(hidden) or public.sample_id.duplicated().any(): raise RuntimeError("public content join coverage changed")
+    normalized = public.membership.astype("string").str.strip().str.lower().str.replace("_", "-", regex=False); public["label_public"] = normalized.map({"member": 1, "non-member": 0, "nonmember": 0})
+    merged = hidden.merge(public[["sample_id", "language", "content", "label_public"]], on="sample_id", how="left", suffixes=("", "_public"), validate="one_to_one", sort=False)
+    if merged.content.isna().any() or not (merged.language == merged.language_public).all() or not (merged.label == merged.label_public).all(): raise RuntimeError("public content identity mismatch")
+    return merged.drop(columns=["language_public", "label_public"]).reset_index(drop=True)
+
+
+def json_dump(path: Path, obj) -> None:
+    path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(); parser.add_argument("--input-root", type=Path, required=True); parser.add_argument("--output-dir", type=Path, required=True); args = parser.parse_args(); root = args.input_root.resolve(); out = args.output_dir.resolve(); out.mkdir(parents=True, exist_ok=False)
+    hidden_path = locate_exact(root, "oof_predictions.csv", HIDDEN_OOF_SHA256); cache_manifest = locate_exact(root, "cache_manifest.json", CACHE_MANIFEST_SHA256); hidden = load_hidden_oof(hidden_path)
+    stage1_frame = load_stage1_train(root); stage1_score = stage1_interaction_oof(stage1_frame); stage1_scored = stage1_frame[["sample_id", "language", "label"]].copy(); stage1_scored["stage1_plus_length_interactions"] = stage1_score; stage1_reproduction = low_fpr_metrics(stage1_scored.label, stage1_score); fusion, common = fusion_audit(stage1_scored, hidden)
+    content_frame = load_public_content(hidden); controls, static_table, control_scores = control_audit(content_frame)
+    scalar_table, scalar_diag = extract_portable_scalars(cache_manifest.parent, hidden); portable, portable_scores = portable_audit(hidden, scalar_table, scalar_diag)
+    json_dump(out / "fusion_audit.json", fusion); json_dump(out / "content_control_audit.json", controls); json_dump(out / "portable_scalar_audit.json", portable); common.to_parquet(out / "fusion_common_scores.parquet", index=False); control_scores.to_parquet(out / "content_control_oof_scores.parquet", index=False); scalar_table.to_parquet(out / "portable_scalar_table.parquet", index=False); portable_scores.to_parquet(out / "portable_scalar_oof_scores.parquet", index=False); static_table.to_parquet(out / "static_feature_table.parquet", index=False)
+    summary = {"schema_version": 1, "task_id": "P1-03-post-5k-development-audit-v1", "status": "complete", "development_only": True, "no_new_target_model_forward": True, "competition_submission": False, "hidden_oof_sha256": HIDDEN_OOF_SHA256, "cache_manifest_sha256": CACHE_MANIFEST_SHA256, "stage1_source_rows": len(stage1_frame), "stage1_reproduction": stage1_reproduction, "fusion_intersection_rows": fusion["intersection_rows"], "content_control_rows": len(content_frame), "portable_scalar_rows": len(scalar_table), "fusion_candidate_hidden_rank_weights": list(FUSION_HIDDEN_WEIGHTS), "strong_content_control": "hashed char 3-5gram + token 1-2gram + fixed regularized logistic", "strict_content_group_method": controls["strict_content_group_cv"]["group_diagnostics"]["method"], "portable_primary": "mean pooled hidden -> normalized-depth scalar profile -> fixed logistic", "anti_posthoc": {"current_5k_used_only_as_development": True, "no_fusion_promoted_here": True, "no_public_lb_used": True, "no_validation_rows_used": True, "no_formula_added_after_results": True}, "persistent_outputs": sorted(p.name for p in out.iterdir()) + ["run_manifest.json"]}
+    json_dump(out / "run_manifest.json", summary); print(json.dumps(summary, indent=2, sort_keys=True)); return 0
+
+
+if __name__ == "__main__": raise SystemExit(main())
