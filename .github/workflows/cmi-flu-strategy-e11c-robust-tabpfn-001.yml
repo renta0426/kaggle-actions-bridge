@@ -78,17 +78,46 @@ jobs:
           set -euo pipefail
           workdir="$(mktemp -d)"
           echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
-          materialize_exact_public_commit() {
-            local target="$1" repo="$2" ref="$3"
-            git init -q "$target"
-            git -C "$target" remote add origin "https://github.com/${repo}.git"
-            git -C "$target" fetch -q --depth=1 --no-tags origin "$ref"
-            [[ "$(git -C "$target" rev-parse FETCH_HEAD)" == "$ref" ]]
-            git -C "$target" checkout -q --detach FETCH_HEAD
-            [[ "$(git -C "$target" rev-parse HEAD)" == "$ref" ]]
-          }
-          materialize_exact_public_commit "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}"
-          materialize_exact_public_commit "${workdir}/science" "${SCIENCE_REPOSITORY}" "${SCIENCE_COMMIT}"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-001/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(70_000_001)
+          if len(data)>70_000_000: raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit('bridge archive layout')
+              prefix=next(iter(prefixes))+'/'
+              if not prefix.rstrip('/').endswith(ref): raise SystemExit('bridge codeload commit mismatch')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if '..' in rel.parts: raise SystemExit('unsafe bridge archive')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
+          python3 - "${workdir}/science" "${SCIENCE_REPOSITORY}" "${SCIENCE_COMMIT}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-science/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(70_000_001)
+          if len(data)>70_000_000: raise SystemExit('science archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit('science archive layout')
+              prefix=next(iter(prefixes))+'/'
+              if not prefix.rstrip('/').endswith(ref): raise SystemExit('science codeload commit mismatch')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if '..' in rel.parts: raise SystemExit('unsafe science archive')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
 
       - name: Verify frozen manifest, science blobs and bridge scripts
         shell: bash
@@ -278,17 +307,46 @@ jobs:
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          materialize_exact_public_commit() {
-            local target="$1" repo="$2" ref="$3"
-            git init -q "$target"
-            git -C "$target" remote add origin "https://github.com/${repo}.git"
-            git -C "$target" fetch -q --depth=1 --no-tags origin "$ref"
-            [[ "$(git -C "$target" rev-parse FETCH_HEAD)" == "$ref" ]]
-            git -C "$target" checkout -q --detach FETCH_HEAD
-            [[ "$(git -C "$target" rev-parse HEAD)" == "$ref" ]]
-          }
-          materialize_exact_public_commit "${WORKDIR}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}"
-          materialize_exact_public_commit "${WORKDIR}/science" "${SCIENCE_REPOSITORY}" "${SCIENCE_COMMIT}"
+          python3 - "${WORKDIR}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-001-run/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(70_000_001)
+          if len(data)>70_000_000: raise SystemExit('bridge archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit('bridge archive layout')
+              prefix=next(iter(prefixes))+'/'
+              if not prefix.rstrip('/').endswith(ref): raise SystemExit('bridge codeload commit mismatch')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if '..' in rel.parts: raise SystemExit('unsafe bridge archive')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
+          python3 - "${WORKDIR}/science" "${SCIENCE_REPOSITORY}" "${SCIENCE_COMMIT}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-science-run/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(70_000_001)
+          if len(data)>70_000_000: raise SystemExit('science archive too large')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit('science archive layout')
+              prefix=next(iter(prefixes))+'/'
+              if not prefix.rstrip('/').endswith(ref): raise SystemExit('science codeload commit mismatch')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if '..' in rel.parts: raise SystemExit('unsafe science archive')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
 
       - name: Verify exact science relay and build runtime
         shell: bash
