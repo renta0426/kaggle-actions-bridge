@@ -1,4 +1,5 @@
 
+
 def rank01(values: Sequence[float]) -> np.ndarray:
     return pd.Series(np.asarray(values, dtype=float)).rank(method="average", pct=True).to_numpy(float)
 
@@ -76,4 +77,5 @@ def ngram_control_oof(frame: pd.DataFrame, splits) -> np.ndarray:
         model = LogisticRegression(C=1.0, solver="liblinear", max_iter=1000, random_state=SEED + 100 + fold); model.fit(X[fit], y[fit]); pred[hold] = model.predict_proba(X[hold])[:, 1]
     if not np.isfinite(pred).all(): raise RuntimeError("C1 ngram OOF incomplete")
     return pred
+
 
