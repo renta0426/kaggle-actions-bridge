@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e11c-robust-tabpfn-002",
+  "parent_request_id": "20260910-cmi-flu-strategy-e11c-robust-tabpfn-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e11c-robust-tabpfn-20260910-002",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "0815f4517345e127dbcbcae0f380a54f3a3d15bd",
+  "science_transport": "connector_verified_private_science_git_blob_relay_and_runtime_embedding",
+  "science_blobs": {
+    "src/cmi_flu/strategy_e11c.py": "acf876996b5849f7ba794999d45ecb862d1be507",
+    "src/cmi_flu/strategy_e11c_synthetic.py": "9b94633192b5254a7d1debe8db10606b48104076",
+    "src/cmi_flu/strategy_e11b.py": "8a291ae4952786bf16ee667caa5557599310e3fd",
+    "src/cmi_flu/strategy_e11b_synthetic.py": "f25d04d75db584db78d26a232ab84dc5ab1bbf7d",
+    "configs/baseline_b021_robust.yaml": "170d3211e2795c0730e481056c7bb068accf97c9",
+    "configs/strategy_e11c_task11_robust_tabpfn.json": "3b475f777307238bfcad61c124ab99175207bac2"
+  },
+  "science_payloads": {
+    "src/cmi_flu/strategy_e11c.py": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c.py",
+    "src/cmi_flu/strategy_e11c_synthetic.py": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c_synthetic.py",
+    "src/cmi_flu/strategy_e11b.py": "payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b.py",
+    "src/cmi_flu/strategy_e11b_synthetic.py": "payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b_synthetic.py",
+    "configs/baseline_b021_robust.yaml": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/baseline_b021_robust.yaml",
+    "configs/strategy_e11c_task11_robust_tabpfn.json": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c_task11_robust_tabpfn.json"
+  },
+  "rules_preflight": {
+    "required_before_any_kernel_write": true,
+    "method": "inherited_base.live_rules_authenticated_read",
+    "failure_write": false,
+    "record_in_run_log": true
+  },
+  "expected_kernel_version": 1,
+  "enable_internet": true,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 1,
+    "max_real_tabpfn_fits": 21
+  },
+  "api_budget": {
+    "max_calls": 80,
+    "poll_interval_seconds": 120,
+    "max_polls": 35,
+    "max_pages": 2
+  },
+  "model_access_preflight": {
+    "required_before_kernel_write": true,
+    "official_kaggle_model_source": "prior-labsai/tabpfn-3/pytorch/default/1",
+    "failure_classification": "competition_input_model_access_staging",
+    "write_on_failure": false,
+    "cli_output_format": "--format json"
+  },
+  "external_model": {
+    "package": "tabpfn",
+    "package_version": "8.5.0",
+    "source_commit": "9ed44abd5882140b88c9f2816c5791987ce059b9",
+    "wheel_filename": "tabpfn-8.5.0-py3-none-any.whl",
+    "wheel_bytes": 771167,
+    "wheel_sha256": "4c076a019cfa5520e9c41405cecda845bdd09d909ede4a60c43839bbc83bf7a0",
+    "kaggle_model_source": "prior-labsai/tabpfn-3/pytorch/default/1",
+    "checkpoint_filename": "tabpfn-v3-regressor-v3_default.ckpt",
+    "checkpoint_bytes": 233289807,
+    "checkpoint_sha256": "311ce18d97e9533d8585eaadafe040fbdd8070533209ed8696641dadc97a7301",
+    "model_license": "tabpfn-3-license-v1.0",
+    "project_redistributes_weights": false
+  },
+  "manual_successor_provenance": {
+    "prior_request_id": "20260910-cmi-flu-strategy-e11c-robust-tabpfn-001",
+    "prior_actions_run": 34474957373,
+    "prior_actions_job": 102863653370,
+    "failure_classification": "resource_concurrency_admission_prewrite",
+    "model_access_preflight_succeeded": true,
+    "fresh_target_absence_confirmed": true,
+    "savekernel_attempted": false,
+    "kernel_version_consumed": false,
+    "compute_started": false,
+    "scientific_result_produced": false,
+    "automatic_retry": false,
+    "science_changed": false
+  },
+  "source_attachment_validator_repair": {
+    "consumed_e11b_target": "renta0426/cmi-flu-e11b-tabpfn3-20260910-005",
+    "consumed_e11b_version": 1,
+    "rerun_e11b_005": false,
+    "failed_audit_001_actions_run": 34458275946,
+    "failed_audit_001_actions_job": 102809839733,
+    "failed_audit_001_root_cause": "bridge_runtime_compatibility_KaggleApi_kernel_metadata_method_absent",
+    "successful_audit_002_actions_run": 34460007561,
+    "successful_audit_002_actions_job": 102815418161,
+    "successful_audit_002_exact_reads": 1,
+    "observed_model_source": "prior-labsai/tabpfn-3/PyTorch/default/1",
+    "requested_model_source": "prior-labsai/tabpfn-3/pytorch/default/1",
+    "observed_competition_source": "cmi-flu-first-prediction-challenge",
+    "repair_scope": "casefold_framework_segment_only_owner_model_variant_version_and_competition_strict",
+    "audit_write": false,
+    "audit_compute": false,
+    "audit_submission": false,
+    "audit_output_download": false
+  },
+  "experiment_contract": {
+    "experiment": "strategy_v2_e11c_task11_robust_tabpfn",
+    "task": "Task1.1",
+    "comparison_contract": "paired_subject_purged_v2",
+    "base_model_set": "task_11",
+    "base_model": "pls_2",
+    "target_transform": "log",
+    "expected_train_rows": 127,
+    "expected_train_studies": 4,
+    "expected_challenge_rows": 40,
+    "max_raw_features": 200,
+    "conditions": {
+      "C0": "b21_pls2_reference",
+      "C1": "tabpfn_full_reproduction_control",
+      "C2": "pls75_tabpfn25_full_rank_fusion",
+      "C3": "tabpfn_source_study_jackknife_rank_median_all_three_source_drops",
+      "C4": "pls75_tabpfn25_jackknife_rank_fusion"
+    },
+    "base_weight": 0.75,
+    "tabpfn_weight": 0.25,
+    "eligible_conditions": [
+      "C2",
+      "C4"
+    ],
+    "c3_eligible_for_e12": false,
+    "source_drop_selection_by_held_score": false,
+    "dynamic_domain_gate_fitted": false,
+    "tabpfn_params": {
+      "n_estimators": 8,
+      "device": "cpu",
+      "fit_mode": "fit_preprocessors",
+      "memory_saving_mode": "auto",
+      "random_state": 20260910,
+      "n_preprocessing_jobs": 1,
+      "show_progress_bar": false,
+      "ignore_pretraining_limits": false
+    },
+    "promotion_mean_delta": 0.02,
+    "promotion_minimum_study_delta": -0.1,
+    "promotion_requires_strict_majority_wins": true,
+    "promotion_expected_required_wins": 3,
+    "study_equal_primary": true,
+    "row_weighted_diagnostic_only": true,
+    "sensitivity_28": {
+      "studies": [
+        "SDY180",
+        "SDY56"
+      ],
+      "subset_n": 28,
+      "repetitions": 200,
+      "seed": 20260907,
+      "used_for_promotion": false,
+      "model_refits": 0
+    },
+    "outer_full_tabpfn_fits": 4,
+    "outer_source_drop_tabpfn_fits": 12,
+    "max_real_tabpfn_fits_if_final_constructed": 21,
+    "held_outcomes_used_for_fit": false,
+    "held_outcomes_used_for_fusion": false,
+    "held_outcomes_used_for_transfer_audit": false,
+    "public_probe_authorized": false,
+    "competition_submission_authorized": false,
+    "automatic_incumbent_change_authorized": false,
+    "if_both_pass": "carry_both_to_E12_no_E11c_winner_selection",
+    "if_both_fail": "close_Task1.1_E11_and_proceed_E12_no_more_TabPFN_HPO"
+  },
+  "dependency_transport": {
+    "package_source": "PyPI",
+    "package_spec": "tabpfn==8.5.0",
+    "download_only_binary": true,
+    "download_no_deps": true,
+    "verify_filename": true,
+    "verify_bytes": 771167,
+    "verify_sha256": "4c076a019cfa5520e9c41405cecda845bdd09d909ede4a60c43839bbc83bf7a0",
+    "install_no_deps": true,
+    "embedded_wheel_allowed": false,
+    "runtime_source_max_bytes": 900000,
+    "internet_use_scope": "retrieve the exact frozen tabpfn wheel only; checkpoint remains the attached official Kaggle Model input"
+  },
+  "transport": {
+    "kernel_write_method": "KaggleApi.kernels_push",
+    "cli_kernels_push_used": false,
+    "structured_failure_receipt_required": true,
+    "raw_server_error_persisted": false,
+    "prewrite_absence_method": "kernels_list_user_search_exact_ref_match",
+    "postwrite_identity_method": "exact_GetKernel_plus_audited_source_attachment_normalization"
+  },
+  "side_effects": [
+    "after live authenticated Rules, model access, resource-admission, and fresh-target guards, create exactly one fresh private CPU Notebook version, run the frozen E11c local experiment, and read only current aggregate outputs"
+  ],
+  "allowed_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "automatic_compute_retries": 0,
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "publish_only_sanitized_aggregate": true
+}
