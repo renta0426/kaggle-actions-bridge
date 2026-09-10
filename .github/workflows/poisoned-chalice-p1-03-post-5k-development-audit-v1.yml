@@ -7,6 +7,7 @@ on:
       - .github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1.yml
       - requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json
       - runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py
+      - materialized/poisoned-chalice-p1-03-post-5k-development-audit-v1/**
       - scripts/kaggle_exact_identity.py
       - requirements/kaggle-2.2.4.lock
   push:
@@ -15,6 +16,7 @@ on:
       - .github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1.yml
       - requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json
       - runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py
+      - materialized/poisoned-chalice-p1-03-post-5k-development-audit-v1/**
       - scripts/kaggle_exact_identity.py
       - requirements/kaggle-2.2.4.lock
 
