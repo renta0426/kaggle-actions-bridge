@@ -1,0 +1,100 @@
+class DSU:
+    def __init__(self, n: int): self.p = list(range(n)); self.sz = [1] * n
+    def find(self, x: int) -> int:
+        while self.p[x] != x: self.p[x] = self.p[self.p[x]]; x = self.p[x]
+        return x
+    def union(self, a: int, b: int) -> None:
+        a, b = self.find(a), self.find(b)
+        if a == b: return
+        if self.sz[a] < self.sz[b]: a, b = b, a
+        self.p[b] = a; self.sz[a] += self.sz[b]
+
+
+def simhash64(text: str) -> int:
+    tokens = TOKEN_RE.findall(str(text))
+    if len(tokens) < 5: shingles = [" ".join(tokens)]
+    else:
+        total = len(tokens) - 4; starts = range(total) if total <= 256 else np.linspace(0, total - 1, 256, dtype=int); shingles = [" ".join(tokens[int(i):int(i)+5]) for i in starts]
+    digests = b"".join(hashlib.blake2b(s.encode("utf-8", errors="ignore"), digest_size=8).digest() for s in shingles)
+    if not digests: return 0
+    bits = np.unpackbits(np.frombuffer(digests, dtype=np.uint8).reshape(-1, 8), axis=1, bitorder="little"); majority = bits.sum(axis=0) * 2 >= bits.shape[0]
+    value = 0
+    for bit, flag in enumerate(majority.tolist()):
+        if flag: value |= 1 << bit
+    return value
+
+
+def content_groups(frame: pd.DataFrame) -> tuple[np.ndarray, dict]:
+    hashes = [simhash64(text) for text in frame.content]; buckets: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for idx, value in enumerate(hashes):
+        for chunk in range(8): buckets[(chunk, (value >> (chunk * 8)) & 0xFF)].append(idx)
+    dsu = DSU(len(frame)); checked = set()
+    for items in buckets.values():
+        if len(items) > 128: continue
+        for pos, left in enumerate(items):
+            for right in items[pos + 1:]:
+                pair = (left, right) if left < right else (right, left)
+                if pair in checked: continue
+                checked.add(pair)
+                if (hashes[left] ^ hashes[right]).bit_count() <= 6: dsu.union(left, right)
+    groups = np.asarray([dsu.find(i) for i in range(len(frame))], dtype=int); sizes = pd.Series(groups).value_counts()
+    return groups, {"method": "token_5gram_simhash64_hamming_le_6", "non_singleton_groups": int((sizes > 1).sum()), "rows_in_non_singleton_groups": int(sizes[sizes > 1].sum()) if (sizes > 1).any() else 0, "max_group_size": int(sizes.max()), "candidate_pairs_checked": len(checked)}
+
+
+def group_splits(frame: pd.DataFrame, groups: np.ndarray):
+    from sklearn.model_selection import StratifiedGroupKFold
+    strata = frame.language.astype(str) + "_" + frame.label.astype(str)
+    return list(StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED).split(frame, strata, groups=groups))
+
+
+def control_audit(frame: pd.DataFrame) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+    splits = stratified_indices(frame, SEED); c0, static_table = static_control_oof(frame, splits); c1 = ngram_control_oof(frame, splits); hidden = frame[MEAN_TOP5].to_numpy(float)
+    result = {"random_outer_oof": {"hidden_mean_top5": low_fpr_metrics(frame.label, hidden) | {"per_language": per_language(frame, hidden)}, "C0_static_logistic": low_fpr_metrics(frame.label, c0) | {"per_language": per_language(frame, c0)}, "C1_hashed_char_token_ngram_logistic": low_fpr_metrics(frame.label, c1) | {"per_language": per_language(frame, c1)}}, "paired_bootstrap": {"hidden_minus_C0": paired_bootstrap(frame, hidden, c0, seed=BOOTSTRAP_SEED + 200), "hidden_minus_C1": paired_bootstrap(frame, hidden, c1, seed=BOOTSTRAP_SEED + 201)}}
+    groups, group_diag = content_groups(frame); strict = {"group_diagnostics": group_diag, "directly_paired_to_hidden": False}
+    try:
+        gs = group_splits(frame, groups); c0g, _ = static_control_oof(frame, gs); c1g = ngram_control_oof(frame, gs); strict["C0_static_group_oof"] = low_fpr_metrics(frame.label, c0g) | {"per_language": per_language(frame, c0g)}; strict["C1_ngram_group_oof"] = low_fpr_metrics(frame.label, c1g) | {"per_language": per_language(frame, c1g)}; strict["status"] = "complete"
+    except Exception as exc:
+        strict["status"] = "unavailable"; strict["error"] = f"{type(exc).__name__}: {exc}"
+    result["strict_content_group_cv"] = strict
+    score_table = frame[["sample_id", "language", "label"]].copy(); score_table["C0_static_oof"] = c0; score_table["C1_ngram_oof"] = c1
+    return result, static_table, score_table
+
+
+# Portable hidden-state scalars.
+def profile_features(values: np.ndarray, prefix: str) -> tuple[np.ndarray, list[str]]:
+    values = np.asarray(values, dtype=np.float64); n, depth = values.shape
+    if depth < 2: raise RuntimeError(f"portable profile too short: {prefix} depth={depth}")
+    x = np.linspace(0.0, 1.0, depth); grid = np.linspace(0.0, 1.0, 16); interp = np.vstack([np.interp(grid, x, row) for row in values]); q = np.quantile(values, [0.25, 0.50, 0.75], axis=1).T; xm = x - x.mean(); denom = float(np.dot(xm, xm)); slope = ((values - values.mean(axis=1, keepdims=True)) @ xm) / denom
+    stats = np.column_stack([values.mean(axis=1), values.std(axis=1), values.min(axis=1), values.max(axis=1), q, slope]); names = [f"{prefix}_depth_{i:02d}" for i in range(16)] + [f"{prefix}_{name}" for name in ("mean", "std", "min", "max", "q25", "q50", "q75", "slope")]
+    return np.column_stack([interp, stats]), names
+
+
+def scalarize_hidden(array: np.ndarray) -> tuple[np.ndarray, list[str], float]:
+    x = np.asarray(array, dtype=np.float64)
+    if x.ndim != 3: raise RuntimeError("hidden shard must be [rows,layers,hidden]")
+    eps = 1e-12; rms = np.sqrt(np.mean(x * x, axis=2)); l2_over_sqrt = np.linalg.norm(x, axis=2) / math.sqrt(x.shape[2]); rms_equivalence = float(np.max(np.abs(rms - l2_over_sqrt))); left, right = x[:, :-1, :], x[:, 1:, :]; left_norm = np.linalg.norm(left, axis=2); right_norm = np.linalg.norm(right, axis=2); adjacent_cos = np.sum(left * right, axis=2) / np.maximum(left_norm * right_norm, eps); delta = right - left; delta_norm = np.linalg.norm(delta, axis=2); rel_delta = delta_norm / np.maximum(right_norm, eps); dleft, dright = delta[:, :-1, :], delta[:, 1:, :]; curvature = np.sum(dleft * dright, axis=2) / np.maximum(np.linalg.norm(dleft, axis=2) * np.linalg.norm(dright, axis=2), eps)
+    blocks, names = [], []
+    for values, prefix in ((rms, "rms"), (adjacent_cos, "adjacent_cos"), (rel_delta, "relative_delta_norm"), (curvature, "delta_direction_cos")):
+        block, block_names = profile_features(values, prefix); blocks.append(block); names.extend(block_names)
+    return np.column_stack(blocks), names, rms_equivalence
+
+
+def load_cache_metadata(cache_root: Path, manifest: dict) -> pd.DataFrame:
+    info = manifest.get("metadata") or {}; path = cache_root / str(info.get("sample_metadata"))
+    if sha256_file(path) != info.get("sample_metadata_sha256"): raise RuntimeError("cache sample metadata SHA changed")
+    frame = pd.DataFrame([json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()])
+    if len(frame) != EXPECTED_HIDDEN_ROWS or frame.sample_id.duplicated().any(): raise RuntimeError("cache metadata coverage changed")
+    return frame
+
+
+def extract_portable_scalars(cache_root: Path, hidden: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    manifest_path = cache_root / "cache_manifest.json"
+    if sha256_file(manifest_path) != CACHE_MANIFEST_SHA256: raise RuntimeError("cache manifest SHA changed")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("rows") != 5000 or manifest.get("num_layers") != 30 or manifest.get("hidden_size") != 3072: raise RuntimeError("cache shape contract changed")
+    metadata = load_cache_metadata(cache_root, manifest)
+    if metadata.sample_id.tolist() != hidden.sample_id.tolist(): raise RuntimeError("hidden OOF order differs from sealed cache metadata")
+    variant_parts = {name: [] for name in POOLING_VARIANTS}; feature_names = None; max_equivalence = 0.0; shards = manifest.get("shards") or []
+    if len(shards) != 20: raise RuntimeError("cache shard count changed")
+    for expected_idx, shard in enumerate(shards):
+        path = cache_root / str(shard.get("path"))
