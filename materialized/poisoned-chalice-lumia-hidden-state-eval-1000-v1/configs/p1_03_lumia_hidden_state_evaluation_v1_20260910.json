@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03-lumia-hidden-state-evaluation-1000-v1",
+  "as_of": "2026-09-10",
+  "status": "frozen_before_1000_cache_execution",
+  "scientific_config": "configs/p1_03_lumia_hidden_state_pilot_v1_20260909.json",
+  "cache_config": "configs/p1_03_lumia_hidden_state_cache_1000_v1_20260910.json",
+  "outer_oof": {
+    "folds": 5,
+    "stratify": "language x membership label",
+    "outer_holdout_rows_per_fold": 200,
+    "outer_holdout_use": "score only"
+  },
+  "inner_per_outer_fit": {
+    "probe_train_rows": 480,
+    "early_stop_rows": 160,
+    "layer_selection_rows": 160,
+    "stratify": "language x membership label",
+    "layer_selection": "rank all 30 layers by selection AUC only",
+    "best_layer": "top 1 selection-AUC layer",
+    "top5_ensemble": "unweighted mean of predictions from top 5 selection-AUC layers"
+  },
+  "probe": {
+    "architecture": "Linear(input_dim,128)-ReLU-Dropout(0.5)-Linear(128,1)-Sigmoid",
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "loss": "BCELoss",
+    "epochs_max": 100,
+    "batch_size": 32,
+    "validation_every_epochs": 5,
+    "early_stopping_patience_checks": 5,
+    "best_weights": "deep-copied state at best early-stop AUC",
+    "note": "This implements the released probe architecture and intended best-weight early stopping while avoiding state_dict reference aliasing."
+  },
+  "hidden_variants": [
+    "mean_only_best_layer",
+    "mean_only_top5_ensemble",
+    "lumia_caller_literal_best_layer",
+    "lumia_caller_literal_top5_ensemble",
+    "lumia_helper_language_aware_best_layer",
+    "lumia_helper_language_aware_top5_ensemble"
+  ],
+  "same_input_output_baselines": [
+    "zsigmoid_single_sequence",
+    "caller_literal_output_weighted_single_sequence",
+    "helper_language_aware_output_weighted_single_sequence"
+  ],
+  "metrics": [
+    "roc_auc",
+    "standardized_pauc_at_0.01_fpr",
+    "tpr_at_0.001_fpr",
+    "tpr_at_0.005_fpr",
+    "tpr_at_0.01_fpr",
+    "tpr_at_0.02_fpr",
+    "conservative_tp_at_0.01_fpr",
+    "per_language_auc",
+    "unique_tp_and_jaccard_vs_same_input_zsigmoid"
+  ],
+  "bootstrap": {
+    "replicates": 1000,
+    "seed": 20260909,
+    "primary_pairing": "same resampled row indices for compared scores",
+    "overall_strata": "language x label"
+  },
+  "scale_gate": {
+    "caller_auc": "caller top5 OOF AUC >= zsigmoid AUC + 0.015",
+    "caller_tpr_01": "caller top5 TPR@1% FPR >= zsigmoid TPR@1% FPR + 0.01 absolute",
+    "caller_unique_tp": "caller top5 adds >= 10 conservative unique true positives versus zsigmoid at 1% FPR",
+    "helper_language_specific": {
+      "comparison": "helper top5 versus caller top5 within each language",
+      "bootstrap": "paired resampling stratified by label within that language",
+      "survives_definition": "at least one language has AUC-delta 95% bootstrap lower bound > 0",
+      "reason": "This operationalizes the previously frozen qualitative phrase 'reproducible language-specific gain that survives outer OOF and paired bootstrap' before the 1000-row cache is executed."
+    },
+    "scale_to_2000_or_more_if_any": true
+  },
+  "anti_posthoc": {
+    "no_layer_choice_from_outer_holdout": true,
+    "no_hyperparameter_change_after_cache_labels_are_joined": true,
+    "no_result_derived_output_formula": true,
+    "no_visible_validation_use": true,
+    "no_public_lb_use": true
+  }
+}
