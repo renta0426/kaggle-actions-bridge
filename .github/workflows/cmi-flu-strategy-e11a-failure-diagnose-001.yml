@@ -1,0 +1,223 @@
+name: CMI-Flu strategy E11a failure diagnostic 001
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - requests/cmi-flu-strategy-e11a-failure-diagnose-001.json
+      - .github/workflows/cmi-flu-strategy-e11a-failure-diagnose-001.yml
+  push:
+    branches: [main]
+    paths:
+      - requests/cmi-flu-strategy-e11a-failure-diagnose-001.json
+      - .github/workflows/cmi-flu-strategy-e11a-failure-diagnose-001.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-readonly-cmi-flu-e11a-failure-diagnose-001
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/cmi-flu-strategy-e11a-failure-diagnose-001.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  POLICY_PATH: scripts/kaggle_policy_preflight.py
+  TARGET_OWNER: renta0426
+  TARGET_SLUG: cmi-flu-e11a-task11-pairwise-20260910-001
+  TARGET_KERNEL: renta0426/cmi-flu-e11a-task11-pairwise-20260910-001
+
+jobs:
+  validate:
+    name: Validate secret-free E11a failure diagnostic
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate fixed request and read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
+          for path in "${REQUEST_PATH}" "${POLICY_PATH}"; do
+            curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+              "https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${source_sha}/${path}" \
+              -o "${workdir}/$(basename "${path}")"
+          done
+          python3 "${workdir}/kaggle_policy_preflight.py"
+          python3 - "${workdir}/$(basename "${REQUEST_PATH}")" <<'PY'
+          import json,sys
+          request=json.load(open(sys.argv[1], encoding='utf-8'))
+          expected={
+            'schema_version':1,
+            'request_id':'20260910-cmi-flu-strategy-e11a-failure-diagnose-001',
+            'parent_request_id':'20260910-cmi-flu-strategy-e11a-task11-pairwise-001',
+            'competition':'cmi-flu-first-prediction-challenge',
+            'operation':'kernel_failure_diagnostic',
+            'target':'renta0426/cmi-flu-e11a-task11-pairwise-20260910-001',
+            'expected_current_version':1,
+            'failed_actions_run':34380270124,
+            'failed_actions_job':102563363475,
+            'api_budget':{'max_calls':8,'max_pages':1},
+            'side_effects':[],
+            'automatic_compute_retries':0,
+            'competition_submission':False,
+            'raw_log_persisted':False,
+            'publish_only_redacted_failure_metadata':True,
+          }
+          assert request==expected
+          print('CMI_FLU_E11A_FAILURE_DIAGNOSTIC_VALIDATE PASS side_effects=0 retries=0')
+          PY
+
+  diagnose:
+    name: Read exact failed E11a version 1 log once
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce protected read-only boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" && "${EVENT_SENDER_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
+          [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-strategy-e11a-failure-diagnose-001.yml@refs/heads/main" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+          git -c credential.helper= init -q "${workdir}/repo"
+          git -C "${workdir}/repo" remote add origin https://github.com/renta0426/kaggle-actions-bridge.git
+          git -C "${workdir}/repo" -c credential.helper= fetch -q --depth=1 origin "${EVENT_SHA}"
+          git -C "${workdir}/repo" checkout -q --detach FETCH_HEAD
+          python3 "${workdir}/repo/${POLICY_PATH}"
+          echo 'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_BOUNDARY PASS side_effects=0 raw_log_persisted=false'
+
+      - name: Prepare locked Kaggle client
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/kaggle-venv"
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/repo/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/kaggle-venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo 'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_CLIENT PASS kaggle_cli=2.2.4'
+
+      - name: Fetch exact status and one execution log
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          "${WORKDIR}/kaggle-venv/bin/python" - <<'PY'
+          import os
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
+          api=KaggleApi(); api.authenticate()
+          target=os.environ['TARGET_KERNEL']
+          discovered=api.kernels_list(user=os.environ['TARGET_OWNER'], search=os.environ['TARGET_SLUG'], page_size=10) or []
+          refs=[str(getattr(item,'ref','') or '') for item in discovered]
+          if refs.count(target)!=1: raise SystemExit(f'exact target mismatch count={refs.count(target)}')
+          status=str(getattr(api.kernels_status(target),'status','') or '').upper()
+          with api.build_kaggle_client() as client:
+              req=ApiGetKernelRequest(); req.user_name=os.environ['TARGET_OWNER']; req.kernel_slug=os.environ['TARGET_SLUG']
+              metadata=client.kernels.kernels_api_client.get_kernel(req).metadata
+          current=int(getattr(metadata,'current_version_number',0) or 0)
+          if str(metadata.ref)!=target or not bool(metadata.is_private) or current!=1:
+              raise SystemExit(f'exact current identity mismatch current={current}')
+          if 'ERROR' not in status and 'FAIL' not in status:
+              raise SystemExit(f'expected failed terminal status, got {status}')
+          print(f'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_STATUS state=error version={current}')
+          PY
+          set +e
+          "${WORKDIR}/kaggle-venv/bin/kaggle" kernels logs "${TARGET_KERNEL}" >"${WORKDIR}/kernel.log" 2>"${WORKDIR}/logs.stderr"
+          logs_rc=$?
+          set -e
+          stderr_bytes=$(wc -c <"${WORKDIR}/logs.stderr")
+          rm -f "${WORKDIR}/logs.stderr"
+          echo "CMI_FLU_E11A_FAILURE_DIAGNOSTIC_FETCH logs_rc=${logs_rc} stderr_bytes=${stderr_bytes}"
+          if [[ "${logs_rc}" -ne 0 ]]; then exit 1; fi
+          "${WORKDIR}/kaggle-venv/bin/python" - "${WORKDIR}/kernel.log" <<'PY'
+          import hashlib,pathlib,re,sys
+          raw=pathlib.Path(sys.argv[1]).read_bytes()
+          if not raw or len(raw)>4_000_000: raise SystemExit('kernel log byte contract failed')
+          text=raw.decode('utf-8', errors='replace')
+          print(f'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_LOG bytes={len(raw)} sha256={hashlib.sha256(raw).hexdigest()}')
+          marker=re.compile(r'CMI_FLU_E11A_FAILED stage=([A-Za-z0-9_.-]+) exception_type=([A-Za-z0-9_.]+) error_code=([0-9a-f]{20})')
+          markers=marker.findall(text)
+          for stage,etype,code in markers[-3:]:
+              print(f'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_MARKER stage={stage} exception_type={etype} error_code={code}')
+          frame_pattern=re.compile(r'^\s*File "([^"]+)", line (\d+), in ([^\n]+)$')
+          frames=[]
+          for line in text.splitlines():
+              m=frame_pattern.match(line)
+              if m:
+                  frames.append((pathlib.PurePosixPath(m.group(1)).name,m.group(2),re.sub(r'[^A-Za-z0-9_<>.-]','?',m.group(3).strip())[:100]))
+          for filename,line_number,function in frames[-10:]:
+              print(f'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_FRAME file={filename} line={line_number} function={function}')
+          exc_pattern=re.compile(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Exit))(?::\s*(.*))?$')
+          exceptions=[]
+          for line in text.splitlines():
+              m=exc_pattern.match(line.strip())
+              if not m: continue
+              etype=m.group(1).split('.')[-1]; message=m.group(2) or ''
+              exceptions.append((etype,hashlib.sha256(message.encode()).hexdigest()[:20],len(message),message))
+          safe_prefixes=(
+              'E11a ', 'no model features remain', 'Found array with 0 sample',
+              'Input X contains NaN', 'could not convert string to float'
+          )
+          for etype,message_hash,message_chars,message in exceptions[-5:]:
+              print(f'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_EXCEPTION type={etype} message_hash={message_hash} message_chars={message_chars}')
+              if message.startswith(safe_prefixes):
+                  safe=re.sub(r'[^A-Za-z0-9_.,:;=+\-\[\] ()/<>]','?',message)[:300]
+                  print(f'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_SAFE_MESSAGE message={safe}')
+          signal_names=('DataContractError','ValueError','TypeError','KeyError','IndexError','RuntimeError','MemoryError','OutOfMemoryError','No space left on device','Killed','SIGKILL')
+          signal_counts={name:text.count(name) for name in signal_names if text.count(name)}
+          print('CMI_FLU_E11A_FAILURE_DIAGNOSTIC_SIGNALS '+','.join(f'{k}={v}' for k,v in sorted(signal_counts.items())))
+          print(f'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_SUMMARY markers={len(markers)} frames={len(frames)} exceptions={len(exceptions)}')
+          PY
+          rm -f "${WORKDIR}/kernel.log"
+          unset KAGGLE_API_TOKEN
+
+      - name: Cleanup all diagnostic material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKDIR-}" && -d "${WORKDIR}" ]]; then rm -rf "${WORKDIR}"; fi
+          echo 'CMI_FLU_E11A_FAILURE_DIAGNOSTIC_CLEANUP PASS retention_days=0'
