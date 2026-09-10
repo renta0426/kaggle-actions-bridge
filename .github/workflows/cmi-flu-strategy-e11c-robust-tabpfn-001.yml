@@ -8,8 +8,13 @@ on:
       - requests/cmi-flu-strategy-e11c-robust-tabpfn-001.json
       - scripts/cmi_flu_source_attachment_identity.py
       - scripts/cmi_flu_strategy_e11c_prepare.py
+      - scripts/cmi_flu_strategy_e11c_prepare_v2.py
+      - scripts/cmi_flu_strategy_e11c_materialize_payload.py
       - scripts/cmi_flu_strategy_e11c_execute.py
       - scripts/cmi_flu_strategy_e11c_sanitize.py
+      - payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/**
+      - payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b.py
+      - payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b_synthetic.py
       - docs/cmi-flu-e11c-robust-tabpfn-001.md
   push:
     branches: [main]
@@ -18,8 +23,13 @@ on:
       - requests/cmi-flu-strategy-e11c-robust-tabpfn-001.json
       - scripts/cmi_flu_source_attachment_identity.py
       - scripts/cmi_flu_strategy_e11c_prepare.py
+      - scripts/cmi_flu_strategy_e11c_prepare_v2.py
+      - scripts/cmi_flu_strategy_e11c_materialize_payload.py
       - scripts/cmi_flu_strategy_e11c_execute.py
       - scripts/cmi_flu_strategy_e11c_sanitize.py
+      - payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/**
+      - payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b.py
+      - payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b_synthetic.py
       - docs/cmi-flu-e11c-robust-tabpfn-001.md
 
 permissions: {}
@@ -70,7 +80,7 @@ jobs:
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
           done
 
-      - name: Materialize exact bridge and science commits
+      - name: Materialize exact bridge commit and pinned science relay
         shell: bash
         env:
           EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -82,7 +92,7 @@ jobs:
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
           target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-001/1"})
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-001/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
               data=response.read(70_000_001)
           if len(data)>70_000_000: raise SystemExit('bridge archive too large')
@@ -95,31 +105,15 @@ jobs:
               for item in files:
                   rel=pathlib.PurePosixPath(item.name[len(prefix):])
                   if '..' in rel.parts: raise SystemExit('unsafe bridge archive')
-                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out=target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True,exist_ok=True)
                   out.write_bytes(archive.extractfile(item).read())
           PY
-          python3 - "${workdir}/science" "${SCIENCE_REPOSITORY}" "${SCIENCE_COMMIT}" <<'PY'
-          import io,pathlib,ssl,sys,tarfile,urllib.request
-          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
-          target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-science/1"})
-          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
-              data=response.read(70_000_001)
-          if len(data)>70_000_000: raise SystemExit('science archive too large')
-          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
-              files=[item for item in archive.getmembers() if item.isfile()]
-              prefixes={item.name.split('/',1)[0] for item in files}
-              if len(prefixes)!=1: raise SystemExit('science archive layout')
-              prefix=next(iter(prefixes))+'/'
-              if not prefix.rstrip('/').endswith(ref): raise SystemExit('science codeload commit mismatch')
-              for item in files:
-                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
-                  if '..' in rel.parts: raise SystemExit('unsafe science archive')
-                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
-                  out.write_bytes(archive.extractfile(item).read())
-          PY
+          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e11c_materialize_payload.py" \
+            --repository-root "${workdir}/bridge" \
+            --output "${workdir}/science"
 
-      - name: Verify frozen manifest, science blobs and bridge scripts
+      - name: Verify frozen manifest, relay blobs and bridge scripts
         shell: bash
         run: |
           set -euo pipefail
@@ -132,6 +126,7 @@ jobs:
           assert request['target']=='renta0426/cmi-flu-e11c-robust-tabpfn-20260910-001'
           assert request['target']!='renta0426/cmi-flu-e11b-tabpfn3-20260910-005'
           assert request['science_source_commit']=='0815f4517345e127dbcbcae0f380a54f3a3d15bd'
+          assert request['science_transport']=='connector_verified_private_science_git_blob_relay_and_runtime_embedding'
           assert request['resource']['accelerator']=='cpu'
           assert request['resource']['max_real_tabpfn_fits']==21
           assert request['automatic_compute_retries']==0
@@ -156,6 +151,14 @@ jobs:
             'configs/strategy_e11c_task11_robust_tabpfn.json':'3b475f777307238bfcad61c124ab99175207bac2',
           }
           assert request['science_blobs']==expected
+          assert request['science_payloads']=={
+            'src/cmi_flu/strategy_e11c.py':'payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c.py',
+            'src/cmi_flu/strategy_e11c_synthetic.py':'payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c_synthetic.py',
+            'src/cmi_flu/strategy_e11b.py':'payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b.py',
+            'src/cmi_flu/strategy_e11b_synthetic.py':'payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b_synthetic.py',
+            'configs/baseline_b021_robust.yaml':'payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/baseline_b021_robust.yaml',
+            'configs/strategy_e11c_task11_robust_tabpfn.json':'payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c_task11_robust_tabpfn.json',
+          }
           def git_blob(path):
               data=path.read_bytes()
               return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
@@ -179,7 +182,9 @@ jobs:
           PY
           python3 -m py_compile \
             "${WORKDIR}/bridge/scripts/cmi_flu_source_attachment_identity.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_materialize_payload.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_prepare_v2.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_execute.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_sanitize.py"
           python3 "${WORKDIR}/bridge/scripts/cmi_flu_source_attachment_identity.py"
@@ -197,7 +202,7 @@ jobs:
           "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
           "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
           python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
-          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_prepare.py" \
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_prepare_v2.py" \
             --repository-root "${WORKDIR}/bridge" \
             --science-root "${WORKDIR}/science" \
             --reference-dir "${WORKDIR}/references" \
@@ -226,6 +231,7 @@ jobs:
           import inspect
           import cmi_flu_source_attachment_identity as identity
           import cmi_flu_strategy_e11c_execute as execute
+          import cmi_flu_strategy_e11c_prepare_v2 as prepare_v2
           expected='prior-labsai/tabpfn-3/pytorch/default/1'
           observed='prior-labsai/tabpfn-3/PyTorch/default/1'
           assert identity.AUDIT_RUN_ID==34460007561 and identity.AUDIT_JOB_ID==102815418161
@@ -241,6 +247,7 @@ jobs:
               model_data_sources=[observed]
               competition_data_sources=['cmi-flu-first-prediction-challenge']
           identity.require_exact_source_attachments(Metadata(),expected_model_source=expected,expected_competition_source='cmi-flu-first-prediction-challenge')
+          assert prepare_v2.NEW_TRANSPORT=='connector_verified_private_science_git_blob_relay_and_runtime_embedding'
           assert 'api.kernels_push(str(kernel_dir))' in inspect.getsource(execute.push)
           assert 'require_exact_source_attachments' in inspect.getsource(execute.push)
           assert execute.TARGET=='renta0426/cmi-flu-e11c-robust-tabpfn-20260910-001'
@@ -261,7 +268,7 @@ jobs:
               assert 'write refused' in str(exc)
           else:
               raise AssertionError('existing E11c target did not fail closed')
-          print('CMI_FLU_E11C_SECRET_FREE_TRANSPORT_PASS source_framework_case_only=true fresh_target=true e11b005_rerun=false')
+          print('CMI_FLU_E11C_SECRET_FREE_TRANSPORT_PASS science_relay=true source_framework_case_only=true fresh_target=true e11b005_rerun=false')
           PY
 
       - name: Cleanup validation content
@@ -301,7 +308,7 @@ jobs:
           workdir="$(mktemp -d)"
           echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
 
-      - name: Materialize exact bridge and science commits
+      - name: Materialize exact approved bridge commit and pinned science relay
         shell: bash
         env:
           EVENT_SHA: ${{ github.sha }}
@@ -311,7 +318,7 @@ jobs:
           import io,pathlib,ssl,sys,tarfile,urllib.request
           target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
           target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-001-run/1"})
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-001-run/2"})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
               data=response.read(70_000_001)
           if len(data)>70_000_000: raise SystemExit('bridge archive too large')
@@ -324,47 +331,18 @@ jobs:
               for item in files:
                   rel=pathlib.PurePosixPath(item.name[len(prefix):])
                   if '..' in rel.parts: raise SystemExit('unsafe bridge archive')
-                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out=target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True,exist_ok=True)
                   out.write_bytes(archive.extractfile(item).read())
           PY
-          python3 - "${WORKDIR}/science" "${SCIENCE_REPOSITORY}" "${SCIENCE_COMMIT}" <<'PY'
-          import io,pathlib,ssl,sys,tarfile,urllib.request
-          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
-          target.mkdir(parents=True)
-          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e11c-science-run/1"})
-          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
-              data=response.read(70_000_001)
-          if len(data)>70_000_000: raise SystemExit('science archive too large')
-          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
-              files=[item for item in archive.getmembers() if item.isfile()]
-              prefixes={item.name.split('/',1)[0] for item in files}
-              if len(prefixes)!=1: raise SystemExit('science archive layout')
-              prefix=next(iter(prefixes))+'/'
-              if not prefix.rstrip('/').endswith(ref): raise SystemExit('science codeload commit mismatch')
-              for item in files:
-                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
-                  if '..' in rel.parts: raise SystemExit('unsafe science archive')
-                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
-                  out.write_bytes(archive.extractfile(item).read())
-          PY
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_materialize_payload.py" \
+            --repository-root "${WORKDIR}/bridge" \
+            --output "${WORKDIR}/science"
 
-      - name: Verify exact science relay and build runtime
+      - name: Build exact E11c runtime from pinned relay
         shell: bash
         run: |
           set -euo pipefail
-          python3 - "${WORKDIR}/bridge" "${WORKDIR}/science" <<'PY'
-          import hashlib,json,pathlib,sys
-          bridge=pathlib.Path(sys.argv[1]); science=pathlib.Path(sys.argv[2])
-          request=json.loads((bridge/'requests/cmi-flu-strategy-e11c-robust-tabpfn-001.json').read_text())
-          assert request['request_id']=='20260910-cmi-flu-strategy-e11c-robust-tabpfn-001'
-          assert request['target']=='renta0426/cmi-flu-e11c-robust-tabpfn-20260910-001'
-          assert request['science_source_commit']=='0815f4517345e127dbcbcae0f380a54f3a3d15bd'
-          assert request['source_attachment_validator_repair']['rerun_e11b_005'] is False
-          expected=request['science_blobs']
-          def git_blob(path):
-              data=path.read_bytes(); return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
-          for rel,digest in expected.items(): assert git_blob(science/rel)==digest,(rel,git_blob(science/rel),digest)
-          PY
           mkdir -p "${WORKDIR}/wheel"
           python3 -m pip download --disable-pip-version-check --no-input --no-deps --only-binary=:all: --dest "${WORKDIR}/wheel" 'tabpfn==8.5.0' >/dev/null
           echo "${TABPFN_WHEEL_SHA256}  ${WORKDIR}/wheel/${TABPFN_WHEEL_FILENAME}" | sha256sum -c -
@@ -374,7 +352,7 @@ jobs:
           "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
           "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
           python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
-          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_prepare.py" \
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e11c_prepare_v2.py" \
             --repository-root "${WORKDIR}/bridge" \
             --science-root "${WORKDIR}/science" \
             --reference-dir "${WORKDIR}/references" \
@@ -382,6 +360,9 @@ jobs:
             --output "${WORKDIR}/runtime.py"
           python3 "${WORKDIR}/runtime.py" --self-test
           [[ "$(stat -c '%s' "${WORKDIR}/runtime.py")" -lt 900000 ]]
+          grep -F 'SCIENCE_COMMIT = "0815f4517345e127dbcbcae0f380a54f3a3d15bd"' "${WORKDIR}/runtime.py" >/dev/null
+          grep -F 'E11C_BLOB = "acf876996b5849f7ba794999d45ecb862d1be507"' "${WORKDIR}/runtime.py" >/dev/null
+          grep -F 'TABPFN_WHEEL_B64 = ""' "${WORKDIR}/runtime.py" >/dev/null
 
       - name: Install locked Kaggle client
         shell: bash
