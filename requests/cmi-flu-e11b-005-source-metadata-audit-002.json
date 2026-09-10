@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-e11b-005-source-metadata-audit-002",
+  "parent_request_id": "20260910-cmi-flu-e11b-005-source-metadata-audit-001",
+  "operation": "kernel_exact_metadata_source_projection_read",
+  "target": "renta0426/cmi-flu-e11b-tabpfn3-20260910-005",
+  "expected_kernel_version": 1,
+  "source_audit_base_blob_sha": "de87e0859f89e34a90fccbccdd03fa9d3d3a1e0b",
+  "exact_identity_helper_blob_sha": "d4b9ab1199aa21977bbc14541a6b7456b5984331",
+  "repair_from": {
+    "failed_request_id": "20260910-cmi-flu-e11b-005-source-metadata-audit-001",
+    "failed_bridge_run_id": 34458275946,
+    "failed_bridge_job_id": 102809839733,
+    "failure_stage": "read_exact_consumed_target_metadata",
+    "exception_type": "AttributeError",
+    "root_cause": "audit 001 called KaggleApi.kernel_metadata, but kaggle==2.2.4 exposes no such KaggleApi method",
+    "kaggle_exact_metadata_http_request_attempted": false,
+    "kernel_write_attempted": false,
+    "new_compute_requested": false,
+    "competition_submission_attempted": false,
+    "output_download_requested": false,
+    "consumed_target_rerun_attempted": false
+  },
+  "repair_scope": {
+    "method": "reuse existing scripts/kaggle_exact_identity.py exact_metadata",
+    "exact_read_calls": 1,
+    "fallback_to_search_or_list": false,
+    "retry_exact_read": false,
+    "validator_repair_authorized_by_this_request": false,
+    "source_projection_logic_changed": false,
+    "sanitizer_logic_changed": false
+  },
+  "allowed_output_paths": [
+    "source-metadata-audit.json"
+  ],
+  "side_effects": [],
+  "new_write_attempted": false,
+  "new_compute_requested": false,
+  "competition_submission_attempted": false,
+  "output_download_requested": false,
+  "consumed_target_rerun_authorized": false,
+  "automatic_compute_retries": 0
+}
