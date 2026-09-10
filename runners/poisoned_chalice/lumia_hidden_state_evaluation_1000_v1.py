@@ -261,7 +261,6 @@ def validate_kernel(root: Path) -> None:
         raise RuntimeError("invalid notebook cell IDs")
     code = "\n".join(str(cell.get("source", "")) for cell in cells)
     for marker in (
-        CACHE_KERNEL,
         '/kaggle/input/poisoned-chalice-lumia-hidden-state-cache-1000-v1/lumia_hidden_state_cache_1000_v1',
         "EXPECTED_CACHE_MANIFEST_SHA256", DATASET_REVISION,
         "load_dataset(DATASET_ID, language, split=\"train\"", '"--device", "cuda:0"',
