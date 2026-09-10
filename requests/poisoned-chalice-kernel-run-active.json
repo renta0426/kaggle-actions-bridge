@@ -5,7 +5,7 @@
   "operation": "kernel_run",
   "target": "renta0426/poisoned-chalice-lumia-hidden-state-eval-1000-v1",
   "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_evaluation_1000_v1.py",
-  "launcher_blob_sha": "1c6870f56486efe0a594668795f138acde6559a4",
+  "launcher_blob_sha": "d852def4b88f0d82a62cca49d677d7d13e1fda24",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
   "research_commit": "2f531d7d4adb95cad87ad5eca603469e9bf5c19e",
   "research_files": [
