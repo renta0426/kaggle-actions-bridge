@@ -202,8 +202,11 @@ jobs:
           assert execute.TARGET=="renta0426/cmi-flu-e11c-robust-tabpfn-20260910-002"
           assert execute.PARENT_ACTIONS_RUN==34474957373 and execute.PARENT_ACTIONS_JOB==102863653370
           assert execute.base.CONSUMED_E11B_TARGET=="renta0426/cmi-flu-e11b-tabpfn3-20260910-005"
-          assert execute.base.prewrite_guard.__module__=="cmi_flu_strategy_e11c_execute"
+          assert execute.base.prewrite_guard is execute.prewrite_guard
+          assert execute.base.prior.prewrite_guard is execute.prewrite_guard
+          assert execute.base.prewrite_guard.__module__=="cmi_flu_strategy_e11c_execute_v2"
           assert execute.base.push.__module__=="cmi_flu_strategy_e11c_execute"
+          assert "_require_fresh_target_by_list" in inspect.getsource(execute.prewrite_guard)
           assert "kernels_push" in inspect.getsource(execute.base.push)
           assert "require_exact_source_attachments" in inspect.getsource(execute.base.push)
           identity.self_test()
