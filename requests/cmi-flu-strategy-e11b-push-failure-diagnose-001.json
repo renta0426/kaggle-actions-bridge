@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e11b-push-failure-diagnose-001",
+  "parent_request_id": "20260910-cmi-flu-strategy-e11b-tabpfn3-002",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_push_failure_diagnostic",
+  "target": "renta0426/cmi-flu-e11b-tabpfn3-20260910-002",
+  "failed_actions_run": 34430166816,
+  "failed_actions_job": 102733973098,
+  "observed_model_access_return_code": 0,
+  "observed_push_return_code": 1,
+  "observed_push_write_attempted": true,
+  "runtime_sha256": "995b68ed8aa68fed204a062bb1a9a0d18734b4be003ba81698463ede496ccb1b",
+  "push_stderr_bytes": 102,
+  "push_stderr_sha256": "ef812bc9f178b83f556046dfa3dc61b4d05a90e4003989ea212e7552cf7b8f2c",
+  "model_source": "prior-labsai/tabpfn-3/pytorch/default/1",
+  "checkpoint_filename": "tabpfn-v3-regressor-v3_default.ckpt",
+  "checkpoint_bytes": 233289807,
+  "api_budget": {
+    "max_calls": 12,
+    "max_pages": 1
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "raw_kernel_output_persisted": false,
+  "publish_only_aggregate_failure_metadata": true
+}
