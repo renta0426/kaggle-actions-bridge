@@ -93,10 +93,19 @@ jobs:
 
       - name: Validate locked CLI metadata parsing locally
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          source_sha="${EVENT_SHA}"; if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          lock_file="${RUNNER_TEMP}/kaggle-2.2.4.lock"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            "https://raw.githubusercontent.com/${EXPECTED_REPOSITORY}/${source_sha}/${LOCK_PATH}" -o "${lock_file}"
           python3 -m venv "${RUNNER_TEMP}/kaggle-local-validate"
-          "${RUNNER_TEMP}/kaggle-local-validate/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${LOCK_PATH}" >/dev/null
+          "${RUNNER_TEMP}/kaggle-local-validate/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${lock_file}" >/dev/null
+          "${RUNNER_TEMP}/kaggle-local-validate/bin/python" -m pip check >/dev/null
           "${RUNNER_TEMP}/kaggle-local-validate/bin/python" - <<'PY'
           from kaggle.api.kaggle_api_extended import KaggleApi
           api=KaggleApi()
@@ -160,7 +169,6 @@ jobs:
           from kagglesdk.kernels.types.kernels_api_service import ApiGetKernelRequest
           api=KaggleApi(); api.authenticate()
           target=os.environ['TARGET_KERNEL']; owner=os.environ['TARGET_OWNER']; slug=os.environ['TARGET_SLUG']; model=os.environ['MODEL_SOURCE']
-          # Model access read: same authenticated endpoint class that passed before push.
           try:
               files=api.model_instance_version_files(model, page_size=20)
               payload=files.to_dict() if hasattr(files,'to_dict') else files
@@ -177,7 +185,6 @@ jobs:
           print(f'CMI_FLU_E11B_PUSH_DIAGNOSTIC_SEARCH exact_count={len(exact)}')
           if len(exact)>1: raise SystemExit('duplicate exact target')
           if len(exact)==0:
-              # Confirm exact GetKernel also reports absence; hash only the error.
               try:
                   with api.build_kaggle_client() as client:
                       req=ApiGetKernelRequest(); req.user_name=owner; req.kernel_slug=slug
