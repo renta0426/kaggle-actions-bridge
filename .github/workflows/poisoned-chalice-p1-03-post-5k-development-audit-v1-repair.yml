@@ -1,0 +1,225 @@
+name: Poisoned Chalice P1-03 post-5k CPU development audit v1 repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1-repair.yml
+      - runners/poisoned_chalice/p1_03_post_5k_development_audit_v1_repair_preflight.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1-repair.yml
+      - runners/poisoned_chalice/p1_03_post_5k_development_audit_v1_repair_preflight.py
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json
+  LAUNCHER_PATH: runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py
+  REPAIR_PATH: runners/poisoned_chalice/p1_03_post_5k_development_audit_v1_repair_preflight.py
+  IDENTITY_PATH: scripts/kaggle_exact_identity.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET: renta0426/poisoned-chalice-p1-03-post-5k-development-audit-v1
+
+jobs:
+  validate:
+    name: Validate one repair without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce secret-free repair boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: $name"; exit 1; }
+          done
+          source_sha="$EVENT_SHA"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then source_sha="$PR_HEAD_SHA"; fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+
+      - name: Fetch exact repair bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$SOURCE_SHA" "$WORKDIR" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]
+          root=pathlib.Path(root_value)
+          files={
+            'requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json':65536,
+            'runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py':131072,
+            'runners/poisoned_chalice/p1_03_post_5k_development_audit_v1_repair_preflight.py':65536,
+            'scripts/kaggle_exact_identity.py':65536,
+            'requirements/kaggle-2.2.4.lock':65536,
+          }
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for path,maximum in files.items():
+              url=f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}'
+              req=urllib.request.Request(url,headers={'User-Agent':'p1-03-post5k-repair-validate/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(maximum+1)
+              if not data or len(data)>maximum:raise SystemExit(f'bridge source byte budget failed:{path}')
+              out=root/pathlib.Path(path).name
+              out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+
+      - name: Validate frozen science materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$WORKDIR/p1_03_post_5k_development_audit_v1_repair_preflight.py" --static --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+          python3 "$WORKDIR/p1_03_post_5k_development_audit_v1.py" --static --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+          python3 "$WORKDIR/p1_03_post_5k_development_audit_v1.py" --materialize --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json" --kernel-dir "$WORKDIR/kernel"
+
+      - name: Verify locked Kaggle 2.2.4 repair API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/venv"
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/kaggle-2.2.4.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip check >/dev/null
+          "$WORKDIR/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          "$WORKDIR/venv/bin/python" - <<'PY'
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          method=getattr(KaggleApi,'dataset_status',None)
+          assert callable(method), 'kaggle 2.2.4 dataset_status missing'
+          print('P1_03_POST_5K_REPAIR_API_GATE PASS kaggle=2.2.4 dataset_status=1 write_calls=0')
+          PY
+
+      - name: Cleanup validation material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+
+  launch:
+    name: Launch approved repaired CPU development audit exactly once
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected repair boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$EVENT_SHA" == "$WORKFLOW_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1-repair.yml@refs/heads/main" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          echo "P1_03_POST_5K_REPAIR_PROTECTED_BOUNDARY PASS cpu=1 retries=0 submissions=0"
+
+      - name: Fetch exact repair bundle and install locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          echo "KERNEL_DIR=$workdir/kernel" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$EVENT_SHA" >> "$GITHUB_ENV"
+          python3 - "$EVENT_SHA" "$workdir" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]
+          root=pathlib.Path(root_value)
+          files={
+            'requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json':65536,
+            'runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py':131072,
+            'runners/poisoned_chalice/p1_03_post_5k_development_audit_v1_repair_preflight.py':65536,
+            'scripts/kaggle_exact_identity.py':65536,
+            'requirements/kaggle-2.2.4.lock':65536,
+          }
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for path,maximum in files.items():
+              url=f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}'
+              req=urllib.request.Request(url,headers={'User-Agent':'p1-03-post5k-repair-launch/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(maximum+1)
+              if not data or len(data)>maximum:raise SystemExit(f'bridge source byte budget failed:{path}')
+              out=root/pathlib.Path(path).name
+              out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+          python3 -m venv "$workdir/venv"
+          "$workdir/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$workdir/kaggle-2.2.4.lock" >/dev/null
+          "$workdir/venv/bin/python" -m pip check >/dev/null
+          "$workdir/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          "$workdir/venv/bin/python" "$workdir/p1_03_post_5k_development_audit_v1_repair_preflight.py" --static --request "$workdir/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+          "$workdir/venv/bin/python" "$workdir/p1_03_post_5k_development_audit_v1.py" --static --request "$workdir/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+          "$workdir/venv/bin/python" "$workdir/p1_03_post_5k_development_audit_v1.py" --materialize --request "$workdir/poisoned-chalice-p1-03-post-5k-development-audit-v1.json" --kernel-dir "$workdir/kernel"
+
+      - name: Live repaired exact-identity preflight
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" "$WORKDIR/p1_03_post_5k_development_audit_v1_repair_preflight.py" --preflight --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+
+      - name: One-shot SaveKernel
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "$WORKDIR/venv/bin/python" "$WORKDIR/p1_03_post_5k_development_audit_v1.py" --execute --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json" --kernel-dir "$KERNEL_DIR" --kaggle-bin "$WORKDIR/venv/bin/kaggle"
+
+      - name: Verify exact target version after the single write
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" "$WORKDIR/p1_03_post_5k_development_audit_v1_repair_preflight.py" --postwrite --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+          echo "P1_03_POST_5K_REPAIR_CLEANUP PASS retention_days=0"
