@@ -7,7 +7,7 @@
   "target": "renta0426/cmi-flu-e11c-robust-tabpfn-20260910-001",
   "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
   "science_source_commit": "0815f4517345e127dbcbcae0f380a54f3a3d15bd",
-  "science_transport": "exact_commit_archive_plus_git_blob_verification_and_runtime_embedding",
+  "science_transport": "connector_verified_private_science_git_blob_relay_and_runtime_embedding",
   "science_blobs": {
     "src/cmi_flu/strategy_e11c.py": "acf876996b5849f7ba794999d45ecb862d1be507",
     "src/cmi_flu/strategy_e11c_synthetic.py": "9b94633192b5254a7d1debe8db10606b48104076",
@@ -15,6 +15,20 @@
     "src/cmi_flu/strategy_e11b_synthetic.py": "f25d04d75db584db78d26a232ab84dc5ab1bbf7d",
     "configs/baseline_b021_robust.yaml": "170d3211e2795c0730e481056c7bb068accf97c9",
     "configs/strategy_e11c_task11_robust_tabpfn.json": "3b475f777307238bfcad61c124ab99175207bac2"
+  },
+  "science_payloads": {
+    "src/cmi_flu/strategy_e11c.py": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c.py",
+    "src/cmi_flu/strategy_e11c_synthetic.py": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c_synthetic.py",
+    "src/cmi_flu/strategy_e11b.py": "payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b.py",
+    "src/cmi_flu/strategy_e11b_synthetic.py": "payloads/cmi-flu-strategy-e11b-tabpfn3-001/strategy_e11b_synthetic.py",
+    "configs/baseline_b021_robust.yaml": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/baseline_b021_robust.yaml",
+    "configs/strategy_e11c_task11_robust_tabpfn.json": "payloads/cmi-flu-strategy-e11c-robust-tabpfn-001/strategy_e11c_task11_robust_tabpfn.json"
+  },
+  "rules_preflight": {
+    "required_before_any_kernel_write": true,
+    "method": "inherited_base.live_rules_authenticated_read",
+    "failure_write": false,
+    "record_in_run_log": true
   },
   "expected_kernel_version": 1,
   "enable_internet": true,
@@ -153,7 +167,7 @@
     "postwrite_identity_method": "exact_GetKernel_plus_audited_source_attachment_normalization"
   },
   "side_effects": [
-    "after read-only model access and fresh-target guards, create exactly one fresh private CPU Notebook version, run the frozen E11c local experiment, and read only current aggregate outputs"
+    "after live authenticated Rules, model access, resource-admission, and fresh-target guards, create exactly one fresh private CPU Notebook version, run the frozen E11c local experiment, and read only current aggregate outputs"
   ],
   "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
   "automatic_compute_retries": 0,
