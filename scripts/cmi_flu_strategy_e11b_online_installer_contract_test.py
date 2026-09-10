@@ -41,6 +41,7 @@ def main() -> int:
         '"pip","download"',
         '"--no-deps"',
         '"--only-binary=:all:"',
+        "import subprocess as _subprocess",
         "e11b_tabpfn_wheel_bytes",
         "e11b_tabpfn_wheel_sha",
         "pypi_exact_hash_verified",
@@ -55,7 +56,7 @@ def main() -> int:
         raise SystemExit("E11b 004 fixture identity mismatch")
 
     runtime = load_runtime(runtime_path)
-    original_run = runtime.subprocess.run
+    original_run = subprocess.run
     calls: list[list[str]] = []
 
     def fake_run(command, *pargs, **kwargs):
@@ -68,11 +69,11 @@ def main() -> int:
             return subprocess.CompletedProcess(cmd, 0, "fixture-download\n", "")
         return original_run(command, *pargs, **kwargs)
 
-    runtime.subprocess.run = fake_run
+    subprocess.run = fake_run
     try:
         result = runtime.install_tabpfn_wheel()
     finally:
-        runtime.subprocess.run = original_run
+        subprocess.run = original_run
     if result.get("version") != "8.5.0":
         raise SystemExit("E11b 004 installed package version mismatch")
     if result.get("wheel_sha256") != WHEEL_SHA256 or int(result.get("wheel_bytes", -1)) != WHEEL_BYTES:
