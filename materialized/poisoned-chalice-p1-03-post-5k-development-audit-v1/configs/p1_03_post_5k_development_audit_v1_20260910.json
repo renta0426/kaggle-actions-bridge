@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "task_id": "P1-03-post-5k-development-audit-v1",
+  "as_of": "2026-09-10",
+  "status": "frozen_before_development_execution",
+  "parent_science_commit": "f5329a3af2ee70c5a959175c30753ec76328dcc3",
+  "purpose": [
+    "audit complementarity between frozen Stage1 plus_length_interactions and the completed P1-03a 5k hidden OOF",
+    "measure no-target content/source separability controls",
+    "compress the sealed 30x3072 hidden trajectories into architecture-size-independent scalar profiles"
+  ],
+  "development_only": true,
+  "promotion_allowed": false,
+  "fresh_holdout_consumed": false,
+  "inputs": {
+    "stage1_feature_dataset": {
+      "id": "renta0426/stage1-raw-fim-submission-v1-output",
+      "version": 1,
+      "train_rows": 10000,
+      "train_shards": 40,
+      "rows_per_shard": 250,
+      "reproduction_auc": 0.68013844,
+      "reproduction_auc_tolerance": 0.002
+    },
+    "hidden_evaluation_kernel": {
+      "id": "renta0426/poisoned-chalice-lumia-hidden-state-eval-5000-v1",
+      "expected_version": 1,
+      "oof_predictions_sha256": "c6d35c24087eac4809678bb5cae3d02fef630d07eb6f4033c50b8e285ce56fb4",
+      "rows": 5000
+    },
+    "hidden_cache_kernel": {
+      "id": "renta0426/poisoned-chalice-lumia-hidden-state-cache-5000-v1",
+      "expected_version": 1,
+      "cache_manifest_sha256": "380e553cea43c0bb4a649e7d6b696786b4e5178d45ee116efbd5e99cceeab6aa",
+      "rows": 5000,
+      "shards": 20,
+      "layers": 30,
+      "hidden_size": 3072,
+      "pooling_variants": ["mean", "caller_weighted", "helper_weighted"]
+    },
+    "public_train": {
+      "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+      "revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+      "languages": ["Go", "Java", "Python", "Ruby", "Rust"],
+      "use": "join exact 5k sample_id to public content and membership for development controls only"
+    }
+  },
+  "priority_1_fusion": {
+    "hidden_primary": "mean_only_top5_ensemble",
+    "stage1_primary": "plus_length_interactions canonical 5-fold OOF seed 2027",
+    "join_key": "sample_id",
+    "required_join_checks": ["one_to_one", "no_duplicates", "language_match", "label_match"],
+    "metrics": [
+      "roc_auc",
+      "standardized_pauc_at_0.01_fpr",
+      "tpr_at_0.001_fpr",
+      "tpr_at_0.005_fpr",
+      "tpr_at_0.01_fpr",
+      "tpr_at_0.02_fpr",
+      "per_language",
+      "pearson",
+      "spearman",
+      "conservative_tp_set",
+      "jaccard",
+      "unique_tp",
+      "paired_bootstrap"
+    ],
+    "rank_fusion_hidden_weights": [0.25, 0.5, 0.75],
+    "candidate_count_limited": true,
+    "cross_fitted_two_score_logistic_in_first_pass": false,
+    "result_use": "exploratory candidate reduction only; no promotion on current 5k"
+  },
+  "priority_2_no_target_controls": {
+    "C0": "low-dimensional static lexical/structure statistics plus one-hot language, outer-fold logistic regression",
+    "C1": "hashed char 3-5gram plus token 1-2gram, outer-fold regularized logistic regression",
+    "outer_folds": 5,
+    "seed": 20260909,
+    "strict_content_group_diagnostic": {
+      "method": "token 5-gram SimHash64, Hamming <= 6 connected components",
+      "splitter": "StratifiedGroupKFold",
+      "claim_boundary": "diagnostic for content-control sensitivity only; hidden probe is not retrained on the same group split and therefore no direct paired hidden-vs-group-CV claim is allowed"
+    }
+  },
+  "priority_3_portable_scalar": {
+    "primary_pooling": "mean",
+    "ablation_pooling": ["caller_weighted", "helper_weighted"],
+    "raw_hidden_dimension_entering_learner": false,
+    "per_layer_series": [
+      "rms_norm_equivalent_to_l2_over_sqrt_d",
+      "adjacent_layer_cosine",
+      "relative_delta_norm",
+      "adjacent_delta_direction_cosine"
+    ],
+    "normalized_depth_grid_points": 16,
+    "series_summaries": ["mean", "std", "min", "max", "q25", "q50", "q75", "slope"],
+    "features_per_pooling_variant": 96,
+    "primary_learner": "median imputation -> standard scaling -> logistic regression C=0.2",
+    "nonlinear_learner_in_first_pass": false,
+    "cache_processing": "stream one declared NPZ shard at a time; never materialize the full raw cache in memory"
+  },
+  "resource": {
+    "execution": "kaggle_private_notebook",
+    "accelerator": "cpu",
+    "enable_gpu": false,
+    "enable_tpu": false,
+    "enable_internet": true,
+    "expected_runtime_minutes": 50,
+    "hard_timeout_minutes": 120,
+    "max_active_runs": 1,
+    "automatic_compute_retries": 0
+  },
+  "clean_room": {
+    "validation_rows_used": false,
+    "hidden_stage1_validation_labels_used": false,
+    "public_leaderboard_feedback_used": false,
+    "competition_submission": false,
+    "new_target_model_forward": false,
+    "current_5k_is_development_only": true,
+    "no_result_derived_formula_added_after_execution": true
+  },
+  "expected_persistent_outputs": [
+    "fusion_audit.json",
+    "content_control_audit.json",
+    "portable_scalar_audit.json",
+    "fusion_common_scores.parquet",
+    "content_control_oof_scores.parquet",
+    "portable_scalar_table.parquet",
+    "portable_scalar_oof_scores.parquet",
+    "static_feature_table.parquet",
+    "run_manifest.json"
+  ],
+  "next_gate": "after this development result, freeze at most two fusion formulas plus the portable-scalar family before one fresh disjoint 5k confirmation"
+}
