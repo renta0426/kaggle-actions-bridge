@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "request_id": "20260910-poisoned-chalice-lumia-hidden-state-eval-1000-v1-001",
+  "request_id": "20260910-poisoned-chalice-lumia-hidden-state-eval-1000-v2-001",
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
-  "target": "renta0426/poisoned-chalice-lumia-hidden-state-eval-1000-v1",
-  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_evaluation_1000_v1.py",
-  "launcher_blob_sha": "d852def4b88f0d82a62cca49d677d7d13e1fda24",
+  "target": "renta0426/poisoned-chalice-lumia-hidden-state-eval-1000-v2",
+  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_evaluation_1000_v2.py",
+  "launcher_blob_sha": "51b401e614e2e5f30fab19e340900fe28f08f5ec",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-  "research_commit": "2f531d7d4adb95cad87ad5eca603469e9bf5c19e",
+  "research_commit": "8162c1ee58c4766f91da029d9ea232d79de9b763",
   "research_files": [
     {
       "path": "src/poisoned_chalice/evaluation.py",
@@ -46,8 +46,8 @@
       "snapshot_parts": 1
     },
     {
-      "path": "scripts/build_lumia_hidden_state_evaluation_1000_notebook_v1.py",
-      "git_blob_sha": "06afbbaf8fb206631a3792d2ad5b64a25fe6f9f1",
+      "path": "scripts/build_lumia_hidden_state_evaluation_1000_notebook_v2.py",
+      "git_blob_sha": "2577426ecd058349eac3145db93697271d37124a",
       "max_bytes": 131072,
       "snapshot_parts": 1
     },
@@ -86,11 +86,11 @@
     "create one private notebook version"
   ],
   "persistent_outputs": [
-    "lumia_hidden_state_evaluation_1000_v1/decision.json",
-    "lumia_hidden_state_evaluation_1000_v1/fold_selection.json",
-    "lumia_hidden_state_evaluation_1000_v1/metrics.json",
-    "lumia_hidden_state_evaluation_1000_v1/oof_predictions.csv",
-    "lumia_hidden_state_evaluation_1000_v1/run_manifest.json"
+    "lumia_hidden_state_evaluation_1000_v2/decision.json",
+    "lumia_hidden_state_evaluation_1000_v2/fold_selection.json",
+    "lumia_hidden_state_evaluation_1000_v2/metrics.json",
+    "lumia_hidden_state_evaluation_1000_v2/oof_predictions.csv",
+    "lumia_hidden_state_evaluation_1000_v2/run_manifest.json"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
@@ -110,6 +110,8 @@
   "scientific_contract": {
     "task_id": "P1-03-lumia-hidden-state-evaluation-1000-v1",
     "purpose": "frozen_outer_oof_hidden_state_probe_evaluation",
+    "operational_wrapper": "fresh_v2_exact_manifest_input_resolution",
+    "failed_target_not_reused": "renta0426/poisoned-chalice-lumia-hidden-state-eval-1000-v1",
     "source_cache_kernel": "renta0426/poisoned-chalice-lumia-hidden-state-cache-1000-v1",
     "source_cache_manifest_git_blob": "cb2ea78db7dc1552716f1b515d63b22fa363e89c",
     "rows": 1000,
