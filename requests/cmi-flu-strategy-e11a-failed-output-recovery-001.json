@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e11a-failed-output-recovery-001",
+  "parent_request_id": "20260910-cmi-flu-strategy-e11a-task11-pairwise-001",
+  "diagnostic_request_id": "20260910-cmi-flu-strategy-e11a-failure-diagnose-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "failed_kernel_current_output_recovery",
+  "target": "renta0426/cmi-flu-e11a-task11-pairwise-20260910-001",
+  "expected_current_version": 1,
+  "expected_terminal_status": "error_or_fail",
+  "failed_actions_run": 34380270124,
+  "failed_actions_job": 102563363475,
+  "failure_stage": "write_outputs",
+  "failure_exception_type": "KeyError",
+  "failure_error_code": "6d98aeb26dde4e8134ee",
+  "failure_exact_message": "'tasks'",
+  "root_cause": "all three aggregate files are written before a stale E01/E05 completion-log expression accesses result['tasks']; E11a returns top-level task",
+  "expected_output_paths": [
+    "bridge-result.json",
+    "metrics.json",
+    "summary.md"
+  ],
+  "api_budget": {
+    "max_calls": 8,
+    "max_pages": 1
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission": false,
+  "raw_output_persisted": false,
+  "publish_only_sanitized_aggregate": true
+}
