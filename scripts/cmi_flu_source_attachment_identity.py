@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
+AUDIT_RUN_ID = 34460007561
+AUDIT_JOB_ID = 102815418161
+
 
 class SourceAttachmentIdentityError(RuntimeError):
     """Fixed local error categories; never include remote metadata values."""
@@ -70,6 +73,8 @@ def require_exact_source_attachments(
 
 
 def self_test() -> None:
+    assert AUDIT_RUN_ID == 34460007561
+    assert AUDIT_JOB_ID == 102815418161
     expected = "prior-labsai/tabpfn-3/pytorch/default/1"
     observed = "prior-labsai/tabpfn-3/PyTorch/default/1"
     assert model_source_equivalent(expected, expected)
@@ -102,7 +107,8 @@ def self_test() -> None:
         raise AssertionError("competition source drift did not fail closed")
     print(
         "CMI_FLU_SOURCE_ATTACHMENT_IDENTITY_SELF_TEST PASS "
-        "framework_case_only=true owner_model_variant_version_strict=true competition_strict=true"
+        "framework_case_only=true owner_model_variant_version_strict=true competition_strict=true "
+        f"audit_run={AUDIT_RUN_ID} audit_job={AUDIT_JOB_ID}"
     )
 
 
