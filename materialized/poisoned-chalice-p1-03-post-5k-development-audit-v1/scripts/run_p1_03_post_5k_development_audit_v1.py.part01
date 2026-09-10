@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""P1-03 post-5k development audit: fusion, content controls, portable hidden scalars.
+
+This analysis is development-only. It performs no target-model forward pass and no
+competition submission. The current 5k hidden-state cohort has already been seen;
+therefore fusion weights and portable-scalar results produced here are exploratory
+until frozen and confirmed on a fresh disjoint cohort.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import re
+from collections import defaultdict
+from pathlib import Path
+from typing import Sequence
+
+import numpy as np
+import pandas as pd
+
+HIDDEN_OOF_SHA256 = "c6d35c24087eac4809678bb5cae3d02fef630d07eb6f4033c50b8e285ce56fb4"
+CACHE_MANIFEST_SHA256 = "380e553cea43c0bb4a649e7d6b696786b4e5178d45ee116efbd5e99cceeab6aa"
+DATASET_ID = "Poisoned-Chalice/ICSE-2027-public"
+DATASET_REVISION = "2ed5468723efa5457a3665782c6979ea4dbac7c2"
+LANGUAGES = ("Go", "Java", "Python", "Ruby", "Rust")
+EXPECTED_PUBLIC_ROWS = {"Go": 10000, "Java": 10000, "Python": 10000, "Ruby": 10000, "Rust": 9040}
+EXPECTED_HIDDEN_ROWS = 5000
+EXPECTED_STAGE1_ROWS = 10000
+SEED = 20260909
+STAGE1_SEED = 2027
+MEAN_TOP5 = "mean_only_top5_ensemble"
+CALLER_TOP5 = "lumia_caller_literal_top5_ensemble"
+HELPER_TOP5 = "lumia_helper_language_aware_top5_ensemble"
+POOLING_VARIANTS = ("mean", "caller_weighted", "helper_weighted")
+CDF_SOURCES = ("score_loss_mean__max", "min_k_10__max", "min_kpp_10__max")
+EXCLUDED_COLUMNS = {"sample_id", "language", "membership", "label", "split", "content"}
+FUSION_HIDDEN_WEIGHTS = (0.25, 0.50, 0.75)
+BOOTSTRAP_REPLICATES = 1000
+BOOTSTRAP_SEED = 20260910
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def low_fpr_metrics(y_true: Sequence[int], score: Sequence[float]) -> dict[str, float]:
+    from sklearn.metrics import roc_auc_score, roc_curve
+    y = np.asarray(y_true, dtype=int)
+    s = np.asarray(score, dtype=float)
+    fpr, tpr, _ = roc_curve(y, s)
+    out = {"auc": float(roc_auc_score(y, s)), "pauc_01": float(roc_auc_score(y, s, max_fpr=0.01))}
+    for rate in (0.001, 0.005, 0.01, 0.02):
+        out[f"tpr_at_{rate:g}_fpr"] = float(tpr[fpr <= rate].max())
+    return out
+
+
+def conservative_detection_set(ids: Sequence[str], y_true: Sequence[int], score: Sequence[float], fpr: float = 0.01) -> set[str]:
+    ids = np.asarray(ids, dtype=object)
+    y = np.asarray(y_true, dtype=int)
+    s = np.asarray(score, dtype=float)
+    negatives = np.sort(s[y == 0])[::-1]
+    allowed = max(1, int(math.floor(fpr * len(negatives))))
+    threshold = negatives[allowed - 1]
+    return set(ids[(y == 1) & (s > threshold)])
+
+
+def stratified_indices(frame: pd.DataFrame, seed: int = SEED):
+    from sklearn.model_selection import StratifiedKFold
+    strata = frame.language.astype(str) + "_" + frame.label.astype(int).astype(str)
+    return list(StratifiedKFold(n_splits=5, shuffle=True, random_state=seed).split(frame, strata))
+
+
+def paired_bootstrap(frame: pd.DataFrame, left: np.ndarray, right: np.ndarray, replicates: int = BOOTSTRAP_REPLICATES, seed: int = BOOTSTRAP_SEED) -> dict:
+    rng = np.random.default_rng(seed)
+    cells = [g.index.to_numpy() for _, g in frame.groupby(["language", "label"], sort=True)]
+    point_left = low_fpr_metrics(frame.label, left)
+    point_right = low_fpr_metrics(frame.label, right)
+    keys = ("auc", "pauc_01", "tpr_at_0.001_fpr", "tpr_at_0.005_fpr", "tpr_at_0.01_fpr", "tpr_at_0.02_fpr")
+    samples = {key: [] for key in keys}
+    y_all = frame.label.to_numpy(int)
+    for _ in range(replicates):
+        draw = np.concatenate([rng.choice(cell, size=len(cell), replace=True) for cell in cells])
+        lm = low_fpr_metrics(y_all[draw], left[draw])
+        rm = low_fpr_metrics(y_all[draw], right[draw])
+        for key in keys:
+            samples[key].append(lm[key] - rm[key])
+    out = {"replicates": replicates, "seed": seed, "left": point_left, "right": point_right, "delta": {}}
+    for key in keys:
+        values = np.asarray(samples[key], dtype=float)
+        out["delta"][key] = {"point": float(point_left[key] - point_right[key]), "lower_95": float(np.quantile(values, 0.025)), "upper_95": float(np.quantile(values, 0.975))}
+    return out
+
+
+def per_language(frame: pd.DataFrame, score: np.ndarray) -> dict[str, dict[str, float]]:
+    out = {}
+    for language, group in frame.assign(_score=score).groupby("language", sort=True):
+        out[str(language)] = low_fpr_metrics(group.label, group._score)
+    return out
+
+
+def locate_exact(root: Path, filename: str, sha256: str) -> Path:
+    matches = [path for path in root.rglob(filename) if path.is_file() and sha256_file(path) == sha256]
+    if len(matches) != 1:
+        raise RuntimeError(f"exact {filename} resolution failed: {len(matches)} matches")
+    return matches[0]
+
+
+def load_hidden_oof(path: Path) -> pd.DataFrame:
+    if sha256_file(path) != HIDDEN_OOF_SHA256:
+        raise RuntimeError("hidden OOF SHA-256 changed")
+    frame = pd.read_csv(path)
+    required = {"sample_id", "language", "label", MEAN_TOP5, CALLER_TOP5, HELPER_TOP5}
+    if not required.issubset(frame.columns):
+        raise RuntimeError(f"hidden OOF columns changed: missing={sorted(required - set(frame.columns))}")
+    if len(frame) != EXPECTED_HIDDEN_ROWS or frame.sample_id.duplicated().any():
+        raise RuntimeError("hidden OOF coverage changed")
+    frame["label"] = frame.label.astype(int)
+    counts = frame.groupby(["language", "label"]).size().to_dict()
+    expected = {(language, label): 500 for language in LANGUAGES for label in (0, 1)}
+    if counts != expected:
+        raise RuntimeError(f"hidden OOF balance changed: {counts}")
+    return frame.reset_index(drop=True)
+
+
+# Frozen Stage1 plus_length_interactions reproduction.
+def numeric_feature_columns(frame: pd.DataFrame) -> list[str]:
+    return [c for c in frame.select_dtypes(include=[np.number]).columns if c not in EXCLUDED_COLUMNS and not c.startswith("cdf_")]
+
+
+def load_stage1_train(root: Path) -> pd.DataFrame:
+    paths = sorted(root.rglob("train_10k/parts/features.part*.parquet"))
+    if len(paths) != 40:
+        raise RuntimeError(f"expected 40 Stage1 train shards, found {len(paths)}")
+    parts = []
+    for path in paths:
+        part = pd.read_parquet(path)
+        if len(part) != 250:
+            raise RuntimeError(f"unexpected Stage1 shard size {path}: {len(part)}")
+        parts.append(part)
+    frame = pd.concat(parts, ignore_index=True).sort_values("sample_id").reset_index(drop=True)
+    if len(frame) != EXPECTED_STAGE1_ROWS or not frame.sample_id.is_unique:
+        raise RuntimeError("Stage1 train coverage changed")
+    frame["label"] = frame.label.astype(int)
+    counts = frame.groupby(["language", "label"]).size()
+    if len(counts) != 10 or not counts.eq(1000).all():
+        raise RuntimeError("Stage1 language/label balance changed")
+    return frame
+
+
+def add_fold_cdf(reference: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
+    out = target.copy()
+    nonmember = reference[reference.label == 0]
+    for column in CDF_SOURCES:
+        global_values = np.sort(nonmember[column].dropna().to_numpy(float))
+        language_values = {language: np.sort(group[column].dropna().to_numpy(float)) for language, group in nonmember.groupby("language")}
+        values = []
+        for language, value in zip(out.language, out[column]):
+            ref = language_values.get(language, np.array([], dtype=float))
+            if len(ref) < 20:
+                ref = global_values
+            values.append(np.searchsorted(ref, value, side="right") / len(ref))
+        out[f"cdf_{column}"] = values
+    return out
+
+
+def stage1_pipeline(seed: int):
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    return make_pipeline(SimpleImputer(strategy="median"), StandardScaler(), LogisticRegression(C=0.2, max_iter=2000, random_state=seed))
+
+
+def stage1_interaction_oof(frame: pd.DataFrame) -> np.ndarray:
+    all_features = numeric_feature_columns(frame)
+    base = [c for c in all_features if not c.startswith(("ast_", "fim_"))]
+    structure = [c for c in all_features if c.startswith("ast_")]
+    fim = [c for c in all_features if c.startswith("fim_")]
+    if (len(base), len(structure), len(fim), len(all_features)) != (113, 50, 11, 174):
+        raise RuntimeError("Stage1 feature schema changed")
+    sources = [c for c in all_features if c not in {"token_count", "window_count"}]
+    cdf_features = [f"cdf_{c}" for c in CDF_SOURCES]
+    base_features = all_features + cdf_features + ["audit_log_token_count", "audit_log_window_count"]
+    int_names = [f"audit_int_token__{c}" for c in sources] + [f"audit_int_window__{c}" for c in sources]
+    model_features = base_features + int_names
+    labels = frame.label.to_numpy(int)
+    pred = np.full(len(frame), np.nan)
+    seen = np.zeros(len(frame), dtype=int)
+    from sklearn.model_selection import StratifiedKFold
+    strata = frame.language.astype(str) + "_" + frame.label.astype(str)
+    splits = StratifiedKFold(n_splits=5, shuffle=True, random_state=STAGE1_SEED).split(frame, strata)
+    for fold, (fit_idx, hold_idx) in enumerate(splits):
+        fit = add_fold_cdf(frame.iloc[fit_idx], frame.iloc[fit_idx])
+        hold = add_fold_cdf(frame.iloc[fit_idx], frame.iloc[hold_idx])
+        for work in (fit, hold):
+            work["audit_log_token_count"] = np.log1p(work.token_count.to_numpy(float))
+            work["audit_log_window_count"] = np.log1p(work.window_count.to_numpy(float))
+        token_center = float(fit.audit_log_token_count.mean())
+        window_center = float(fit.audit_log_window_count.mean())
+        for work, token_delta, window_delta in ((fit, fit.audit_log_token_count.to_numpy(float) - token_center, fit.audit_log_window_count.to_numpy(float) - window_center), (hold, hold.audit_log_token_count.to_numpy(float) - token_center, hold.audit_log_window_count.to_numpy(float) - window_center)):
+            ints = {f"audit_int_token__{c}": work[c].to_numpy(float) * token_delta for c in sources}
+            ints.update({f"audit_int_window__{c}": work[c].to_numpy(float) * window_delta for c in sources})
+            work[list(ints)] = pd.DataFrame(ints, index=work.index)
+        model = stage1_pipeline(STAGE1_SEED + fold)
+        model.fit(fit[model_features], labels[fit_idx])
+        pred[hold_idx] = model.predict_proba(hold[model_features])[:, 1]
+        seen[hold_idx] += 1
+    if not np.isfinite(pred).all() or not np.all(seen == 1):
+        raise RuntimeError("Stage1 OOF coverage invalid")
+    auc = low_fpr_metrics(labels, pred)["auc"]
+    if abs(auc - 0.68013844) > 0.002:
+        raise RuntimeError(f"Stage1 plus_length_interactions reproduction gate failed: {auc}")
+    return pred
