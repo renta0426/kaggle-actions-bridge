@@ -1,0 +1,273 @@
+name: Poisoned Chalice P1-03 post-5k CPU audit safe repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1-safe-repair.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1-safe-repair.yml
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_PATH: requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json
+  LAUNCHER_PATH: runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py
+  IDENTITY_PATH: scripts/kaggle_exact_identity.py
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+  TARGET: renta0426/poisoned-chalice-p1-03-post-5k-development-audit-v1
+
+jobs:
+  validate:
+    name: Validate safe repair without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Enforce secret-free repair boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: $name"; exit 1; }
+          done
+          source_sha="$EVENT_SHA"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then source_sha="$PR_HEAD_SHA"; fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+
+      - name: Fetch exact frozen bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$SOURCE_SHA" "$WORKDIR" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]
+          root=pathlib.Path(root_value)
+          files={
+            'requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json':65536,
+            'runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py':131072,
+            'scripts/kaggle_exact_identity.py':65536,
+            'requirements/kaggle-2.2.4.lock':65536,
+          }
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for path,maximum in files.items():
+              url=f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}'
+              req=urllib.request.Request(url,headers={'User-Agent':'p1-03-post5k-safe-repair/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(maximum+1)
+              if not data or len(data)>maximum:raise SystemExit(f'bridge source byte budget failed:{path}')
+              out=root/pathlib.Path(path).name
+              out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+
+      - name: Validate unchanged frozen Notebook materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$WORKDIR/p1_03_post_5k_development_audit_v1.py" --static --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+          python3 "$WORKDIR/p1_03_post_5k_development_audit_v1.py" --materialize --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json" --kernel-dir "$WORKDIR/kernel"
+
+      - name: Verify supported locked Kaggle dataset-version API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/venv"
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/kaggle-2.2.4.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip check >/dev/null
+          "$WORKDIR/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          "$WORKDIR/venv/bin/python" - <<'PY'
+          import inspect
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          method=getattr(KaggleApi,'dataset_status',None)
+          assert callable(method), 'kaggle 2.2.4 dataset_status missing'
+          source=inspect.getsource(method)
+          assert 'current_version_number' in source and 'ApiGetDatasetRequest' in source
+          print('P1_03_POST_5K_SAFE_REPAIR_API_GATE PASS kaggle=2.2.4 dataset_status=1 current_version_projection=1 write_calls=0')
+          PY
+
+      - name: Cleanup validation material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+
+  launch:
+    name: Launch approved safe-repaired CPU audit exactly once
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Enforce protected repair boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$EVENT_SHA" == "$WORKFLOW_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/poisoned-chalice-p1-03-post-5k-development-audit-v1-safe-repair.yml@refs/heads/main" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          echo "P1_03_POST_5K_SAFE_REPAIR_BOUNDARY PASS cpu=1 retries=0 submissions=0"
+
+      - name: Fetch frozen bundle and install locked Kaggle client
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          echo "KERNEL_DIR=$workdir/kernel" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$EVENT_SHA" >> "$GITHUB_ENV"
+          python3 - "$EVENT_SHA" "$workdir" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:]
+          root=pathlib.Path(root_value)
+          files={
+            'requests/poisoned-chalice-p1-03-post-5k-development-audit-v1.json':65536,
+            'runners/poisoned_chalice/p1_03_post_5k_development_audit_v1.py':131072,
+            'scripts/kaggle_exact_identity.py':65536,
+            'requirements/kaggle-2.2.4.lock':65536,
+          }
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for path,maximum in files.items():
+              url=f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}'
+              req=urllib.request.Request(url,headers={'User-Agent':'p1-03-post5k-safe-repair-launch/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(maximum+1)
+              if not data or len(data)>maximum:raise SystemExit(f'bridge source byte budget failed:{path}')
+              out=root/pathlib.Path(path).name
+              out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+          python3 -m venv "$workdir/venv"
+          "$workdir/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$workdir/kaggle-2.2.4.lock" >/dev/null
+          "$workdir/venv/bin/python" -m pip check >/dev/null
+          "$workdir/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          "$workdir/venv/bin/python" "$workdir/p1_03_post_5k_development_audit_v1.py" --static --request "$workdir/poisoned-chalice-p1-03-post-5k-development-audit-v1.json"
+          "$workdir/venv/bin/python" "$workdir/p1_03_post_5k_development_audit_v1.py" --materialize --request "$workdir/poisoned-chalice-p1-03-post-5k-development-audit-v1.json" --kernel-dir "$workdir/kernel"
+
+      - name: Live exact-identity preflight with supported dataset API
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" - "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json" <<'PY'
+          import json,re,sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kaggle_exact_identity import exact_metadata, safe_exception, verify_current
+          request=json.load(open(sys.argv[1]))
+          if request['request_id']!='20260910-poisoned-chalice-p1-03-post-5k-development-audit-v1-001':raise SystemExit('request id changed')
+          if request['target']!='renta0426/poisoned-chalice-p1-03-post-5k-development-audit-v1':raise SystemExit('target changed')
+          if request['resource']['accelerator']!='cpu' or request['automatic_compute_retries']!=0 or request['competition_submission'] is not False:raise SystemExit('resource/write contract changed')
+          api=KaggleApi(); api.authenticate()
+          pages=api.competition_list_pages(request['competition']) or []; content={}
+          for page in pages:
+              data=page.to_dict() if hasattr(page,'to_dict') else dict(page)
+              name=str(data.get('name') or '').strip().lower()
+              if name:content[name]=str(data.get('content') or '')
+          if 'rules' not in content or 'evaluation' not in content or not any('data' in name for name in content):raise SystemExit('live competition contract pages unavailable')
+          plain=re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',content['evaluation'].replace(r'\%','%'))).casefold()
+          if not all(token in plain for token in ('auc','novelty','1%','false-positive')):raise SystemExit('live evaluation contract changed')
+          for source in request['inputs']['kernels']:
+              state=verify_current(api,source['ref'],int(source['version']),allow_failed=False,cpu=False)
+              if state!='COMPLETE':raise SystemExit(f"kernel input not complete: {source['ref']} state={state}")
+          dataset_payload=json.loads(api.dataset_status(request['inputs']['dataset']['ref'],format='json(current_version_number)'))
+          observed=dataset_payload.get('current_version_number'); expected=int(request['inputs']['dataset']['version'])
+          if observed is None or int(observed)!=expected:raise SystemExit(f'dataset current version mismatch: observed={observed!r} expected={expected}')
+          try:
+              exact_metadata(api,request['target'])
+          except Exception as exc:
+              info=safe_exception(exc)
+              if info.get('http_status')!=404:raise SystemExit(f"target exact-absence check failed: class={info.get('class')} http={info.get('http_status')}")
+          else:
+              raise SystemExit('approved target already exists; refusing overwrite')
+          recent=(api.kernels_list(user='renta0426',sort_by='dateRun',page_size=25) or [])[:25]
+          active=0; unknown=0
+          for item in recent:
+              ref=str(getattr(item,'ref','') or '')
+              if not ref:continue
+              try:status=str(getattr(api.kernels_status(ref),'status','')).upper()
+              except Exception:unknown+=1;continue
+              if any(token in status for token in ('RUNNING','QUEUED','PENDING')):active+=1
+          if unknown:raise SystemExit(f'conservative admission refused: unknown_statuses={unknown}')
+          if active>=int(request['resource']['max_active_runs']):raise SystemExit(f"concurrency admission refused: active={active} max_active={request['resource']['max_active_runs']}")
+          print(f'P1_03_POST_5K_SAFE_REPAIR_PREFLIGHT PASS cpu=1 active={active} kernel_inputs=2 dataset_version={observed} target_absent=1 write_calls=0')
+          PY
+
+      - name: One-shot SaveKernel
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          "$WORKDIR/venv/bin/python" "$WORKDIR/p1_03_post_5k_development_audit_v1.py" --execute --request "$WORKDIR/poisoned-chalice-p1-03-post-5k-development-audit-v1.json" --kernel-dir "$KERNEL_DIR" --kaggle-bin "$WORKDIR/venv/bin/kaggle"
+
+      - name: Verify exact target version after the single write
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" - <<'PY'
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kaggle_exact_identity import exact_metadata_eventually
+          api=KaggleApi(); api.authenticate(); target='renta0426/poisoned-chalice-p1-03-post-5k-development-audit-v1'
+          meta=exact_metadata_eventually(api,target,attempts=6,delay_seconds=2.0)
+          if getattr(meta,'ref',None)!=target:raise SystemExit('post-write target ref mismatch')
+          if getattr(meta,'is_private',None) is not True:raise SystemExit('post-write target is not private')
+          if int(getattr(meta,'current_version_number',0))!=1:raise SystemExit('post-write version is not exactly 1')
+          if getattr(meta,'enable_gpu',None) is not False or getattr(meta,'enable_tpu',None) is not False:raise SystemExit('post-write accelerator contract mismatch')
+          if getattr(meta,'enable_internet',None) is not True:raise SystemExit('post-write internet contract mismatch')
+          print('P1_03_POST_5K_SAFE_REPAIR_POSTWRITE PASS target=exact version=1 cpu=1 private=1')
+          PY
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+          echo "P1_03_POST_5K_SAFE_REPAIR_CLEANUP PASS retention_days=0"
