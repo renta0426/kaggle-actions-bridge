@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "request_id": "20260910-cmi-flu-strategy-e12a-final-reproduction-001",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_run_and_current_output_read",
+  "target": "renta0426/cmi-flu-e12a-final-reproduction-20260910-001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "f227694aee240a05de1b4e318a8c17acc2db5651",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_e12a_blob_sha": "84c9368d520b2b7f88f189d9d9a92a3306e54b0e",
+  "strategy_e01_blob_sha": "dd27aea0cf97d41bad3cec64819c4c4269d94cbd",
+  "strategy_e01_v2_blob_sha": "8cc64dc5ab9483d5957cfada18d445188566c56c",
+  "config_blob_sha": "170d3211e2795c0730e481056c7bb068accf97c9",
+  "expected_kernel_version": 1,
+  "enable_internet": false,
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 60,
+    "max_active_runs": 1
+  },
+  "api_budget": {
+    "max_calls": 60,
+    "poll_interval_seconds": 120,
+    "max_polls": 35,
+    "max_pages": 2
+  },
+  "experiment_contract": {
+    "experiment": "strategy_v2_e12a_final_system_reproduction",
+    "comparison_contract": "paired_subject_purged_v2",
+    "reproduction_absolute_tolerance": 0.000002,
+    "e11_task11_candidates_carried": [],
+    "portfolio_task_count": 7,
+    "new_model_selection_allowed": false,
+    "task14_supervised_cv_available": false,
+    "public_probe_authorized": false,
+    "competition_submission_authorized": false,
+    "if_pass": "proceed_to_E12b_challenge_prediction_freeze",
+    "if_fail": "investigate_reproduction_contract_no_model_selection"
+  },
+  "summary_contract": {
+    "experiment_heading": "# CMI-Flu Strategy-v2 E12a final-system reproduction audit",
+    "must_not_contain_none_placeholder": true,
+    "must_match_metrics": true
+  },
+  "allowed_output_paths": ["bridge-result.json", "metrics.json", "summary.md"],
+  "automatic_compute_retries": 0,
+  "competition_submission_attempted": false,
+  "leaderboard_used_for_selection": false,
+  "publish_only_sanitized_aggregate": true
+}
