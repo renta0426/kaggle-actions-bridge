@@ -192,12 +192,28 @@ def main() -> int:
     return {"version":found,"wheel_sha256":TABPFN_WHEEL_SHA256,"wheel_bytes":TABPFN_WHEEL_BYTES,"site":str(site),"transport":"pypi_exact_hash_verified"}
 '''
     runtime = replace_function(runtime, "install_tabpfn_wheel", installer)
+
+    selftest = r'''def self_test() -> int:
+    package=package_bytes()
+    for source,expected,label in ((E11B_SOURCE,E11B_BLOB,"e11b"),(E11B_SYNTH_SOURCE,E11B_SYNTH_BLOB,"e11b_synthetic")):
+        if git_blob_sha(source.encode("utf-8"))!=expected: raise BridgeContractError(f"{label}_blob_mismatch")
+        compile(source,f"cmi_flu/{label}.py","exec")
+    if TABPFN_WHEEL_B64!="": raise BridgeContractError("e11b_embedded_wheel_present")
+    if TABPFN_WHEEL_FILENAME!="tabpfn-8.5.0-py3-none-any.whl": raise BridgeContractError("e11b_wheel_filename_selftest")
+    if int(TABPFN_WHEEL_BYTES)!=771167: raise BridgeContractError("e11b_wheel_bytes_selftest")
+    if TABPFN_WHEEL_SHA256!="4c076a019cfa5520e9c41405cecda845bdd09d909ede4a60c43839bbc83bf7a0": raise BridgeContractError("e11b_wheel_sha_selftest")
+    if not callable(install_tabpfn_wheel): raise BridgeContractError("e11b_installer_selftest")
+    if "result['tasks']" in globals().get("__loader_source__",""): raise BridgeContractError("e11b_writer_legacy")
+    print(f"CMI_FLU_E11B_RUNTIME_SELF_TEST PASS request_id={REQUEST_ID} package_bytes={len(package)} science_commit={SCIENCE_COMMIT} e11b_blob={E11B_BLOB} wheel_bytes={TABPFN_WHEEL_BYTES} wheel_transport=pypi_exact_hash_verified")
+    return 0
+'''
+    runtime = replace_function(runtime, "self_test", selftest)
+
     compile(runtime, "generated_e11b_004_runtime.py", "exec")
     raw = runtime.encode("utf-8")
     if len(raw) >= MAX_RUNTIME_BYTES:
         raise SystemExit(f"E11b 004 runtime remains too large:{len(raw)}")
     if encoded[:128] in runtime or len(encoded) < 1_000_000:
-        # The exact old base64 payload must be gone; its size is expected to exceed one million chars.
         raise SystemExit("E11b 004 embedded wheel payload removal failed")
     if 'TABPFN_WHEEL_B64 = ""' not in runtime or 'pip","download"' not in runtime:
         raise SystemExit("E11b 004 online wheel installer anchors missing")
