@@ -464,7 +464,7 @@ def build_runtime(root: Path, output: Path, source: str) -> str:
         f'SCIENCE_COMMIT = "{SCIENCE_COMMIT}"',
         f'E12A_V2_BLOB = "{E12A_V2_BLOB}"',
         '"Task1.3": "strict_asc_anchor"',
-        '"incumbent": "b21_pls_1"',
+        'TASK13_E01_CONTROL_INCUMBENT = "b21_pls_1"',
         '"final_portfolio_member": False',
         "def terminal_success_line(",
         "CMI_FLU_E12A_V2_COMPLETE",
