@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "request_id": "20260911-cmi-flu-strategy-v3-batch1-001",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-batch1-audit-diagnostics-20260911-001",
+  "title": "CMI Flu Strategy V3 Batch1 Audit Diagnostics 20260911 001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "270cd6fc5e33579add8177303505e5f744ee5dbc",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_v3_batch1_blob_sha": "cedd8e2538a06c8b696e74631f0bb2fce427984b",
+  "source_B": {
+    "source_kernel": "renta0426/cmi-flu-e12c-manual-submission-20260911-002",
+    "expected_current_version": 1,
+    "expected_terminal_state": "COMPLETE",
+    "source_filename": "submission.csv",
+    "bytes": 5926,
+    "sha256": "0f9df53c3aa8c6e4ac693f6a42dbd2633b4b61d1462df798a9bd767c220be3a5"
+  },
+  "forbidden_source_C": {
+    "bytes": 5933,
+    "sha256": "983aaf097d04477c4ccf7bf817fdf66e552937e69bceaa48cfb260cb84413f1b"
+  },
+  "diagnostic_contract": {
+    "tasks": ["Task1.1", "Task1.2", "Task1.3", "Task1.4", "Task2.1", "Task2.2"],
+    "diagnostic_not_final": true,
+    "other_task_value": -99,
+    "preserve_participant_order": true,
+    "preserve_target_numeric_tokens": true,
+    "generate_all_before_scoring": true,
+    "competition_submission_allowed": false
+  },
+  "audit_contract": {
+    "model_fit_allowed": false,
+    "refit_allowed": false,
+    "hpo_allowed": false,
+    "row_level_public_artifacts_allowed": false,
+    "aggregate_only_recovery": true
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 20,
+    "hard_timeout_minutes": 45
+  },
+  "allowed_output_paths": [
+    "v3_public_singleton_Task1_1.csv",
+    "v3_public_singleton_Task1_2.csv",
+    "v3_public_singleton_Task1_3.csv",
+    "v3_public_singleton_Task1_4.csv",
+    "v3_public_singleton_Task2_1.csv",
+    "v3_public_singleton_Task2_2.csv",
+    "teacher_ledger.json",
+    "measurement_contracts.json",
+    "split_support.json",
+    "auxiliary_label_coverage.json",
+    "source_alignment_audit.json",
+    "diagnostic_manifest.json",
+    "runtime_receipt.json"
+  ],
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version",
+    "generate exactly six private singleton diagnostic CSVs from exact source B",
+    "persist aggregate-safe V3-01 audit records and diagnostic hashes"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true,
+  "leaderboard_used_for_selection": false,
+  "public_artifact_upload": false
+}
