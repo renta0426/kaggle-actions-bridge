@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-poisoned-chalice-p1-02-start-boundary-readonly-recovery-v2-001",
+  "predecessor_request_id": "20260908-poisoned-chalice-p1-02-start-boundary-readonly-recovery-v1-001",
+  "predecessor_run_id": 34240887808,
+  "original_request_id": "20260906-poisoned-chalice-shadow-gold-start-boundary-attribution-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_current_completed_recovery_read",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "target": "renta0426/shadow-gold-start-boundary-attribution-v1",
+  "expected_kernel_version": 1,
+  "research_commit": "6b6f388627dfcf16ab0140337cabe7e93f4a8891",
+  "original_launcher_blob_sha": "16cf5028a6d09f2aed4c590b69c42c248365a265",
+  "expected_execution_id": "shadow-gold-start-boundary-attribution-v1",
+  "expected_output_names": [
+    "start_boundary_decision.json",
+    "start_boundary_metrics.json",
+    "start_boundary_predictions.jsonl",
+    "start_boundary_runtime_manifest.json"
+  ],
+  "expected_prediction_rows": 2560,
+  "new_write_attempted": false,
+  "new_compute_requested": false,
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "bounded_read_reconciliation": {
+    "exact_get_kernel_attempts": 6,
+    "kernel_status_attempts": 6,
+    "delay_seconds": 2.0,
+    "retry_http_statuses": [403, 404]
+  },
+  "read_verbs": ["kernels pull", "kernels output", "exact GetKernel", "kernels status"],
+  "failure_repair_scope": "read-only visibility/authorization diagnosis after predecessor HTTP 403; no scientific or execution-target change",
+  "fail_closed": {
+    "require_current_version_exactly_1": true,
+    "require_original_notebook_source_identity": true,
+    "require_scientific_outputs_complete": true,
+    "require_frozen_clean_room_guards": true,
+    "refuse_any_write_or_compute_retry": true,
+    "refuse_target_or_version_substitution": true
+  }
+}
