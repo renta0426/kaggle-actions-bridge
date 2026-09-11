@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4-001",
+  "predecessor_request_id": "20260912-poisoned-chalice-p1-02-start-boundary-canonical-slug-recovery-v3-001",
+  "predecessor_run_id": 34623427221,
+  "predecessor_error_sha256": "6b512e031236ce5c4f6a4917f0927ceea5b40adee4b2e058d89e7454cc8d5182",
+  "operation": "kernel_current_completed_recovery_read",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "historical_declared_target": "renta0426/shadow-gold-start-boundary-attribution-v1",
+  "canonical_target": "renta0426/gold-start-boundary-attribution-v1",
+  "expected_kernel_version": 1,
+  "expected_title": "Gold start-boundary attribution v1",
+  "research_commit": "6b6f388627dfcf16ab0140337cabe7e93f4a8891",
+  "expected_prediction_rows": 2560,
+  "expected_output_names": [
+    "start_boundary_decision.json",
+    "start_boundary_metrics.json",
+    "start_boundary_predictions.jsonl",
+    "start_boundary_runtime_manifest.json"
+  ],
+  "repair_scope": "validator_only_json_object_key_order_is_not_scientific_order",
+  "observed_v3_failure_category": "condition_order_contract:left",
+  "validator_repair": "require_exact_condition_key_set_and_validate_values_in_frozen_semantic_order",
+  "scientific_thresholds_changed": false,
+  "scientific_conditions_changed": false,
+  "new_write_attempted": false,
+  "new_compute_requested": false,
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "environment": "kaggle-readonry",
+  "fail_closed": {
+    "require_canonical_target_exactly": true,
+    "require_current_version_exactly_1": true,
+    "require_original_notebook_source_identity": true,
+    "require_exact_output_set": true,
+    "require_frozen_scientific_guards": true,
+    "refuse_any_write_or_compute_retry": true,
+    "refuse_target_or_version_substitution": true
+  }
+}
