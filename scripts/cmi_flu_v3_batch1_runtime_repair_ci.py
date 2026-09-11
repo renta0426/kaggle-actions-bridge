@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -13,6 +14,7 @@ REQUEST = "requests/cmi-flu-v3-batch1-runtime-repair-002.json"
 PREPARE = "scripts/cmi_flu_v3_batch1_runtime_repair_prepare.py"
 EXECUTOR = "scripts/cmi_flu_v3_batch1_runtime_repair_execute.py"
 SANITIZER = "scripts/cmi_flu_v3_batch1_sanitize.py"
+STUB_DIR = "scripts/v3_runtime_smoke_stubs"
 V3_PAYLOAD = "payloads/cmi-flu-v3-batch1-001/strategy_v3_batch1.py"
 V3_BLOB = "cedd8e2538a06c8b696e74631f0bb2fce427984b"
 DEPENDENCIES = {
@@ -46,8 +48,10 @@ def main() -> int:
         found = git_blob((root / rel).read_bytes())
         if found != expected:
             raise SystemExit(f"V3 runtime-repair dependency relay mismatch:{rel}:{found}")
+    if not (root / STUB_DIR / "sitecustomize.py").is_file():
+        raise SystemExit("V3 runtime-repair CI external stub bootstrap missing")
 
-    for rel in (PREPARE, EXECUTOR, SANITIZER):
+    for rel in (PREPARE, EXECUTOR, SANITIZER, f"{STUB_DIR}/sitecustomize.py"):
         subprocess.run([sys.executable, "-W", "error::SyntaxWarning", "-m", "py_compile", str(root / rel)], check=True)
 
     request = json.loads((root / REQUEST).read_text(encoding="utf-8"))
@@ -75,7 +79,10 @@ def main() -> int:
 
     runtime = work / "runtime.py"
     subprocess.run([sys.executable, str(root / PREPARE), "--repository-root", str(root), "--output", str(runtime)], check=True)
-    subprocess.run([sys.executable, str(runtime), "--self-test"], check=True)
+    smoke_env = dict(os.environ)
+    stub_path = str((root / STUB_DIR).resolve())
+    smoke_env["PYTHONPATH"] = stub_path + (os.pathsep + smoke_env["PYTHONPATH"] if smoke_env.get("PYTHONPATH") else "")
+    subprocess.run([sys.executable, str(runtime), "--self-test"], check=True, env=smoke_env)
     text = runtime.read_text(encoding="utf-8")
     for token in (
         REQUEST_ID, TARGET, V3_BLOB, SOURCE_B_SHA,
@@ -93,8 +100,8 @@ def main() -> int:
 
     print(
         "CMI_FLU_V3_BATCH1_RUNTIME_REPAIR_CI PASS exact_science=true exact_dependencies=3 "
-        "dependency_import_smoke=true parent_failure_proven=true fresh_target=true auth=false write=false "
-        "compute=false model_fit=false competition_submit=false"
+        "dependency_import_smoke=true external_science_libs_stubbed=true parent_failure_proven=true fresh_target=true "
+        "auth=false write=false compute=false model_fit=false competition_submit=false"
     )
     return 0
 
