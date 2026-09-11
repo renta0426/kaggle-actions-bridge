@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "request_id": "20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2",
+  "parent_request_id": "20260911-poisoned-chalice-p1-03-fresh-5k-confirmation-003",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "save_kernel_once",
+  "target": "renta0426/poisoned-chalice-p1-03-fresh-5k-confirm-003",
+  "title": "Poisoned Chalice P1-03 Fresh 5K Confirm 003",
+  "expected_current_version_before_write": 1,
+  "expected_version_after_write": 2,
+  "science_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "science_commit": "99831efad540c49737dc02cce3d5d76bbacbf687",
+  "science_files": {
+    "scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v1.py": "cccf255a13ecbfa25e32cb2fda8cdbd578cae073",
+    "scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v2.py": "c487708510e97f652687859a26522d0c18799ca5",
+    "docs/P1_03_FRESH_5K_CONFIRMATION_HF_LOADER_REPAIR_20260911.md": "46b5ae6e26b6e8f8617c742f440b24b5b740e5ce"
+  },
+  "frozen_v1_notebook_sha256": "4236585b0dbc1ea54309a91cbc72bfd226467b2209c34cb428cfdd7328c09daa",
+  "repaired_v2_notebook_sha256": "b639ddb944d0b88ded392c053c183725aaaec09127bb15d1264e3d09ef83d43e",
+  "notebook_serializer": "nbformat==5.11.1",
+  "historical_payload_bridge_commit": "708ed2026c18556c745e020e2b59046c2c46e764",
+  "inputs": {
+    "fresh_hidden_cache": {
+      "ref": "renta0426/poisoned-chalice-lumia-fresh-cache-5000-v1",
+      "version": 1,
+      "cache_manifest_sha256": "f2b9c6048f1496b5f0c96a369d9773754f13ebace14aacfce8c0ecec92ba4481",
+      "cohort_set_sha256": "8fd03b98b46ffd9b7ef9a69ea58eaaeb6e0307cdafecf9d1c35a1562bbeaad27",
+      "rows": 5000,
+      "status": "complete"
+    },
+    "stage1_features": {
+      "ref": "renta0426/stage1-raw-fim-submission-v1-output",
+      "version": 1,
+      "train_rows": 10000,
+      "train_shards": 40
+    }
+  },
+  "canonical_public_train": {
+    "dataset_id": "Poisoned-Chalice/ICSE-2027-public",
+    "revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "sha256": {
+      "Go": "bad55f40d02de12085d65a698fce51a19735e71873519230b8ffff32dac978b8",
+      "Java": "2c84d0bc243ea72239df62a9a145de1f11fbfc8ca571878b7f95bef84bdb1cde",
+      "Python": "77da06d94b21d4db8d7f199df8e5bac35eeda591c4120eff77c58db0a3a4f129",
+      "Ruby": "807f60d3a5480ada232cf90d4c2caf1d28bcba7d6858cabfd6fbba8f712a6bb0",
+      "Rust": "c0a21a8fa29bce7c9a79f8e5c687814d07f631311424868ed94cd0289a364849"
+    }
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 100,
+    "hard_timeout_minutes": 180,
+    "max_active_runs": 1,
+    "min_remaining_quota_hours": 3.0
+  },
+  "api_budget": {
+    "max_calls": 80
+  },
+  "side_effects": [
+    "create exactly one new private notebook version 2 under the existing approved target"
+  ],
+  "persistent_outputs": [
+    "p1_03_fresh_5k_confirmation_v1/confirmation_decision.json",
+    "p1_03_fresh_5k_confirmation_v1/content_control_confirmation.json",
+    "p1_03_fresh_5k_confirmation_v1/content_control_scores.parquet",
+    "p1_03_fresh_5k_confirmation_v1/fusion_confirmation.json",
+    "p1_03_fresh_5k_confirmation_v1/fusion_scores.parquet",
+    "p1_03_fresh_5k_confirmation_v1/hidden_decision.json",
+    "p1_03_fresh_5k_confirmation_v1/hidden_fold_selection.json",
+    "p1_03_fresh_5k_confirmation_v1/hidden_metrics.json",
+    "p1_03_fresh_5k_confirmation_v1/hidden_oof_predictions.csv",
+    "p1_03_fresh_5k_confirmation_v1/hidden_run_manifest.json",
+    "p1_03_fresh_5k_confirmation_v1/portable_scalar_confirmation.json",
+    "p1_03_fresh_5k_confirmation_v1/portable_scalar_scores.parquet",
+    "p1_03_fresh_5k_confirmation_v1/portable_scalar_table.parquet",
+    "p1_03_fresh_5k_confirmation_v1/run_manifest.json",
+    "p1_03_fresh_5k_confirmation_v1/static_feature_table.parquet"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "select_as_final": false,
+  "clean_room": {
+    "fresh_for_hidden_probe_fusion_and_portable_scalar": true,
+    "unseen_by_stage1_branch": false,
+    "validation_rows_used": false,
+    "public_lb_feedback_used": false,
+    "new_target_model_forward": false,
+    "competition_submission": false,
+    "no_formula_added_after_fresh_result": true
+  },
+  "scientific_contract": {
+    "hidden_anchor": "same frozen nested 5-fold StarCoder2-3B probe/top5 procedure",
+    "fusion_hidden_rank_weights": [0.75, 0.5],
+    "fusion_formula_count": 2,
+    "learned_two_score_stack": false,
+    "content_controls": [
+      "C0 static lexical/layout/language logistic C=0.2",
+      "C1 hashed char 3-5 plus token 1-2 liblinear C=1",
+      "token 5gram SimHash64 Hamming<=6 StratifiedGroupKFold diagnostic"
+    ],
+    "portable_primary": "mean pooling 96-feature scalar",
+    "caller_helper_portable": "ablation only",
+    "fusion_promotion_all_required": {
+      "tpr_at_0.01_fpr_delta_min": 0.01,
+      "paired_bootstrap_tpr_delta_lower_95_min": 0.0,
+      "auc_delta_min": -0.005
+    }
+  },
+  "runtime_repair": {
+    "kind": "replace_remote_dataset_split_inference_with_exact_pinned_parquet_transport",
+    "failed_target_version": 1,
+    "required_failed_status_before_write": "ERROR",
+    "previous_launch_workflow_run": 34552122021,
+    "previous_launch_job": 103117069577,
+    "previous_write_observed": true,
+    "previous_compute_started": true,
+    "previous_result_valid": false,
+    "fresh_membership_metrics_opened": false,
+    "uploaded_log_sha256": "a4f0a3c0207cefa0389c8d494b2d28360c758fc0c6e42e060e91732b0d094436",
+    "uploaded_log_bytes": 25369,
+    "failure_class": "ValueError",
+    "failure_message": "Couldn't infer the same data file format for all splits. Got {'train': (None, {}), 'validation': ('parquet', {})}",
+    "failed_library": "datasets==4.6.1",
+    "failed_operation": "load_dataset(DATASET_ID, language, split=train, revision=DATASET_REVISION)",
+    "repair_transport": "hf_hub_download exact train Parquet paths at pinned revision plus canonical SHA-256 verification",
+    "content_loader_transport": "read the same verified local Parquets",
+    "science_formulas_changed": false,
+    "cohort_changed": false,
+    "labels_changed": false,
+    "clean_room_changed": false,
+    "automatic_retry": false
+  }
+}
