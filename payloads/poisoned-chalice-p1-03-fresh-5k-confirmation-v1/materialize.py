@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -73,11 +74,26 @@ def raw_get(commit: str, path: str, maximum: int = 512_000) -> bytes:
     return data
 
 
+def public_bridge_blob_get(blob_sha: str, maximum: int = 512_000) -> bytes:
+    url = f"https://api.github.com/repos/renta0426/kaggle-actions-bridge/git/blobs/{blob_sha}"
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "p1-03-fresh-confirm-blob/1"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        raw = response.read(maximum * 2 + 4096)
+    payload = json.loads(raw.decode("utf-8"))
+    if payload.get("sha") != blob_sha or payload.get("encoding") != "base64":
+        raise RuntimeError(f"public bridge blob response identity changed: {blob_sha}")
+    data = base64.b64decode(str(payload.get("content") or ""), validate=False)
+    if not data or len(data) > maximum:
+        raise RuntimeError(f"public bridge blob byte budget failed: {blob_sha}")
+    return data
+
+
 def exact_payload_source(payload_dir: Path, filename: str, expected_blob: str) -> bytes:
     path = payload_dir / filename
-    if not path.is_file():
-        raise RuntimeError(f"exact science source missing from payload: {filename}")
-    data = path.read_bytes()
+    data = path.read_bytes() if path.is_file() else public_bridge_blob_get(expected_blob)
     observed = git_blob_sha(data)
     if observed != expected_blob:
         raise RuntimeError(f"exact science source blob mismatch for {filename}: {observed}")
