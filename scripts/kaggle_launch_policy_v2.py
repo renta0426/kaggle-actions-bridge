@@ -2,9 +2,9 @@
 """Credential-free policy checks for new/modified Kaggle launch workflows.
 
 Policy v2 deliberately does not decide whether Kaggle has free CPU/GPU/TPU
-capacity.  Kaggle is the authority for platform capacity and quota.  This
-module prevents bridge-local capacity admission from creeping back into new
-or materially modified launch workflows.
+capacity. Kaggle is the authority for platform capacity and quota. This module
+prevents bridge-local capacity admission and brittle experiment->global-policy
+reverse dependencies from creeping back into changed workflows.
 
 The checker has no network dependency and performs no Kaggle operation.
 """
@@ -43,7 +43,7 @@ DEPRECATED_CAPACITY_FIELDS = frozenset(
     }
 )
 
-# These markers are intentionally narrow.  The goal is to reject launch
+# These markers are intentionally narrow. The goal is to reject launch
 # *admission* gates, not read-only diagnostics or exact target reconciliation.
 FORBIDDEN_CAPACITY_WORKFLOW_MARKERS = (
     "GPU admission unknown",
@@ -55,6 +55,15 @@ FORBIDDEN_CAPACITY_WORKFLOW_MARKERS = (
     "TPU concurrency refused",
     "min_remaining_quota_hours",
     "max_active_runs",
+)
+
+# Experiment-specific validators must not assert literal wording from the
+# repository-wide README. Global policy is validated by the policy workflow;
+# reverse-depending on prose caused unrelated policy edits to break old CI.
+FORBIDDEN_GLOBAL_POLICY_COUPLING_MARKERS = (
+    'read("README.md"',
+    "read('README.md'",
+    "README resource policy marker missing",
 )
 
 KAGGLE_WRITE_MARKERS = (
@@ -76,7 +85,7 @@ class PolicyError(RuntimeError):
 def _load_json(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # fixed local failure only
+    except Exception as exc:
         raise PolicyError(f"invalid_json:{path}") from exc
     if not isinstance(value, dict):
         raise PolicyError(f"request_not_object:{path}")
@@ -87,8 +96,6 @@ def _operation_is_resource_write(request: dict) -> bool:
     op = str(request.get("operation") or "").strip().lower()
     if op in RESOURCE_REQUEST_OPERATIONS:
         return True
-    # Historical manifests use several operation spellings.  Treat an explicit
-    # side effect plus a resource stanza as a launch/write request.
     side_effects = request.get("side_effects")
     return isinstance(request.get("resource"), dict) and isinstance(side_effects, list) and bool(side_effects)
 
@@ -116,7 +123,7 @@ def validate_request(path: Path, *, require_v2: bool) -> None:
         accelerator = resource.get("accelerator")
         if accelerator is not None and str(accelerator).lower() not in {"cpu", "gpu", "tpu", "none"}:
             raise PolicyError(f"invalid_accelerator:{path}")
-        # One-shot remains an idempotency/security rule, not a capacity rule.
+        # One-shot is an idempotency/security rule, not a capacity rule.
         retries = request.get("automatic_compute_retries", 0)
         if retries != 0:
             raise PolicyError(f"automatic_compute_retry_forbidden:{path}")
@@ -136,14 +143,18 @@ def validate_workflow(path: Path) -> None:
     if problems:
         raise PolicyError(f"bridge_capacity_gate_forbidden:{path}:{'|'.join(problems)}")
 
-    # A hard quota gate nearly always uses quota_view() together with a refusal.
-    # We allow observation-only quota reads, but reject obvious blocking forms.
+    coupling = [marker for marker in FORBIDDEN_GLOBAL_POLICY_COUPLING_MARKERS if marker.lower() in text.lower()]
+    if coupling and path.name != "01-kaggle-launch-policy-v2.yml":
+        raise PolicyError(f"global_policy_reverse_dependency_forbidden:{path}:{'|'.join(coupling)}")
+
     lowered = text.lower()
+    # Observation-only quota reads are not categorically banned. Obvious
+    # refusal forms are, because they make bridge capacity a launch gate.
     if "quota_view(" in lowered and any(token in lowered for token in ("quota refused", "quota unavailable", "remaining<", "remaining <")):
         raise PolicyError(f"blocking_quota_gate_forbidden:{path}")
 
-    # Active-session enumeration may be used for diagnostics.  It must not be
-    # coupled to launch admission under policy v2.
+    # Active-session enumeration may be diagnostic; coupling it to launch
+    # admission is forbidden under v2.
     if "kernels_list(" in lowered and "admission" in lowered and "active" in lowered:
         raise PolicyError(f"active_session_admission_forbidden:{path}")
 
@@ -182,9 +193,9 @@ def validate_changed(base: Path, head: Path) -> list[str]:
     for rel, is_new in changed_paths(base, head):
         path = head / rel
         if rel.startswith("requests/") and rel.endswith(".json"):
-            # New resource-write requests must opt into v2.  Modified legacy
-            # requests are not required to add the marker immediately, but they
-            # may not retain/reintroduce bridge-local capacity fields.
+            # New resource-write requests must opt into v2. Modified legacy
+            # requests need not add the marker immediately, but may not retain
+            # or reintroduce bridge-local capacity fields.
             validate_request(path, require_v2=is_new)
             checked.append(rel)
         elif rel.startswith(".github/workflows/") and rel.endswith((".yml", ".yaml")):
