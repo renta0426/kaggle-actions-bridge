@@ -1,0 +1,340 @@
+name: Poisoned Chalice P1-03 fresh confirm-003 v2 admission repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair.yml
+      - requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair.json
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair.yml
+      - requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair.json
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET: renta0426/poisoned-chalice-p1-03-fresh-5k-confirm-003
+  TITLE: Poisoned Chalice P1-03 Fresh 5K Confirm 003
+  HISTORICAL_CONFIRM_COMMIT: 708ed2026c18556c745e020e2b59046c2c46e764
+  V2_NOTEBOOK_SHA256: b639ddb944d0b88ded392c053c183725aaaec09127bb15d1264e3d09ef83d43e
+
+jobs:
+  validate:
+    name: Validate admission-only successor without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce secret-free boundary and fetch exact bundle
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:$name"; exit 1; }
+          done
+          source_sha="$EVENT_SHA"; [[ "$EVENT_NAME" != "pull_request" ]] || source_sha="$PR_HEAD_SHA"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"; echo "WORKDIR=$workdir" >> "$GITHUB_ENV"; echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          mkdir -p "$workdir/payload"
+          python3 - "$source_sha" "$HISTORICAL_CONFIRM_COMMIT" "$workdir" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          current_sha,historical_sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value)
+          items=[
+            (current_sha,'requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair.json',root/'request.json'),
+            (current_sha,'requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2.json',root/'parent.json'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2/materialize_v2.py',root/'materialize_v2.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/materialize.py',root/'payload/materialize_v1.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/fresh_audit.py',root/'payload/fresh_audit.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/builder.py',root/'payload/builder.py'),
+          ]
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for sha,path,out in items:
+              req=urllib.request.Request(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}',headers={'User-Agent':'p1-03-admission-repair-pr/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(512001)
+              if not data or len(data)>512000:raise SystemExit(f'source byte budget failed:{path}')
+              out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+
+      - name: Validate successor provenance and unchanged science/resource guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$WORKDIR/request.json" "$WORKDIR/parent.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1])); p=json.load(open(sys.argv[2]))
+          assert r['request_id']=='20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair'
+          assert r['parent_request_id']==p['request_id']=='20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2'
+          for key in ('competition','operation','target','title','expected_current_version_before_write','expected_version_after_write','science_repository','science_commit','science_files','frozen_v1_notebook_sha256','repaired_v2_notebook_sha256','notebook_serializer','historical_payload_bridge_commit','inputs','canonical_public_train','resource','side_effects','persistent_outputs','automatic_compute_retries','enable_internet','competition_submission','select_as_final','clean_room','scientific_contract','runtime_repair'):
+              assert r[key]==p[key], key
+          assert r['resource']['max_active_runs']==1 and r['resource']['min_remaining_quota_hours']==3.0
+          assert r['automatic_compute_retries']==0 and r['competition_submission'] is False
+          incident=r['parent_operational_incident']
+          assert incident['actions_run_id']==34554141826 and incident['actions_job_id']==103123118433
+          assert incident['failure_class']=='gpu_admission_unknown_prewrite' and incident['exact_failure']=='GPU admission unknown=3'
+          assert incident['observed_unknown_active_refs']==3
+          assert incident['savekernel_attempted'] is False and incident['kaggle_write_observed'] is False and incident['new_compute_started'] is False
+          assert incident['target_current_version_after_failure']==1 and incident['target_state_after_failure']=='ERROR'
+          assert incident['contextual_concurrent_cpu_actions_run_id']==34553673283 and incident['contextual_concurrent_cpu_actions_job_id']==103121695346
+          repair=r['admission_repair']
+          assert repair['manual_successor'] is True and repair['automatic_retry'] is False
+          assert repair['science_changed'] is False and repair['notebook_changed'] is False and repair['resource_guard_changed'] is False
+          assert repair['metadata_resolution']=='bounded read-only exact_metadata_eventually for active refs'
+          assert repair['metadata_attempts_per_active_ref']==4 and repair['metadata_delay_seconds']==1.0
+          assert repair['unresolved_active_ref_policy']=='fail_closed'
+          print('P1_03_ADMISSION_REPAIR_REQUEST PASS write_calls=0 science_changed=0 max_active_runs=1')
+          PY
+
+      - name: Materialize exact unchanged science v2 Notebook
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/serializer-venv"
+          "$WORKDIR/serializer-venv/bin/python" -m pip install --disable-pip-version-check --no-input nbformat==5.11.1 >/dev/null
+          "$WORKDIR/serializer-venv/bin/python" "$WORKDIR/materialize_v2.py" --payload-dir "$WORKDIR/payload" --kernel-dir "$WORKDIR/kernel"
+          python3 - "$WORKDIR/request.json" "$WORKDIR/kernel" <<'PY'
+          import hashlib,json,pathlib,re,sys
+          r=json.load(open(sys.argv[1])); root=pathlib.Path(sys.argv[2]); mp=root/'kernel-metadata.json'; meta=json.loads(mp.read_text()); nb=root/meta['code_file']
+          sha=hashlib.sha256(nb.read_bytes()).hexdigest(); assert sha==r['repaired_v2_notebook_sha256']
+          before=dict(meta); meta['id']=r['target']; meta['title']=r['title']; assert {k for k in before if before[k]!=meta[k]}=={'id','title'}
+          slug=re.sub(r'-+','-',re.sub(r'[^a-z0-9]+','-',r['title'].lower())).strip('-'); assert slug==r['target'].split('/',1)[1]
+          mp.write_text(json.dumps(meta,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          assert hashlib.sha256(nb.read_bytes()).hexdigest()==sha
+          print('P1_03_ADMISSION_REPAIR_MATERIALIZE PASS notebook_sha256='+sha+' write_calls=0')
+          PY
+
+      - name: Cleanup validation material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+
+  launch:
+    name: Launch approved v2 after bounded GPU admission exactly once
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce protected boundary and fetch exact successor bundle
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$EVENT_SHA" == "$WORKFLOW_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair.yml@refs/heads/main" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          workdir="$(mktemp -d)"; echo "WORKDIR=$workdir" >> "$GITHUB_ENV"; mkdir -p "$workdir/payload"
+          python3 - "$EVENT_SHA" "$HISTORICAL_CONFIRM_COMMIT" "$workdir" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          current_sha,historical_sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value)
+          items=[
+            (current_sha,'requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2-admission-repair.json',root/'request.json'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2/materialize_v2.py',root/'materialize_v2.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/materialize.py',root/'payload/materialize_v1.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/fresh_audit.py',root/'payload/fresh_audit.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/builder.py',root/'payload/builder.py'),
+            (current_sha,'scripts/kaggle_exact_identity.py',root/'kaggle_exact_identity.py'),
+            (current_sha,'requirements/kaggle-2.2.4.lock',root/'kaggle-2.2.4.lock'),
+          ]
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for sha,path,out in items:
+              req=urllib.request.Request(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}',headers={'User-Agent':'p1-03-admission-repair-launch/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(512001)
+              if not data or len(data)>512000:raise SystemExit(f'source byte budget failed:{path}')
+              out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+          echo "P1_03_ADMISSION_REPAIR_BOUNDARY PASS retries=0 submissions=0 expected_before=1 expected_after=2"
+
+      - name: Reconstruct unchanged repaired Notebook and locked Kaggle client
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/serializer-venv"
+          "$WORKDIR/serializer-venv/bin/python" -m pip install --disable-pip-version-check --no-input nbformat==5.11.1 >/dev/null
+          "$WORKDIR/serializer-venv/bin/python" "$WORKDIR/materialize_v2.py" --payload-dir "$WORKDIR/payload" --kernel-dir "$WORKDIR/kernel"
+          python3 - "$WORKDIR/request.json" "$WORKDIR/kernel" <<'PY'
+          import hashlib,json,pathlib,re,sys
+          r=json.load(open(sys.argv[1])); root=pathlib.Path(sys.argv[2]); mp=root/'kernel-metadata.json'; meta=json.loads(mp.read_text()); nb=root/meta['code_file']
+          sha=hashlib.sha256(nb.read_bytes()).hexdigest(); assert sha==r['repaired_v2_notebook_sha256']
+          before=dict(meta); meta['id']=r['target']; meta['title']=r['title']; assert {k for k in before if before[k]!=meta[k]}=={'id','title'}
+          slug=re.sub(r'-+','-',re.sub(r'[^a-z0-9]+','-',r['title'].lower())).strip('-'); assert slug==r['target'].split('/',1)[1]
+          mp.write_text(json.dumps(meta,indent=2,sort_keys=True)+'\n',encoding='utf-8'); assert hashlib.sha256(nb.read_bytes()).hexdigest()==sha
+          print('P1_03_ADMISSION_REPAIR_KERNEL PASS notebook_sha256='+sha+' science_formula_changes=0')
+          PY
+          python3 -m venv "$WORKDIR/venv"
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/kaggle-2.2.4.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip check >/dev/null
+          "$WORKDIR/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Live exact failed-v1 input quota and bounded GPU-admission preflight
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" - "$WORKDIR/request.json" <<'PY'
+          import hashlib,json,re,sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kaggle_exact_identity import ACTIVE,exact_metadata,exact_metadata_eventually,safe_exception,status_name,verify_current
+          r=json.load(open(sys.argv[1])); api=KaggleApi(); api.authenticate(); target=r['target']; owner,_=target.split('/',1)
+          pages=api.competition_list_pages(r['competition']) or []; content={}
+          for page in pages:
+              d=page.to_dict() if hasattr(page,'to_dict') else dict(page); name=str(d.get('name') or '').strip().lower()
+              if name:content[name]=str(d.get('content') or '')
+          if 'evaluation' not in content:raise SystemExit('live evaluation page unavailable')
+          plain=re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',content['evaluation'].replace(r'\%','%'))).casefold()
+          if not all(x in plain for x in ('auc','novelty','1%','false-positive')):raise SystemExit('live evaluation contract changed')
+          src=r['inputs']['fresh_hidden_cache']
+          if verify_current(api,src['ref'],1,allow_failed=False,cpu=False)!='COMPLETE':raise SystemExit('fresh cache input not COMPLETE')
+          sm=exact_metadata(api,src['ref'])
+          if int(getattr(sm,'current_version_number',0))!=1 or getattr(sm,'enable_gpu',None) is not True or getattr(sm,'enable_tpu',None) is not False:raise SystemExit('fresh cache source identity changed')
+          ds=r['inputs']['stage1_features']; p=json.loads(api.dataset_status(ds['ref'],format='json(current_version_number)')); dv=p.get('current_version_number')
+          if dv is None or int(dv)!=1:raise SystemExit(f'Stage1 dataset version mismatch:{dv!r}')
+          meta=exact_metadata(api,target); state=status_name(getattr(api.kernels_status(target),'status',None))
+          if getattr(meta,'ref',None)!=target or int(getattr(meta,'current_version_number',0))!=1:raise SystemExit('failed target/version identity changed')
+          if state!='ERROR':raise SystemExit(f'failed target is not ERROR:{state}')
+          if getattr(meta,'is_private',None) is not True or getattr(meta,'enable_gpu',None) is not True or getattr(meta,'enable_tpu',None) is not False or getattr(meta,'enable_internet',None) is not True:raise SystemExit('failed target metadata changed')
+          quota=api.quota_view(); gpu=getattr(quota,'gpu_quota',None)
+          if gpu is None:raise SystemExit('GPU quota unavailable')
+          remaining=(gpu.total_time_allowed-gpu.time_used).total_seconds()/3600.0
+          if remaining<float(r['resource']['min_remaining_quota_hours']):raise SystemExit(f'GPU quota refused:{remaining:.3f}h')
+
+          recent=(api.kernels_list(user=owner,sort_by='dateRun',page_size=25) or [])[:25]
+          active=[]; unresolved_status=[]
+          for item in recent:
+              ref=str(getattr(item,'ref','') or '')
+              if not ref:continue
+              ref_hash=hashlib.sha256(ref.encode()).hexdigest()[:16]
+              try:ks=status_name(getattr(api.kernels_status(ref),'status',None))
+              except Exception as exc:
+                  info=safe_exception(exc); unresolved_status.append((ref_hash,info.get('http_status'),info.get('error_sha256'))); continue
+              if ks in ACTIVE:active.append((ref,ref_hash,ks))
+          if unresolved_status:raise SystemExit('GPU admission unresolved_status='+json.dumps(unresolved_status,sort_keys=True))
+          if len(active)>6:raise SystemExit(f'GPU admission too_many_active={len(active)}')
+          gpu_active=0; cpu_active=0; tpu_active=0; unresolved=[]
+          for ref,ref_hash,ks in active:
+              try:m=exact_metadata_eventually(api,ref,attempts=4,delay_seconds=1.0)
+              except Exception as exc:
+                  info=safe_exception(exc); unresolved.append((ref_hash,info.get('http_status'),info.get('error_sha256'))); continue
+              eg=getattr(m,'enable_gpu',None); et=getattr(m,'enable_tpu',None)
+              if type(eg) is not bool or type(et) is not bool:
+                  unresolved.append((ref_hash,'accelerator_flags',hashlib.sha256(f'{eg!r}|{et!r}'.encode()).hexdigest()[:16])); continue
+              if eg is True and et is False:gpu_active+=1
+              elif eg is False and et is True:tpu_active+=1
+              elif eg is False and et is False:cpu_active+=1
+              else:unresolved.append((ref_hash,'invalid_flags',None))
+          if unresolved:raise SystemExit('GPU admission unresolved_metadata='+json.dumps(unresolved,sort_keys=True))
+          if gpu_active>=int(r['resource']['max_active_runs']):raise SystemExit(f'GPU concurrency refused:{gpu_active}')
+          print(f'P1_03_ADMISSION_REPAIR_PREFLIGHT PASS current_version=1 state=ERROR gpu_active={gpu_active} cpu_active={cpu_active} tpu_active={tpu_active} active_total={len(active)} quota_remaining_h={remaining:.3f} write_calls=0')
+          PY
+
+      - name: Immediate bounded recheck and perform exactly one SaveKernel version-2 call
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" - "$WORKDIR/request.json" "$WORKDIR/kernel" <<'PY'
+          import hashlib,json,sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kaggle_exact_identity import ACTIVE,exact_metadata,exact_metadata_eventually,safe_exception,status_name
+          r=json.load(open(sys.argv[1])); target=r['target']; owner,_=target.split('/',1); api=KaggleApi(); api.authenticate()
+          meta=exact_metadata(api,target); state=status_name(getattr(api.kernels_status(target),'status',None))
+          if int(getattr(meta,'current_version_number',0))!=1 or state!='ERROR':raise SystemExit(f'pre-write failed-v1 contract changed:version={getattr(meta,"current_version_number",None)} state={state}')
+          quota=api.quota_view(); gpu=getattr(quota,'gpu_quota',None)
+          if gpu is None:raise SystemExit('pre-write GPU quota unavailable')
+          remaining=(gpu.total_time_allowed-gpu.time_used).total_seconds()/3600.0
+          if remaining<float(r['resource']['min_remaining_quota_hours']):raise SystemExit(f'pre-write quota refused:{remaining:.3f}h')
+          recent=(api.kernels_list(user=owner,sort_by='dateRun',page_size=25) or [])[:25]
+          active=[]; unresolved_status=[]
+          for item in recent:
+              ref=str(getattr(item,'ref','') or '')
+              if not ref:continue
+              ref_hash=hashlib.sha256(ref.encode()).hexdigest()[:16]
+              try:ks=status_name(getattr(api.kernels_status(ref),'status',None))
+              except Exception as exc:
+                  info=safe_exception(exc); unresolved_status.append((ref_hash,info.get('http_status'),info.get('error_sha256'))); continue
+              if ks in ACTIVE:active.append((ref,ref_hash,ks))
+          if unresolved_status:raise SystemExit('pre-write GPU admission unresolved_status='+json.dumps(unresolved_status,sort_keys=True))
+          if len(active)>6:raise SystemExit(f'pre-write GPU admission too_many_active={len(active)}')
+          gpu_active=0; unresolved=[]
+          for ref,ref_hash,ks in active:
+              try:m=exact_metadata_eventually(api,ref,attempts=4,delay_seconds=1.0)
+              except Exception as exc:
+                  info=safe_exception(exc); unresolved.append((ref_hash,info.get('http_status'),info.get('error_sha256'))); continue
+              eg=getattr(m,'enable_gpu',None); et=getattr(m,'enable_tpu',None)
+              if type(eg) is not bool or type(et) is not bool:
+                  unresolved.append((ref_hash,'accelerator_flags',hashlib.sha256(f'{eg!r}|{et!r}'.encode()).hexdigest()[:16])); continue
+              if eg is True and et is False:gpu_active+=1
+              elif not ((eg is False and et is False) or (eg is False and et is True)):
+                  unresolved.append((ref_hash,'invalid_flags',None))
+          if unresolved or gpu_active>=int(r['resource']['max_active_runs']):raise SystemExit('pre-write GPU admission refused gpu_active='+str(gpu_active)+' unresolved='+json.dumps(unresolved,sort_keys=True))
+          response=None; failure=None
+          try:response=api.kernels_push(sys.argv[2])
+          except Exception as exc:failure=('exception',safe_exception(exc))
+          else:
+              error=str(getattr(response,'error','') or '')
+              if error:failure=('response_error',{'http_status':None,'error_sha256':hashlib.sha256(error.encode()).hexdigest()})
+          try:post=exact_metadata_eventually(api,target,attempts=6,delay_seconds=2.0)
+          except Exception as exc:
+              info=safe_exception(exc);raise SystemExit(f'post-write exact metadata unavailable:http={info.get("http_status")} error_sha256={info.get("error_sha256")} write_calls=1')
+          observed_version=int(getattr(post,'current_version_number',0))
+          if failure and observed_version<2:
+              kind,info=failure;raise SystemExit(f'one-shot SaveKernel v2 failed without observed version2:kind={kind} http={info.get("http_status")} error_sha256={info.get("error_sha256")} write_calls=1 observed_version={observed_version}')
+          if getattr(post,'ref',None)!=target or observed_version!=2:raise SystemExit(f'post-write target/version mismatch:version={observed_version}')
+          if getattr(post,'is_private',None) is not True or getattr(post,'enable_gpu',None) is not True or getattr(post,'enable_tpu',None) is not False or getattr(post,'enable_internet',None) is not True:raise SystemExit('post-write metadata mismatch')
+          final_state=status_name(getattr(api.kernels_status(target),'status',None))
+          if final_state not in ACTIVE|{'COMPLETE','ERROR','CANCELLED','CANCELED'}:raise SystemExit(f'post-write state unknown:{final_state}')
+          print(f'P1_03_ADMISSION_REPAIR_SAVE PASS target={target} version=2 gpu=1 private=1 state={final_state} quota_remaining_h={remaining:.3f} write_calls=1 failure_return={failure[0] if failure else "none"}')
+          PY
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+          echo "P1_03_ADMISSION_REPAIR_CLEANUP PASS retention_days=0"
