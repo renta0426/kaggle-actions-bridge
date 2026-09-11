@@ -57,7 +57,7 @@ class KernelWriteV2Tests(unittest.TestCase):
     TARGET = "owner/example"
 
     def test_success_observes_version_two_with_one_write(self) -> None:
-        api = FakeApi(state="RUNNING")
+        api = FakeApi(state="ERROR")
         metas = [Meta(self.TARGET, 1), Meta(self.TARGET, 2)]
         with mock.patch.object(writer, "exact_metadata", side_effect=metas):
             out = writer.push_kernel_version_once(
