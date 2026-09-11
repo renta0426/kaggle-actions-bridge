@@ -1,0 +1,121 @@
+name: Kaggle launch policy v2
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - docs/**
+      - scripts/kaggle_launch_policy_v2.py
+      - scripts/kaggle_kernel_write_v2.py
+      - tests/test_kaggle_launch_policy_v2.py
+      - tests/test_kaggle_kernel_write_v2.py
+      - requests/**
+      - .github/workflows/**
+
+permissions: {}
+
+concurrency:
+  group: bridge-policy-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate changed launch policy without Kaggle credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Materialize exact base and head trees without external Actions
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:$name"; exit 1; }
+          done
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+          else
+            base_sha="$EVENT_BEFORE"
+            head_sha="$EVENT_SHA"
+          fi
+          [[ "$base_sha" =~ ^[0-9a-f]{40}$ && "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$base_sha" != "0000000000000000000000000000000000000000" ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          python3 - "$REPOSITORY" "$base_sha" "$head_sha" "$workdir" <<'PY'
+          import io
+          import pathlib
+          import ssl
+          import sys
+          import tarfile
+          import urllib.request
+
+          repo, base_sha, head_sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          ctx = ssl.create_default_context()
+
+          def fetch_tree(sha: str, target: pathlib.Path) -> None:
+              req = urllib.request.Request(
+                  f"https://codeload.github.com/{repo}/tar.gz/{sha}",
+                  headers={"User-Agent": "kaggle-launch-policy-v2/1"},
+              )
+              with urllib.request.urlopen(req, timeout=45, context=ctx) as response:
+                  data = response.read(80_000_001)
+              if not data or len(data) > 80_000_000:
+                  raise SystemExit("repository archive byte budget failed")
+              with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+                  files = [item for item in archive.getmembers() if item.isfile()]
+                  prefixes = {item.name.split("/", 1)[0] for item in files}
+                  if len(prefixes) != 1:
+                      raise SystemExit("repository archive layout failed")
+                  prefix = next(iter(prefixes)) + "/"
+                  for item in files:
+                      rel = pathlib.PurePosixPath(item.name[len(prefix):])
+                      if not rel.parts or ".." in rel.parts:
+                          raise SystemExit("unsafe repository archive path")
+                      out = target.joinpath(*rel.parts)
+                      out.parent.mkdir(parents=True, exist_ok=True)
+                      out.write_bytes(archive.extractfile(item).read())
+
+          fetch_tree(base_sha, root / "base")
+          fetch_tree(head_sha, root / "head")
+          PY
+
+      - name: Run policy-v2 unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKDIR/head"
+          python3 -m unittest discover -s tests -p 'test_kaggle_*_v2.py'
+
+      - name: Validate changed requests and launch workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$WORKDIR/head/scripts/kaggle_launch_policy_v2.py" changed "$WORKDIR/base" "$WORKDIR/head"
+
+      - name: Validate policy documentation linkage
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'EXECUTION_POLICY_V2.md' "$WORKDIR/head/README.md" >/dev/null
+          grep -F 'kaggle_native_capacity_v2' "$WORKDIR/head/docs/EXECUTION_POLICY_V2.md" >/dev/null
+          grep -F 'Kaggle is the authority' "$WORKDIR/head/docs/EXECUTION_POLICY_V2.md" >/dev/null
+          grep -F 'quota_view' "$WORKDIR/head/scripts/kaggle_kernel_write_v2.py" >/dev/null
+          grep -F 'must never be called' "$WORKDIR/head/tests/test_kaggle_kernel_write_v2.py" >/dev/null
+
+      - name: Cleanup policy validation material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
