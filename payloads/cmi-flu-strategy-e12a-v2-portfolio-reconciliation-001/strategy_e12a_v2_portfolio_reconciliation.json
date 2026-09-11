@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "experiment_id": "E12a-v2",
+  "title": "Final portfolio reconciliation after E12a-v1 stale Task1.3 manifest",
+  "date": "2026-09-11",
+  "reason": {
+    "source_experiment": "strategy_v2_e12a_final_system_reproduction",
+    "classification": "reproduction_harness_passed_final_portfolio_contract_invalid",
+    "incorrect_task": "Task1.3",
+    "incorrect_identity": "b21_pls_1",
+    "correct_identity": "strict_asc_anchor",
+    "competition_incumbent_changed": false,
+    "new_model_selection": false
+  },
+  "comparison_contract": "paired_subject_purged_v2",
+  "reproduction_absolute_tolerance": 2e-06,
+  "expected_final_portfolio": {
+    "Task1.1": "b21_pls_2",
+    "Task1.2": "task12_anchor_residual_et_d5_l5_sqrt_lambda0.5",
+    "Task1.3": "strict_asc_anchor",
+    "Task1.4": "raw_pre_vacc_conserved_anchor",
+    "Task2.1": "b21_et_subtype_d3_l5",
+    "Task2.2": "b21_et_subtype_d5_l10",
+    "Task2.3": "b21_ridge_exact_a100"
+  },
+  "supervised_reproduction_references": {
+    "Task1.1": {
+      "source": "E12a-v1 accepted E01 harness",
+      "study_equal_spearman": 0.09970718035376519
+    },
+    "Task1.2": {
+      "source": "E12a-v1 accepted E01 harness",
+      "study_equal_spearman": 0.5271033295423541
+    },
+    "Task1.3": {
+      "source": "E04/E04b retained strict ASC anchor",
+      "study_equal_spearman": 0.38158872734833993
+    },
+    "Task2.1": {
+      "source": "E12a-v1 accepted E01 harness",
+      "study_equal_spearman": 0.623449034547404
+    },
+    "Task2.2": {
+      "source": "E12a-v1 accepted E01 harness",
+      "study_equal_spearman": 0.576505972340535
+    },
+    "Task2.3": {
+      "source": "E12a-v1 accepted E01 harness",
+      "study_equal_spearman": 0.6957305642219944
+    }
+  },
+  "task13_reconciliation": {
+    "e01_control_identity": "b21_pls_1",
+    "e01_control_study_equal_spearman": 0.10630410834652516,
+    "final_identity": "strict_asc_anchor",
+    "predictor_feature": "flow_rank__Antibody-secreting_cells_(ASC)",
+    "expected_train_rows": 23,
+    "expected_challenge_rows": 40,
+    "source_reports": [
+      "reports/strategy-e04-task13-anchor-preserving-rescue-results.md",
+      "reports/strategy-e04b-task13-material-bridge-results.md",
+      "reports/strategy-v2-current-position-20260909-post-e04b.md"
+    ]
+  },
+  "task14_contract": {
+    "incumbent": "raw_pre_vacc_conserved_anchor",
+    "source_report": "reports/strategy-e07-task14-formal-closure-results.md",
+    "supervised_cv_available": false,
+    "outcomes_accessed": false,
+    "challenge_subjects_expected": 40
+  },
+  "decision": {
+    "all_six_supervised_final_components_must_reproduce": true,
+    "stale_e01_task13_control_must_not_enter_final_portfolio": true,
+    "new_model_selection_allowed": false,
+    "public_probe_authorized": false,
+    "competition_submission_authorized": false,
+    "if_pass": "proceed_to_E12b_challenge_prediction_freeze",
+    "if_fail": "investigate_reconciliation_contract_no_model_selection"
+  },
+  "resource": {
+    "class": "CPU",
+    "max_active_runs": 1,
+    "automatic_compute_retries": 0
+  },
+  "output": {
+    "aggregate_only": true,
+    "participant_identifiers": false,
+    "row_level_predictions": false
+  }
+}
