@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "experiment": "strategy_v2_e12c_v2_historical_backbone_manual_submission",
+  "parent_e12b_semantic_sha256": "5faf93bee4b68aba23c53e09adbb251bdd07d287dd48fb6d94d6fce53ef9a60f",
+  "historical_public_score": 0.218,
+  "historical_task12_only_csv_sha256": "365607d59cd530656b929a1c1c57412cc6d375265a8d1ba10d304c64e012f387",
+  "task13": {
+    "incumbent": "strict_asc_anchor",
+    "predictor_feature": "flow_rank__Antibody-secreting_cells_(ASC)",
+    "mode": "broad",
+    "include_sdy272_asc_proxy": false,
+    "expected_challenge_rows": 40,
+    "expected_challenge_unique_values": 36,
+    "expected_prediction_sha256": "de8bc3b6bbd3e3aad4099b83eb63a1ebbd81c4f4eeb60f77808858f4674be5da"
+  },
+  "assembly": {
+    "backbone": "exact_historical_public_0_218_task12_only_csv",
+    "refit_unchanged_tasks": false,
+    "changed_tasks": ["Task1.3"],
+    "full_file_hash_predeclared": false,
+    "record_full_file_hash_after_exact_content_assembly": true
+  },
+  "submission_boundary": {
+    "competition_submission_attempted": false,
+    "manual_operator_submission_only": true,
+    "leaderboard_used_for_selection": false
+  }
+}
