@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-cmi-flu-v3-batch1-error-salvage-001",
+  "operation": "kernel_failed_log_read",
+  "target": "renta0426/cmi-flu-v3-batch1-audit-diagnostics-20260912-002",
+  "expected_current_version": 1,
+  "expected_terminal_state": "ERROR",
+  "parent_actions_run": 34620149186,
+  "parent_actions_job": 103331885221,
+  "parent_bridge_commit": "fbbea3be5c4e9e1c81289fae8d38b15df1f2e2eb",
+  "read_contract": {
+    "allow_only_kaggle_transport_logs": true,
+    "emit_only_runtime_fail_marker": true,
+    "max_log_files": 8,
+    "max_total_log_bytes": 5242880
+  },
+  "side_effects": [],
+  "kaggle_write_authorized": false,
+  "automatic_compute_retries": 0,
+  "competition_submission_authorized": false,
+  "competition_submission_attempted": false,
+  "public_artifact_upload": false
+}
