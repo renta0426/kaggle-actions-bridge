@@ -27,7 +27,8 @@ SCIENCE_BUILDER_BLOB = "cccf255a13ecbfa25e32cb2fda8cdbd578cae073"
 SCIENCE_FRESH_AUDIT_BLOB = "4f9eb6bb32184941e304875dc79cffe8ee7c1a02"
 SCIENCE_DEVELOPMENT_AUDIT_BLOB = "3d0a45b20c93554e293b4db9c243cd1133f1fef9"
 SCIENCE_EVALUATION_CONFIG_BLOB = "d642dfa51f922613154d7d5f2e95d211631180b5"
-SCIENCE_NOTEBOOK_SHA256 = "4236585ba12931e075828bf5764508e237aae863118b4138c1df16a802c09daa"
+SCIENCE_NOTEBOOK_SHA256 = "4236585b0dbc1ea54309a91cbc72bfd226467b2209c34cb428cfdd7328c09daa"
+NOTEBOOK_SERIALIZER = "nbformat==5.11.1"
 FRESH_CACHE_MANIFEST_SHA256 = "f2b9c6048f1496b5f0c96a369d9773754f13ebace14aacfce8c0ecec92ba4481"
 FRESH_COHORT_SET_SHA256 = "8fd03b98b46ffd9b7ef9a69ea58eaaeb6e0307cdafecf9d1c35a1562bbeaad27"
 TARGET = "renta0426/poisoned-chalice-p1-03-fresh-5k-confirmation-v1"
@@ -101,26 +102,6 @@ def exact_payload_source(payload_dir: Path, filename: str, expected_blob: str) -
     return data
 
 
-def write_nbformat_shim(root: Path) -> None:
-    (root / "nbformat.py").write_text(
-        r'''import json
-class A(dict):
-    def __getattr__(self,n):
-        try:return self[n]
-        except KeyError as e:raise AttributeError(n) from e
-    def __setattr__(self,n,v):self[n]=v
-class V4:
-    def new_notebook(self):return A(cells=[],metadata=A(),nbformat=4,nbformat_minor=5)
-    def new_markdown_cell(self,source=""):return A(cell_type="markdown",metadata=A(),source=source)
-    def new_code_cell(self,source=""):return A(cell_type="code",execution_count=None,metadata=A(),outputs=[],source=source)
-v4=V4()
-def write(nb,path):
-    with open(path,"w",encoding="utf-8") as f:json.dump(nb,f,ensure_ascii=False,indent=1);f.write("\n")
-''',
-        encoding="utf-8",
-    )
-
-
 def reconstruct_research(payload_dir: Path, research_root: Path) -> dict:
     for rel, expected_blob in HISTORICAL_EVAL_BLOBS.items():
         data = raw_get(
@@ -167,6 +148,7 @@ def reconstruct_research(payload_dir: Path, research_root: Path) -> dict:
         "science_fresh_audit_blob": SCIENCE_FRESH_AUDIT_BLOB,
         "science_development_audit_blob": SCIENCE_DEVELOPMENT_AUDIT_BLOB,
         "science_evaluation_config_blob": SCIENCE_EVALUATION_CONFIG_BLOB,
+        "notebook_serializer": NOTEBOOK_SERIALIZER,
     }
 
 
@@ -234,19 +216,31 @@ def main() -> int:
     payload_dir = args.payload_dir.resolve()
     kernel_dir = args.kernel_dir.resolve()
     with tempfile.TemporaryDirectory(prefix="p1-03-fresh-confirm-research-") as temp:
-        research = Path(temp) / "research"
+        temp_root = Path(temp)
+        research = temp_root / "research"
+        serializer_site = temp_root / "nbformat-site"
         research.mkdir(parents=True)
         provenance = reconstruct_research(payload_dir, research)
-        with tempfile.TemporaryDirectory(prefix="p1-03-fresh-confirm-nbformat-") as shim_temp:
-            shim = Path(shim_temp)
-            write_nbformat_shim(shim)
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(shim)
-            proc = subprocess.run(
-                [sys.executable, str(research / "scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v1.py")],
-                cwd=str(research), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, timeout=120, check=False,
+        install = subprocess.run(
+            [
+                sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
+                "--no-input", "-q", "--target", str(serializer_site), NOTEBOOK_SERIALIZER,
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180, check=False,
+        )
+        if install.returncode != 0:
+            diagnostic = (install.stdout + install.stderr).encode("utf-8", errors="replace")
+            raise RuntimeError(
+                "Notebook serializer install failed "
+                f"rc={install.returncode} diagnostic_sha256={hashlib.sha256(diagnostic).hexdigest()}"
             )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(serializer_site)
+        proc = subprocess.run(
+            [sys.executable, str(research / "scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v1.py")],
+            cwd=str(research), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, timeout=120, check=False,
+        )
         if proc.returncode != 0:
             diagnostic = (proc.stdout + proc.stderr).encode("utf-8", errors="replace")
             raise RuntimeError(
