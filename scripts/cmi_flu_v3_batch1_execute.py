@@ -59,6 +59,22 @@ def ensure_kaggle_cli_path() -> str:
     return found
 
 
+def fresh_source_output_dir(parent: Path) -> Path:
+    """Return a deliberately absent child path for kaggle_current_output_read.
+
+    ``read_current_output`` owns creation of its output directory and rejects an
+    already-existing path.  Passing a ``TemporaryDirectory`` root directly is
+    therefore invalid even though the root itself is otherwise fresh.
+    """
+    parent = parent.resolve()
+    if not parent.is_dir():
+        raise RuntimeError("V3 batch1 source precheck parent directory missing")
+    output = parent / "source-B-current-output"
+    if output.exists():
+        raise RuntimeError("V3 batch1 source precheck child already exists")
+    return output
+
+
 def verify_source_B(api: KaggleApi, output_dir: Path | None = None) -> None:
     meta = exact_metadata(api, SOURCE_B)
     validate_metadata(meta, SOURCE_B, SOURCE_B_VERSION)
@@ -66,6 +82,8 @@ def verify_source_B(api: KaggleApi, output_dir: Path | None = None) -> None:
     if state != "COMPLETE":
         raise RuntimeError("V3 batch1 source B is not COMPLETE")
     if output_dir is not None:
+        if output_dir.exists():
+            raise RuntimeError("V3 batch1 source B read destination must not already exist")
         read_current_output(kernel=SOURCE_B, expected_version=SOURCE_B_VERSION, allow=SOURCE_ALLOW, output_dir=output_dir)
         source = output_dir / "submission.csv"
         if source.stat().st_size != SOURCE_B_BYTES or sha256_path(source) != SOURCE_B_SHA256:
@@ -165,7 +183,12 @@ def main() -> int:
     args = parser.parse_args()
     cli = ensure_kaggle_cli_path()
     if args.path_self_test:
-        print(f"CMI_FLU_V3_BATCH1_PATH_SELF_TEST PASS python_bin={Path(sys.executable).parent} cli_name={Path(cli).name} auth=false write=false compute=false")
+        with tempfile.TemporaryDirectory(prefix="cmi-v3-batch1-source-dir-self-test-") as tmp:
+            parent = Path(tmp)
+            source_dir = fresh_source_output_dir(parent)
+            if source_dir.exists() or source_dir.parent != parent.resolve():
+                raise RuntimeError("V3 batch1 source precheck fresh-child regression failed")
+        print(f"CMI_FLU_V3_BATCH1_PATH_SELF_TEST PASS python_bin={Path(sys.executable).parent} cli_name={Path(cli).name} source_precheck_dir_fresh=true auth=false write=false compute=false")
         return 0
     if args.runtime is None or args.output_dir is None:
         raise SystemExit("--runtime and --output-dir are required")
@@ -174,7 +197,7 @@ def main() -> int:
 
     api = KaggleApi(); api.authenticate()
     with tempfile.TemporaryDirectory(prefix="cmi-v3-batch1-precheck-") as tmp:
-        verify_source_B(api, Path(tmp))
+        verify_source_B(api, fresh_source_output_dir(Path(tmp)))
     require_fresh_target(api)
 
     with tempfile.TemporaryDirectory(prefix="cmi-v3-batch1-run-") as tmp:
