@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "request_id": "20260911-cmi-flu-e12c-v2-historical-backbone-002",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-e12c-manual-submission-20260911-002",
+  "title": "CMI Flu E12c Manual Submission 20260911 002",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "9916c04a3d5510eead8f361960d73b5d94201892",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_e12c_v2_blob_sha": "238d3ad67984fdd8c375bb0aa263bb4717029027",
+  "strategy_e12c_v2_contract_blob_sha": "f2835633c83f82fd9f8a9dc1f25598aa098ff56f",
+  "historical_control": {
+    "source_kernel": "renta0426/cmi-flu-manual-probe-files-20260906-001",
+    "expected_current_version": 1,
+    "expected_terminal_state": "COMPLETE",
+    "source_filename": "submission-task12-only.csv",
+    "sha256": "365607d59cd530656b929a1c1c57412cc6d375265a8d1ba10d304c64e012f387",
+    "public_score": 0.218
+  },
+  "task13_contract": {
+    "incumbent": "strict_asc_anchor",
+    "predictor_feature": "flow_rank__Antibody-secreting_cells_(ASC)",
+    "expected_challenge_rows": 40,
+    "expected_challenge_unique_values": 36,
+    "expected_prediction_sha256": "de8bc3b6bbd3e3aad4099b83eb63a1ebbd81c4f4eeb60f77808858f4674be5da"
+  },
+  "assembly_contract": {
+    "backbone": "exact_historical_public_0_218_task12_only_csv",
+    "refit_unchanged_tasks": false,
+    "changed_tasks": ["Task1.3"],
+    "full_file_hash_predeclared": false,
+    "record_full_file_hash_after_exact_content_assembly": true
+  },
+  "parent_failed_v1": {
+    "request_id": "20260911-cmi-flu-e12c-manual-submission-notebook-001",
+    "target": "renta0426/cmi-flu-e12c-manual-submission-20260911-001",
+    "version": 1,
+    "actions_run": 34557478503,
+    "actions_job": 103133169423,
+    "terminal_state": "ERROR",
+    "failure_stage": "verify_frozen_candidate",
+    "exception_type": "DataContractError",
+    "error_code": "f6d5ab53cc8a8f25fb0d",
+    "version_consumed": true,
+    "submission_csv_persisted": false,
+    "same_version_rerun_forbidden": true,
+    "classification": "resource_consumed_runtime_failure"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 10,
+    "hard_timeout_minutes": 30
+  },
+  "allowed_output_paths": [
+    "submission.csv",
+    "manual-submission-manifest.json"
+  ],
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version",
+    "persist one exact historical-backbone-plus-strict-Task1.3 submission.csv and aggregate manifest"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true,
+  "leaderboard_used_for_selection": false,
+  "public_artifact_upload": false
+}
