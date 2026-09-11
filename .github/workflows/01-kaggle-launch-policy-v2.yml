@@ -9,7 +9,9 @@ on:
       - README.md
       - docs/**
       - scripts/kaggle_launch_policy_v2.py
+      - scripts/kaggle_kernel_write_v2.py
       - tests/test_kaggle_launch_policy_v2.py
+      - tests/test_kaggle_kernel_write_v2.py
       - requests/**
       - .github/workflows/**
 
@@ -94,7 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$WORKDIR/head"
-          python3 -m unittest tests.test_kaggle_launch_policy_v2
+          python3 -m unittest discover -s tests -p 'test_kaggle_*_v2.py'
 
       - name: Validate changed requests and launch workflows
         shell: bash
@@ -109,6 +111,8 @@ jobs:
           grep -F 'EXECUTION_POLICY_V2.md' "$WORKDIR/head/README.md" >/dev/null
           grep -F 'kaggle_native_capacity_v2' "$WORKDIR/head/docs/EXECUTION_POLICY_V2.md" >/dev/null
           grep -F 'Kaggle is the authority' "$WORKDIR/head/docs/EXECUTION_POLICY_V2.md" >/dev/null
+          grep -F 'quota_view' "$WORKDIR/head/scripts/kaggle_kernel_write_v2.py" >/dev/null
+          grep -F 'must never be called' "$WORKDIR/head/tests/test_kaggle_kernel_write_v2.py" >/dev/null
 
       - name: Cleanup policy validation material
         if: always()
