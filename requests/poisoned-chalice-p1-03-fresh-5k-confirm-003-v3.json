@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "request_id": "20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-v3",
+  "parent_request_id": "20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "save_kernel_once",
+  "target": "renta0426/poisoned-chalice-p1-03-fresh-5k-confirm-003",
+  "title": "Poisoned Chalice P1-03 Fresh 5K Confirm 003",
+  "expected_current_version_before_write": 2,
+  "expected_state_before_write": "ERROR",
+  "expected_version_after_write": 3,
+  "science_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "science_commit": "f1bf9a5b079a78aea023d6bd908cdada6fee288b",
+  "science_files": {
+    "scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v3.py": "9138b1dbecc71332795ad8af93e85904cc29f708",
+    "docs/P1_03_FRESH_5K_CONFIRMATION_V2_PARTIAL_RESULT_AND_IDENTITY_FAILURE_20260911.md": "7b803b0c24428518af3ffd6c4ea75ab7e1098fa1"
+  },
+  "v2_notebook_sha256": "b639ddb944d0b88ded392c053c183725aaaec09127bb15d1264e3d09ef83d43e",
+  "v3_notebook_sha256": "5141709b43a48787e269083d86776eb23597c56dd902fc694181d841f81eda33",
+  "v2_embedded_development_audit_git_blob": "c3239d6901fa82d643998b90c21641434278c256",
+  "normalized_frozen_development_audit_git_blob": "3d0a45b20c93554e293b4db9c243cd1133f1fef9",
+  "historical_payload_bridge_commit": "708ed2026c18556c745e020e2b59046c2c46e764",
+  "inputs": {
+    "fresh_hidden_cache": {
+      "ref": "renta0426/poisoned-chalice-lumia-fresh-cache-5000-v1",
+      "version": 1,
+      "cache_manifest_sha256": "f2b9c6048f1496b5f0c96a369d9773754f13ebace14aacfce8c0ecec92ba4481",
+      "cohort_set_sha256": "8fd03b98b46ffd9b7ef9a69ea58eaaeb6e0307cdafecf9d1c35a1562bbeaad27",
+      "rows": 5000
+    },
+    "stage1_features": {
+      "ref": "renta0426/stage1-raw-fim-submission-v1-output",
+      "version": 1,
+      "train_rows": 10000,
+      "train_shards": 40
+    }
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 100,
+    "hard_timeout_minutes": 180
+  },
+  "api_budget": {
+    "max_calls": 40
+  },
+  "side_effects": [
+    "create exactly one new private notebook version 3 under the existing approved target"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "select_as_final": false,
+  "clean_room": {
+    "fresh_hidden_holdout_already_opened_in_failed_v2": true,
+    "fresh_hidden_partial_result_must_not_be_retuned": true,
+    "fusion_content_portable_still_frozen_and_unevaluated_in_v2": true,
+    "validation_rows_used": false,
+    "public_lb_feedback_used": false,
+    "new_target_model_forward": false,
+    "competition_submission": false,
+    "no_formula_added_after_fresh_result": true
+  },
+  "scientific_contract": {
+    "hidden_anchor": "same frozen nested 5-fold StarCoder2-3B probe/top5 procedure",
+    "fusion_hidden_rank_weights": [0.75, 0.5],
+    "fusion_formula_count": 2,
+    "learned_two_score_stack": false,
+    "content_controls": [
+      "C0 static lexical/layout/language logistic C=0.2",
+      "C1 hashed char 3-5 plus token 1-2 liblinear C=1",
+      "token 5gram SimHash64 Hamming<=6 StratifiedGroupKFold diagnostic"
+    ],
+    "portable_primary": "mean pooling 96-feature scalar",
+    "caller_helper_portable": "ablation only",
+    "fusion_promotion_all_required": {
+      "tpr_at_0.01_fpr_delta_min": 0.01,
+      "paired_bootstrap_tpr_delta_lower_95_min": 0.0,
+      "auc_delta_min": -0.005
+    }
+  },
+  "consumed_v2_result": {
+    "uploaded_log_sha256": "30e4e45574bb1f7a8fdf37d2a8981d60998960a717602c84b16d00da6a80e680",
+    "uploaded_log_bytes": 25386,
+    "hidden_phase_completed": true,
+    "mean_top5_auc": 0.73670192,
+    "caller_top5_auc": 0.73655152,
+    "helper_top5_auc": 0.73505888,
+    "same_model_signal_confirmed": true,
+    "low_fpr_confirmed": true,
+    "weighting_increment_supported": false,
+    "fusion_evaluated": false,
+    "content_controls_evaluated": false,
+    "portable_scalar_evaluated": false,
+    "failure": "frozen development-audit implementation identity changed"
+  },
+  "runtime_repair": {
+    "kind": "transport_identity_reverse_normalization_only",
+    "science_formulas_changed": false,
+    "cohort_changed": false,
+    "labels_changed": false,
+    "promotion_gates_changed": false,
+    "execution_cell_changed": false,
+    "automatic_retry": false
+  }
+}
