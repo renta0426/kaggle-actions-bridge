@@ -1,0 +1,203 @@
+name: Poisoned Chalice P1-02 start-boundary order-independent recovery v4
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4.yml
+      - requests/poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4.json
+      - scripts/poisoned_chalice_p1_02_start_boundary_recover_v4.py
+      - scripts/poisoned_chalice_p1_02_start_boundary_recover_v3.py
+      - scripts/poisoned_chalice_p1_02_start_boundary_recover_v1.py
+      - scripts/poisoned_chalice_shadow_gold_start_boundary_attribution_v1.py
+      - scripts/kaggle_exact_identity.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4.yml
+      - requests/poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4.json
+      - scripts/poisoned_chalice_p1_02_start_boundary_recover_v4.py
+
+permissions: {}
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_ID: 20260912-poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4-001
+  CANONICAL_TARGET: renta0426/gold-start-boundary-attribution-v1
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate P1-02 order-independent validator repair without credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"p1-02-recovery-v4-ci/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(25_000_001)
+          if not data or len(data)>25_000_000: raise SystemExit("bridge archive byte budget failed")
+          with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit("bridge archive layout")
+              prefix=next(iter(prefixes))+"/"
+              if not prefix.rstrip('/').endswith(ref): raise SystemExit("bridge codeload commit mismatch")
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit("unsafe bridge archive")
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
+
+      - name: Validate exact failure diagnosis and validator-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge/requests/poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4.json" <<'PY'
+          import hashlib,json,sys
+          request=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert request["request_id"]=="20260912-poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4-001"
+          assert request["predecessor_run_id"]==34623427221
+          assert request["predecessor_error_sha256"]==hashlib.sha256(b"RuntimeError:condition_order_contract:left").hexdigest()
+          assert request["canonical_target"]=="renta0426/gold-start-boundary-attribution-v1"
+          assert request["expected_kernel_version"]==1
+          assert request["repair_scope"]=="validator_only_json_object_key_order_is_not_scientific_order"
+          assert request["scientific_thresholds_changed"] is False
+          assert request["scientific_conditions_changed"] is False
+          assert request["new_write_attempted"] is False and request["new_compute_requested"] is False
+          assert request["competition_submission_attempted"] is False
+          assert request["automatic_compute_retries"]==0
+          assert request["environment"]=="kaggle-readonry"
+          PY
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v4.py" \
+            "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v3.py" \
+            "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v1.py" \
+            "${WORKDIR}/bridge/scripts/kaggle_exact_identity.py"
+          grep -F 'if list(condition_metrics[side]) != EXPECTED_CONDITIONS:' "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v1.py" >/dev/null
+          grep -F 'sort_keys=True' "${WORKDIR}/bridge/scripts/poisoned_chalice_shadow_gold_start_boundary_attribution_v1.py" >/dev/null
+          grep -F 'set(rows) != expected' "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v4.py" >/dev/null
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v4.py" --self-test
+          ! grep -Eq 'kernels_push|kernel_push|competition_submit|"kernels"[[:space:]]*,[[:space:]]*"push"|"competitions"[[:space:]]*,[[:space:]]*"submit"' \
+            "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v4.py"
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  recover:
+    name: Read and validate P1-02 version 1 with order-independent JSON contract
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce protected recovery boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4.yml@refs/heads/main" ]]
+          [[ "$CANONICAL_TARGET" == "renta0426/gold-start-boundary-attribution-v1" ]]
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"p1-02-recovery-v4-protected/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(25_000_001)
+          if not data or len(data)>25_000_000: raise SystemExit("bridge archive byte budget failed")
+          with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit("bridge archive layout")
+              prefix=next(iter(prefixes))+"/"
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit("unsafe bridge archive")
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
+
+      - name: Install locked Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes \
+            -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          echo "${WORKDIR}/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Recover exact canonical version 1 with repaired validator
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
+          PYTHONPATH="${WORKDIR}/bridge/scripts" \
+            "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/poisoned_chalice_p1_02_start_boundary_recover_v4.py" \
+            --bridge-root "${WORKDIR}/bridge" \
+            --output-dir "${WORKDIR}/recovery"
+          test -f "${WORKDIR}/recovery/recovery.json"
+          grep -F '"canonical_target": "renta0426/gold-start-boundary-attribution-v1"' "${WORKDIR}/recovery/recovery.json" >/dev/null
+          grep -F '"version": 1' "${WORKDIR}/recovery/recovery.json" >/dev/null
+          grep -F '"validator_repair": "condition_key_set_exact_order_independent"' "${WORKDIR}/recovery/recovery.json" >/dev/null
+          grep -F '"scientific_outputs_validated": true' "${WORKDIR}/recovery/recovery.json" >/dev/null
+          grep -F '"new_write_attempted": false' "${WORKDIR}/recovery/recovery.json" >/dev/null
+          grep -F '"new_compute_requested": false' "${WORKDIR}/recovery/recovery.json" >/dev/null
+
+      - name: Cleanup runner-local recovery content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
