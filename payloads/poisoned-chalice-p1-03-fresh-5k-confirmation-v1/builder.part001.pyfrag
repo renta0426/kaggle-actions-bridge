@@ -1,0 +1,160 @@
+write_sources_cell = r"""
+package_root = SRC_ROOT / "poisoned_chalice"
+config_root = SRC_ROOT / "configs"
+data_root = SRC_ROOT / "data/public"
+scripts_root = SRC_ROOT / "scripts"
+package_root.mkdir(parents=True, exist_ok=True)
+config_root.mkdir(parents=True, exist_ok=True)
+scripts_root.mkdir(parents=True, exist_ok=True)
+(package_root / "__init__.py").write_text("", encoding="utf-8")
+(package_root / "evaluation.py").write_text(EVALUATION_SOURCE_TEXT, encoding="utf-8")
+(package_root / "sersem_author_faithful.py").write_text(FAITHFUL_SOURCE_TEXT, encoding="utf-8")
+(package_root / "lumia_hidden_state_pilot.py").write_text(PILOT_SOURCE_TEXT, encoding="utf-8")
+(package_root / "lumia_hidden_state_cache.py").write_text(CACHE_SOURCE_TEXT, encoding="utf-8")
+(package_root / "lumia_hidden_state_probe.py").write_text(PROBE_SOURCE_TEXT, encoding="utf-8")
+(package_root / "lumia_hidden_state_scale.py").write_text(SCALE_SOURCE_TEXT, encoding="utf-8")
+HIDDEN_RUNNER.write_text(HIDDEN_EVAL_SOURCE_TEXT, encoding="utf-8")
+(scripts_root / "run_p1_03_post_5k_development_audit_v1.py").write_text(
+    DEVELOPMENT_AUDIT_SOURCE_TEXT, encoding="utf-8"
+)
+AUDIT_RUNNER.write_text(FRESH_AUDIT_SOURCE_TEXT, encoding="utf-8")
+(config_root / "p1_03_lumia_hidden_state_scale_5000_v1_20260910.json").write_text(
+    SCALE_CONFIG_TEXT_VALUE, encoding="utf-8"
+)
+"""
+
+execute_cell = r"""
+import hashlib
+import json
+import time
+
+if not INPUT_ROOT.is_dir():
+    raise RuntimeError("/kaggle/input unavailable")
+
+cache_candidates = []
+for candidate in sorted(INPUT_ROOT.rglob("cache_manifest.json")):
+    try:
+        digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    except OSError:
+        continue
+    if digest == FRESH_CACHE_MANIFEST_SHA256_VALUE:
+        cache_candidates.append(candidate)
+if len(cache_candidates) != 1:
+    raise RuntimeError(
+        f"fresh cache exact resolution failed: matching_manifests={len(cache_candidates)} expected=1"
+    )
+CACHE_ROOT = cache_candidates[0].parent
+manifest = json.loads(cache_candidates[0].read_text(encoding="utf-8"))
+if manifest.get("task_id") != "P1-03-lumia-hidden-state-fresh-cache-5000-v1":
+    raise RuntimeError("fresh cache task identity changed")
+if manifest.get("rows") != 5000 or len(manifest.get("shards") or []) != 20:
+    raise RuntimeError("fresh cache row/shard contract changed")
+if manifest.get("labels_present_during_model_scoring") is not False:
+    raise RuntimeError("fresh cache label boundary changed")
+selection = json.loads((CACHE_ROOT / "cohort_selection.json").read_text(encoding="utf-8"))
+if selection.get("fresh_cohort_set_sha256") != FRESH_COHORT_SET_SHA256_VALUE:
+    raise RuntimeError("fresh cohort set identity changed")
+if selection.get("fresh_full_stage1_overlap") is not True:
+    raise RuntimeError("fresh cohort lost full Stage1 overlap")
+if any(int(selection.get(key, -1)) != 0 for key in (
+    "fresh_current_hidden_overlap_rows", "fresh_prior_1k_overlap_rows", "fresh_prior_50_overlap_rows"
+)):
+    raise RuntimeError("fresh cohort disjointness changed")
+
+stage1_paths = sorted(
+    path for path in INPUT_ROOT.rglob("features.part*.parquet")
+    if "/train_10k/parts/" in path.as_posix()
+)
+if len(stage1_paths) != 40:
+    raise RuntimeError(f"Stage1 exact 10k shard set not found: {len(stage1_paths)}")
+
+print(
+    "P1_03_FRESH_CONFIRM_INPUT_GATE PASS "
+    f"cache_sha256={FRESH_CACHE_MANIFEST_SHA256_VALUE} "
+    f"cohort_sha256={FRESH_COHORT_SET_SHA256_VALUE} stage1_shards=40"
+)
+
+from datasets import load_dataset
+LANGUAGES = ("Go", "Java", "Python", "Ruby", "Rust")
+EXPECTED_ROWS = {"Go":10000, "Java":10000, "Python":10000, "Ruby":10000, "Rust":9040}
+DATASET_ID = "Poisoned-Chalice/ICSE-2027-public"
+DATASET_REVISION = "2ed5468723efa5457a3665782c6979ea4dbac7c2"
+for language in LANGUAGES:
+    frame = load_dataset(DATASET_ID, language, split="train", revision=DATASET_REVISION).to_pandas()
+    if len(frame) != EXPECTED_ROWS[language]:
+        raise RuntimeError(f"public train row count changed for {language}: {len(frame)}")
+    if not {"sample_id", "membership"}.issubset(frame.columns):
+        raise RuntimeError(f"public label columns missing for {language}")
+    label_dir = data_root / language
+    label_dir.mkdir(parents=True, exist_ok=True)
+    frame[["sample_id", "membership"]].to_parquet(
+        label_dir / "train-00000-of-00001.parquet", index=False
+    )
+    del frame
+
+import torch
+if not torch.cuda.is_available():
+    raise RuntimeError("CUDA required for frozen nested hidden probe")
+if torch.cuda.device_count() < 1 or "T4" not in torch.cuda.get_device_name(0):
+    raise RuntimeError(
+        f"expected T4 cuda:0, got count={torch.cuda.device_count()} "
+        f"name={torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none'}"
+    )
+
+env = os.environ.copy()
+env["PYTHONPATH"] = str(SRC_ROOT) + os.pathsep + str(SITE_ROOT)
+env["OMP_NUM_THREADS"] = "1"
+env["MKL_NUM_THREADS"] = "1"
+
+phase_a_started = time.perf_counter()
+hidden_completed = subprocess.run(
+    [
+        sys.executable, str(HIDDEN_RUNNER),
+        "--cache-dir", str(CACHE_ROOT),
+        "--output-dir", str(HIDDEN_OUTPUT),
+        "--device", "cuda:0",
+    ],
+    cwd=str(SRC_ROOT), env=env, text=True,
+    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=6600,
+)
+print(hidden_completed.stdout)
+if hidden_completed.returncode != 0:
+    raise RuntimeError(f"fresh hidden-anchor evaluation failed rc={hidden_completed.returncode}")
+hidden_manifest = json.loads((HIDDEN_OUTPUT / "run_manifest.json").read_text(encoding="utf-8"))
+if hidden_manifest.get("status") != "complete":
+    raise RuntimeError("fresh hidden-anchor evaluation incomplete")
+if hidden_manifest.get("task_id") != "P1-03-fresh-hidden-anchor-evaluation-5000-v1":
+    raise RuntimeError("fresh hidden-anchor evaluation identity changed")
+if hidden_manifest.get("cache_manifest_sha256") != FRESH_CACHE_MANIFEST_SHA256_VALUE:
+    raise RuntimeError("fresh hidden-anchor evaluated wrong cache")
+if hidden_manifest.get("outer_oof_coverage") is not True:
+    raise RuntimeError("fresh hidden-anchor OOF coverage incomplete")
+print(
+    "P1_03_FRESH_CONFIRM_HIDDEN_PHASE PASS "
+    f"wall_seconds={time.perf_counter()-phase_a_started:.3f}"
+)
+
+phase_b_started = time.perf_counter()
+audit_completed = subprocess.run(
+    [
+        sys.executable, str(AUDIT_RUNNER),
+        "--hidden-eval-dir", str(HIDDEN_OUTPUT),
+        "--cache-dir", str(CACHE_ROOT),
+        "--stage1-root", str(INPUT_ROOT),
+        "--output-dir", str(OUTPUT),
+    ],
+    cwd=str(SRC_ROOT), env=env, text=True,
+    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=7200,
+)
+print(audit_completed.stdout)
+if audit_completed.returncode != 0:
+    raise RuntimeError(f"fresh confirmation audit failed rc={audit_completed.returncode}")
+
+expected_outputs = sorted([
+    "confirmation_decision.json",
+    "content_control_confirmation.json",
+    "content_control_scores.parquet",
+    "fusion_confirmation.json",
+    "fusion_scores.parquet",
+    "hidden_decision.json",
+    "hidden_fold_selection.json",
