@@ -171,7 +171,15 @@ def build_runtime(root: Path, output: Path, source: str) -> str:
     runtime_root = Path("/tmp") / "cmi-flu-v3-batch1-runtime"
     stage = "initialize"
     try:
-        output_dir.mkdir(parents=True, exist_ok=False)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        declared = [
+            "v3_public_singleton_Task1_1.csv", "v3_public_singleton_Task1_2.csv", "v3_public_singleton_Task1_3.csv",
+            "v3_public_singleton_Task1_4.csv", "v3_public_singleton_Task2_1.csv", "v3_public_singleton_Task2_2.csv",
+            "teacher_ledger.json", "measurement_contracts.json", "split_support.json", "auxiliary_label_coverage.json",
+            "source_alignment_audit.json", "diagnostic_manifest.json", "runtime_receipt.json",
+        ]
+        if any((output_dir / name).exists() for name in declared):
+            raise BridgeContractError("v3_batch1_declared_output_already_exists")
         if runtime_root.exists():
             shutil.rmtree(runtime_root)
         runtime_root.mkdir(parents=True)
@@ -239,12 +247,7 @@ def build_runtime(root: Path, output: Path, source: str) -> str:
         }
         (output_dir / "runtime_receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         actual = sorted(path.name for path in output_dir.iterdir() if path.is_file())
-        expected = sorted([
-            "v3_public_singleton_Task1_1.csv", "v3_public_singleton_Task1_2.csv", "v3_public_singleton_Task1_3.csv",
-            "v3_public_singleton_Task1_4.csv", "v3_public_singleton_Task2_1.csv", "v3_public_singleton_Task2_2.csv",
-            "teacher_ledger.json", "measurement_contracts.json", "split_support.json", "auxiliary_label_coverage.json",
-            "source_alignment_audit.json", "diagnostic_manifest.json", "runtime_receipt.json",
-        ])
+        expected = sorted(declared)
         if actual != expected:
             raise BridgeContractError("v3_batch1_output_allowlist_changed")
 
