@@ -14,20 +14,12 @@ BASE_BLOB = "dd81662cc579c9f36222d2dcd27ecbe9300266d3"
 OLD_SCHEMA = '''    banned = ('"participant_id"', '"subject_group"', '"row_index"', '"challenge_predictions"', '"submission_rows"', '"prediction_vector"', '"oof_predictions"')\n'''
 NEW_SCHEMA = '''    banned = ('"subject_group"', '"row_index"', '"challenge_predictions"', '"submission_rows"', '"prediction_vector"', '"oof_predictions"')\n'''
 OLD_TASK_BINDING = '''        + f'E12B_SOURCE = {source!r}\\n',\n'''
+TASK_DECLARATION = '''TASKS = ("Task1.1", "Task1.2", "Task1.3", "Task1.4", "Task2.1", "Task2.2", "Task2.3")'''
 NEW_TASK_BINDING = '''        + 'TASKS = ("Task1.1", "Task1.2", "Task1.3", "Task1.4", "Task2.1", "Task2.2", "Task2.3")\\n'\n        + f'E12B_SOURCE = {source!r}\\n',\n'''
 
 
 def git_blob(data: bytes) -> str:
     return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
-
-
-def replace_once(source: str, old: str, new: str, *, label: str) -> str:
-    if source.count(old) != 1 or source.count(new) != 0:
-        raise SystemExit(f"E12b {label} correction anchor changed")
-    patched = source.replace(old, new, 1)
-    if patched.count(new) != 1 or patched.count(old) != 0:
-        raise SystemExit(f"E12b {label} correction incomplete")
-    return patched
 
 
 def main() -> int:
@@ -41,8 +33,19 @@ def main() -> int:
     if git_blob(raw) != BASE_BLOB:
         raise SystemExit("E12b base builder changed before narrow runtime corrections")
     source = raw.decode("utf-8")
-    source = replace_once(source, OLD_SCHEMA, NEW_SCHEMA, label="schema-token")
-    source = replace_once(source, OLD_TASK_BINDING, NEW_TASK_BINDING, label="task-binding")
+
+    if source.count(OLD_SCHEMA) != 1 or source.count(NEW_SCHEMA) != 0:
+        raise SystemExit("E12b schema-token correction anchor changed")
+    source = source.replace(OLD_SCHEMA, NEW_SCHEMA, 1)
+    if source.count(NEW_SCHEMA) != 1 or source.count(OLD_SCHEMA) != 0:
+        raise SystemExit("E12b schema-token correction incomplete")
+
+    if source.count(OLD_TASK_BINDING) != 1 or TASK_DECLARATION in source:
+        raise SystemExit("E12b task-binding correction anchor changed")
+    source = source.replace(OLD_TASK_BINDING, NEW_TASK_BINDING, 1)
+    if source.count(TASK_DECLARATION) != 1:
+        raise SystemExit("E12b generated TASKS binding was not inserted exactly once")
+
     with tempfile.TemporaryDirectory(prefix="cmi-e12b-prepare-fix-") as tmp:
         patched_path = Path(tmp) / "prepare.py"
         patched_path.write_text(source, encoding="utf-8")
