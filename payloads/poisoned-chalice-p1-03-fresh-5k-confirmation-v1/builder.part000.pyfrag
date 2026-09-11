@@ -1,0 +1,159 @@
+"""Build the frozen P1-03 fresh-disjoint 5k confirmation evaluation Notebook."""
+from __future__ import annotations
+
+from hashlib import sha1
+from pathlib import Path
+import json
+import textwrap
+
+import nbformat
+
+ROOT = Path(__file__).resolve().parents[1]
+EVALUATION_SOURCE = (ROOT / "src/poisoned_chalice/evaluation.py").read_text(encoding="utf-8")
+FAITHFUL_SOURCE = (ROOT / "src/poisoned_chalice/sersem_author_faithful.py").read_text(encoding="utf-8")
+PILOT_SOURCE = (ROOT / "src/poisoned_chalice/lumia_hidden_state_pilot.py").read_text(encoding="utf-8")
+CACHE_SOURCE = (ROOT / "src/poisoned_chalice/lumia_hidden_state_cache.py").read_text(encoding="utf-8")
+PROBE_SOURCE = (ROOT / "src/poisoned_chalice/lumia_hidden_state_probe.py").read_text(encoding="utf-8")
+SCALE_SOURCE = (ROOT / "src/poisoned_chalice/lumia_hidden_state_scale.py").read_text(encoding="utf-8")
+HIDDEN_EVAL_BASE_PATH = ROOT / "scripts/run_lumia_hidden_state_scale_5000_evaluation.py"
+DEVELOPMENT_AUDIT_PATH = ROOT / "scripts/run_p1_03_post_5k_development_audit_v1.py"
+FRESH_AUDIT_PATH = ROOT / "scripts/run_p1_03_fresh_5k_confirmation_audit_v1.py"
+SCALE_CONFIG_PATH = ROOT / "configs/p1_03_lumia_hidden_state_scale_5000_v1_20260910.json"
+
+EXPECTED_HIDDEN_EVAL_BASE_BLOB = "d82e37b1ca5c6962c62c409d7944e9b6e7067bc7"
+EXPECTED_DEVELOPMENT_AUDIT_BLOB = "3d0a45b20c93554e293b4db9c243cd1133f1fef9"
+FRESH_CACHE_MANIFEST_SHA256 = "f2b9c6048f1496b5f0c96a369d9773754f13ebace14aacfce8c0ecec92ba4481"
+FRESH_COHORT_SET_SHA256 = "8fd03b98b46ffd9b7ef9a69ea58eaaeb6e0307cdafecf9d1c35a1562bbeaad27"
+FRESH_CACHE_TOTAL_SHARD_BYTES = 4512840643
+
+TARGET = "renta0426/poisoned-chalice-p1-03-fresh-5k-confirmation-v1"
+TITLE = "Poisoned Chalice P1-03 Fresh 5K Confirmation V1"
+CACHE_KERNEL = "renta0426/poisoned-chalice-lumia-fresh-cache-5000-v1"
+STAGE1_DATASET = "renta0426/stage1-raw-fim-submission-v1-output"
+NOTEBOOK_NAME = "poisoned-chalice-p1-03-fresh-5k-confirmation-v1.ipynb"
+OUT_DIR = ROOT / "notebooks/experiments/poisoned-chalice-p1-03-fresh-5k-confirmation-v1"
+OUT = OUT_DIR / NOTEBOOK_NAME
+
+
+def git_blob_sha(data: bytes) -> str:
+    return sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+
+
+hidden_eval_raw = HIDDEN_EVAL_BASE_PATH.read_bytes()
+if git_blob_sha(hidden_eval_raw) != EXPECTED_HIDDEN_EVAL_BASE_BLOB:
+    raise RuntimeError("frozen 5k hidden evaluation base blob changed")
+development_audit_raw = DEVELOPMENT_AUDIT_PATH.read_bytes()
+if git_blob_sha(development_audit_raw) != EXPECTED_DEVELOPMENT_AUDIT_BLOB:
+    raise RuntimeError("frozen post-5k development audit blob changed")
+
+hidden_eval_source = hidden_eval_raw.decode("utf-8")
+replacements = [
+    (
+        'EXPECTED_CACHE_MANIFEST_SHA256 = "380e553cea43c0bb4a649e7d6b696786b4e5178d45ee116efbd5e99cceeab6aa"',
+        f'EXPECTED_CACHE_MANIFEST_SHA256 = "{FRESH_CACHE_MANIFEST_SHA256}"',
+    ),
+    (
+        'KNOWN_LEGACY_CACHE_TASK_ID = "P1-03-lumia-hidden-state-cache-1000-v1"',
+        'KNOWN_LEGACY_CACHE_TASK_ID = "P1-03-lumia-hidden-state-fresh-cache-5000-v1"',
+    ),
+    (
+        'TASK_ID = "P1-03a-lumia-hidden-state-evaluation-5000-v1"',
+        'TASK_ID = "P1-03-fresh-hidden-anchor-evaluation-5000-v1"',
+    ),
+    ("4512897483", str(FRESH_CACHE_TOTAL_SHARD_BYTES)),
+    (
+        '"known_cache_manifest_task_id_bug_observed": cache_manifest.get("task_id") == KNOWN_LEGACY_CACHE_TASK_ID',
+        '"fresh_cache_task_id_observed": cache_manifest.get("task_id") == KNOWN_LEGACY_CACHE_TASK_ID',
+    ),
+]
+for old, new in replacements:
+    if hidden_eval_source.count(old) != 1:
+        raise RuntimeError(f"hidden evaluation transform marker changed: {old[:80]}")
+    hidden_eval_source = hidden_eval_source.replace(old, new)
+
+for marker in (
+    FRESH_CACHE_MANIFEST_SHA256,
+    'TASK_ID = "P1-03-fresh-hidden-anchor-evaluation-5000-v1"',
+    str(FRESH_CACHE_TOTAL_SHARD_BYTES),
+    '"fresh_cache_task_id_observed"',
+    "run_outer_oof_5000",
+    "paired_increment_bootstraps",
+):
+    if marker not in hidden_eval_source:
+        raise RuntimeError(f"fresh hidden evaluation marker missing: {marker}")
+if "380e553cea43c0bb4a649e7d6b696786b4e5178d45ee116efbd5e99cceeab6aa" in hidden_eval_source:
+    raise RuntimeError("consumed development cache identity survived fresh transform")
+
+FRESH_AUDIT_SOURCE = FRESH_AUDIT_PATH.read_text(encoding="utf-8")
+SCALE_CONFIG_TEXT = SCALE_CONFIG_PATH.read_text(encoding="utf-8")
+DEVELOPMENT_AUDIT_SOURCE = development_audit_raw.decode("utf-8")
+
+install_cell = r"""
+from pathlib import Path
+import os
+import shutil
+import subprocess
+import sys
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+SITE_ROOT = Path("/tmp/p1-03-fresh-confirm-v1-site")
+SRC_ROOT = Path("/tmp/p1-03-fresh-confirm-v1-src")
+HIDDEN_RUNNER = SRC_ROOT / "scripts/run_fresh_hidden_anchor_5000.py"
+AUDIT_RUNNER = SRC_ROOT / "scripts/run_p1_03_fresh_5k_confirmation_audit_v1.py"
+HIDDEN_OUTPUT = Path("/tmp/p1_03_fresh_hidden_anchor_eval_5000_v1")
+OUTPUT = Path("/kaggle/working/p1_03_fresh_5k_confirmation_v1")
+INPUT_ROOT = Path("/kaggle/input")
+
+for path in (SITE_ROOT, SRC_ROOT, HIDDEN_OUTPUT):
+    if path.exists():
+        shutil.rmtree(path)
+if OUTPUT.exists():
+    raise RuntimeError("fresh confirmation output already exists")
+SITE_ROOT.mkdir(parents=True)
+SRC_ROOT.mkdir(parents=True)
+
+packages = [
+    "datasets==4.6.1",
+    "numpy==2.4.2",
+    "pandas==3.0.1",
+    "pyarrow==23.0.1",
+    "scikit-learn==1.8.0",
+    "scipy==1.17.1",
+    "joblib==1.5.3",
+    "threadpoolctl==3.6.0",
+    "huggingface-hub==0.30.0",
+]
+subprocess.run(
+    [
+        sys.executable, "-m", "pip", "install", "-q",
+        "--disable-pip-version-check", "--target", str(SITE_ROOT), *packages,
+    ],
+    check=True,
+)
+
+probe = "\n".join([
+    "import importlib.metadata",
+    "import pathlib",
+    "import numpy, pandas, pyarrow, scipy, sklearn, datasets, torch",
+    "site = pathlib.Path(__import__('os').environ['P1_03_SITE_ROOT']).resolve()",
+    "expected = {'numpy':'2.4.2','pandas':'3.0.1','pyarrow':'23.0.1','scipy':'1.17.1','scikit-learn':'1.8.0','datasets':'4.6.1','huggingface-hub':'0.30.0'}",
+    "for dist, version in expected.items(): assert importlib.metadata.version(dist) == version, (dist, importlib.metadata.version(dist))",
+    "for module in (numpy, pandas, pyarrow, scipy, sklearn, datasets): assert site in pathlib.Path(module.__file__).resolve().parents, (module.__name__, module.__file__)",
+    "assert site not in pathlib.Path(torch.__file__).resolve().parents",
+    "print('P1_03_FRESH_CONFIRM_IMPORT_GATE PASS')",
+])
+env = os.environ.copy()
+env["PYTHONPATH"] = str(SITE_ROOT)
+env["P1_03_SITE_ROOT"] = str(SITE_ROOT)
+completed = subprocess.run(
+    [sys.executable, "-c", probe],
+    env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180,
+)
+print(completed.stdout)
+if completed.returncode != 0:
+    raise RuntimeError(f"fresh confirmation import gate failed rc={completed.returncode}")
+sys.path.insert(0, str(SITE_ROOT))
+"""
