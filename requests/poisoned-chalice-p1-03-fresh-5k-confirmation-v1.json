@@ -14,7 +14,8 @@
     "scripts/run_p1_03_post_5k_development_audit_v1.py": "3d0a45b20c93554e293b4db9c243cd1133f1fef9",
     "configs/p1_03_fresh_5k_confirmation_evaluation_v1_20260911.json": "d642dfa51f922613154d7d5f2e95d211631180b5"
   },
-  "generated_notebook_sha256": "4236585ba12931e075828bf5764508e237aae863118b4138c1df16a802c09daa",
+  "generated_notebook_sha256": "4236585b0dbc1ea54309a91cbc72bfd226467b2209c34cb428cfdd7328c09daa",
+  "notebook_serializer": "nbformat==5.11.1",
   "historical_materialized_sources": {
     "hidden_evaluation_bridge_commit": "6dd830e657d1fc004f14ba8ebb8301294fb78f66",
     "development_audit_bridge_commit": "5f3d94c9c589cb8c138cae8f93c79464cd1af508",
