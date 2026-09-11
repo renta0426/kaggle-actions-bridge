@@ -7,7 +7,6 @@ import ast
 import hashlib
 import json
 from pathlib import Path
-import sys
 import tempfile
 
 import cmi_flu_v3_batch1_runtime_repair_prepare as parent
@@ -148,7 +147,7 @@ def build_runtime(root: Path, output: Path) -> str:
             raise BridgeContractError("v3_batch1_v2_entry_missing:" + name)
     return repair_module
 '''
-    runtime = parent.parent.base.replace_function(runtime, "load_v3_batch1_module", loader)
+    runtime = parent.base.replace_function(runtime, "load_v3_batch1_module", loader)
 
     self_test = r'''def self_test() -> int:
     import ast, hashlib, sys, tempfile
@@ -190,7 +189,7 @@ def build_runtime(root: Path, output: Path) -> str:
     )
     return 0
 '''
-    runtime = parent.parent.base.replace_function(runtime, "self_test", self_test)
+    runtime = parent.base.replace_function(runtime, "self_test", self_test)
 
     receipt_anchor = '            "science_blob": V3_SCIENCE_BLOB,\n'
     if runtime.count(receipt_anchor) != 1:
