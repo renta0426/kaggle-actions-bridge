@@ -45,6 +45,14 @@ The E12a-v2 generated runtime defines `terminal_success_line`. Runtime self-test
 
 This directly covers the E12a-v1 post-artifact terminal defect rather than relying only on syntax/build checks.
 
+### Secret-free regression incident and repair
+
+The first PR validation run `34547109047` failed before any Kaggle credential or operation. The generated runtime had already removed the inherited `len(result['tasks'])` access, but its newly added self-test checked whether the terminal string contained the substring `tasks=`. The correct new field name `portfolio_tasks=7` naturally contains that substring, so the test falsely classified the repaired terminal path as stale.
+
+Classification: `bridge_implementation_ci_false_positive`.
+
+The single repair does not change science, the request, the target, runtime execution logic, model identities, CV, resource limits, or output contract. It narrows that test boundary from arbitrary substring `tasks=` to the standalone legacy token ` tasks=`. A wrapper verifies the exact base-builder Git blob before applying this one-line test-only substitution. The corrected secret-free workflow then executes the full generated-runtime validator, summary renderer, terminal helper, stale-Task1.3 rejection, and aggregate sanitizer. No Kaggle write or compute occurred in the failed validation run.
+
 ## One-shot Kaggle contract
 
 - request: `20260911-cmi-flu-strategy-e12a-v2-portfolio-reconciliation-001`
