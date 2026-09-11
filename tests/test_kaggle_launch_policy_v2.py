@@ -97,6 +97,22 @@ class KaggleLaunchPolicyV2Tests(unittest.TestCase):
             with self.assertRaisesRegex(PolicyError, "bridge_capacity_gate_forbidden"):
                 validate_workflow(path)
 
+    def test_experiment_write_ci_cannot_depend_on_global_readme_wording(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "95-example-static.yml"
+            path.write_text(
+                "jobs:\n"
+                "  validate:\n"
+                "    steps:\n"
+                "      - run: |\n"
+                "          response=api.kernels_push(kernel_dir)\n"
+                "          readme = read(\"README.md\", 131072).decode(\"utf-8\")\n"
+                "          raise SystemExit(\"README resource policy marker missing\")\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(PolicyError, "global_policy_reverse_dependency_forbidden"):
+                validate_workflow(path)
+
     def test_changed_tree_requires_v2_only_for_new_request(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
