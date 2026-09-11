@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.abc
 import importlib.util
+import math
 import sys
 import types
 
@@ -43,12 +44,20 @@ class _Dummy(metaclass=_DummyMeta):
         return self
 
 
+def _pandas_isna(value):
+    if value is None:
+        return True
+    return isinstance(value, float) and math.isnan(value)
+
+
 class _Loader(importlib.abc.Loader):
     def create_module(self, spec):
         module = types.ModuleType(spec.name)
         module.__path__ = []
         module.__all__ = []
         module.__getattr__ = lambda name: _Dummy
+        if spec.name == "pandas":
+            module.isna = _pandas_isna
         return module
 
     def exec_module(self, module):
@@ -57,7 +66,7 @@ class _Loader(importlib.abc.Loader):
 
 class _Finder(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname == _PREFIXES or any(fullname == prefix or fullname.startswith(prefix + ".") for prefix in _PREFIXES):
+        if any(fullname == prefix or fullname.startswith(prefix + ".") for prefix in _PREFIXES):
             return importlib.util.spec_from_loader(fullname, _Loader(), is_package=True)
         return None
 
