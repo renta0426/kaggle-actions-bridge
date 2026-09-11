@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "request_id": "20260911-cmi-flu-e12c-manual-submission-notebook-001",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-e12c-manual-submission-20260911-001",
+  "title": "CMI Flu E12c Manual Submission 20260911 001",
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "bb6f41ed81b0bbd4ecdc397c6abb9df671c6ebf8",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_e12c_blob_sha": "a495584a7e461478bd1a41d01d2536c4435a8f7f",
+  "parent_e12b": {
+    "request_id": "20260911-cmi-flu-strategy-e12b-challenge-freeze-001",
+    "target": "renta0426/cmi-flu-e12b-challenge-freeze-20260911-001",
+    "version": 1,
+    "actions_run": 34553673283,
+    "actions_job": 103121695346,
+    "kernel_terminal_state": "COMPLETE",
+    "semantic_submission_sha256": "5faf93bee4b68aba23c53e09adbb251bdd07d287dd48fb6d94d6fce53ef9a60f",
+    "canonical_csv_sha256": "983aaf097d04477c4ccf7bf817fdf66e552937e69bceaa48cfb260cb84413f1b",
+    "canonical_csv_bytes": 5933
+  },
+  "historical_control": {
+    "source_kernel": "renta0426/cmi-flu-manual-probe-files-20260906-001",
+    "expected_current_version": 1,
+    "expected_terminal_state": "COMPLETE",
+    "source_filename": "submission-task12-only.csv",
+    "sha256": "365607d59cd530656b929a1c1c57412cc6d375265a8d1ba10d304c64e012f387",
+    "public_score": 0.218,
+    "required_changed_tasks": [
+      "Task1.3"
+    ]
+  },
+  "output_contract": {
+    "submission_filename": "submission.csv",
+    "submission_sha256": "983aaf097d04477c4ccf7bf817fdf66e552937e69bceaa48cfb260cb84413f1b",
+    "submission_bytes": 5933,
+    "manifest_filename": "manual-submission-manifest.json",
+    "row_level_submission_may_exist_only_in_private_kaggle_output_and_ephemeral_runner_validation": true,
+    "public_artifact_upload": false
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 60
+  },
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version",
+    "persist exact validated submission.csv and aggregate manifest in that private Notebook output"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true
+}
