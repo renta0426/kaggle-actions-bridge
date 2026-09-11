@@ -39,7 +39,10 @@ def _verify_base_contract() -> None:
 
 def ensure_kaggle_cli_path() -> str:
     """Expose the locked CLI installed beside the protected-job Python executable."""
-    python_bin = Path(sys.executable).resolve().parent
+    # Do not resolve sys.executable itself: venv/bin/python is commonly a symlink to
+    # /usr/bin/python3.x. Resolving that symlink loses the venv bin directory where
+    # the locked `kaggle` console script is installed.
+    python_bin = Path(sys.executable).parent.resolve()
     existing = os.environ.get("PATH", "")
     parts = [part for part in existing.split(os.pathsep) if part]
     if str(python_bin) not in parts:
@@ -105,7 +108,7 @@ def main() -> int:
     if sys.argv[1:] == ["--path-self-test"]:
         print(
             "CMI_FLU_E12B_OUTPUT_READER_PATH_SELF_TEST PASS "
-            f"python_bin={Path(sys.executable).resolve().parent} cli_name={Path(cli).name} "
+            f"python_bin={Path(sys.executable).parent.resolve()} cli_name={Path(cli).name} "
             "auth=false write=false compute=false"
         )
         return 0
