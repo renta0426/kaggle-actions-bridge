@@ -16,11 +16,13 @@ frozen output allowlist, and validates the existing scientific results.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
+import sys
 import tempfile
 from typing import Any
 
@@ -51,6 +53,11 @@ def canonical_slug(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", title.casefold()).strip("-")
 
 
+def git_blob_sha(path: Path) -> str:
+    data = path.read_bytes()
+    return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+
+
 def _validate_historical_contract(bridge_root: Path) -> None:
     """Prove the root cause from the frozen launcher materialization."""
     if base.TARGET != DECLARED_TARGET:
@@ -70,15 +77,14 @@ def _validate_historical_contract(bridge_root: Path) -> None:
     launcher = bridge_root / base.LAUNCHER
     if not launcher.is_file():
         raise RuntimeError("historical_launcher_missing")
-    if base.sha256_file(launcher) == ORIGINAL_LAUNCHER_BLOB_SHA:
-        # ORIGINAL_LAUNCHER_BLOB_SHA is a Git blob SHA, not a content SHA-256.
-        raise RuntimeError("launcher_hash_domain_confusion")
+    if git_blob_sha(launcher) != ORIGINAL_LAUNCHER_BLOB_SHA:
+        raise RuntimeError("historical_launcher_blob_mismatch")
 
     with tempfile.TemporaryDirectory(prefix="pc-p1-02-v3-history-") as tmp:
         kernel_dir = Path(tmp) / "kernel"
         completed = subprocess.run(
             [
-                str(Path(base.sys.executable)),
+                sys.executable,
                 str(launcher),
                 "--materialize",
                 "--snapshot-root",
@@ -111,7 +117,7 @@ def _run_read(command: list[str], stage: str, timeout: int = 240) -> None:
         capture_output=True,
         check=False,
         timeout=timeout,
-        env=base.os.environ.copy(),
+        env=os.environ.copy(),
     )
     if completed.returncode:
         digest = base.sha256_bytes(completed.stdout + completed.stderr)
@@ -143,7 +149,7 @@ def prove_source_identity(bridge_root: Path, root: Path) -> str:
     launcher = bridge_root / base.LAUNCHER
     completed = subprocess.run(
         [
-            str(Path(base.sys.executable)),
+            sys.executable,
             str(launcher),
             "--materialize",
             "--snapshot-root",
