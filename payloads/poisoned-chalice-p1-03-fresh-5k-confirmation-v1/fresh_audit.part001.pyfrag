@@ -1,0 +1,160 @@
+    selection_path = cache_root / "cohort_selection.json"
+    selection = json.loads(selection_path.read_text(encoding="utf-8"))
+    required_selection = {
+        "task_id": FRESH_SELECTION_TASK_ID,
+        "fresh_rows": EXPECTED_ROWS,
+        "fresh_full_stage1_overlap": True,
+        "fresh_current_hidden_overlap_rows": 0,
+        "fresh_prior_1k_overlap_rows": 0,
+        "fresh_prior_50_overlap_rows": 0,
+        "labels_present_during_model_scoring": False,
+        "fresh_cohort_set_sha256": FRESH_COHORT_SET_SHA256,
+        "stage1_rows": EXPECTED_STAGE1_ROWS,
+    }
+    for key, expected in required_selection.items():
+        if selection.get(key) != expected:
+            raise RuntimeError(f"fresh cohort selection changed: {key}")
+    cell_counts = selection.get("fresh_language_label_counts") or {}
+    if len(cell_counts) != 10 or any(int(v) != EXPECTED_LANGUAGE_LABEL for v in cell_counts.values()):
+        raise RuntimeError("fresh cohort selection language-label balance changed")
+
+    run_manifest = json.loads((cache_root / "run_manifest.json").read_text(encoding="utf-8"))
+    if run_manifest.get("status") != "complete":
+        raise RuntimeError("fresh cache run manifest is not complete")
+    if run_manifest.get("cohort_set_sha256") != FRESH_COHORT_SET_SHA256:
+        raise RuntimeError("fresh cache run cohort hash changed")
+    if run_manifest.get("automatic_compute_retries") != 0:
+        raise RuntimeError("fresh cache retry contract changed")
+
+    metadata_info = manifest.get("metadata") or {}
+    sample_meta_path = cache_root / str(metadata_info.get("sample_metadata"))
+    cohort_path = cache_root / str(metadata_info.get("cohort_manifest"))
+    if sha256_file(sample_meta_path) != metadata_info.get("sample_metadata_sha256"):
+        raise RuntimeError("fresh sample metadata hash mismatch")
+    if sha256_file(cohort_path) != metadata_info.get("cohort_manifest_sha256"):
+        raise RuntimeError("fresh cohort manifest hash mismatch")
+    sample_rows = [json.loads(x) for x in sample_meta_path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    cohort_rows = [json.loads(x) for x in cohort_path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    if len(sample_rows) != EXPECTED_ROWS or len(cohort_rows) != EXPECTED_ROWS:
+        raise RuntimeError("fresh metadata coverage changed")
+    if [x["sample_id"] for x in sample_rows] != [x["sample_id"] for x in cohort_rows]:
+        raise RuntimeError("fresh metadata/cohort order mismatch")
+    if len({x["sample_id"] for x in sample_rows}) != EXPECTED_ROWS:
+        raise RuntimeError("fresh metadata duplicate sample ids")
+    helper_fallback = [
+        {
+            "execution_index": int(x["execution_index"]),
+            "language": str(x["language"]),
+            "sample_id": str(x["sample_id"]),
+            "seq_len": int(x["seq_len"]),
+        }
+        for x in sample_rows
+        if x.get("helper_ast_backend") != "tree_sitter"
+    ]
+    return {
+        "cache_manifest_sha256": FRESH_CACHE_MANIFEST_SHA256,
+        "cohort_set_sha256": FRESH_COHORT_SET_SHA256,
+        "rows": EXPECTED_ROWS,
+        "shard_count": 20,
+        "total_shard_bytes": EXPECTED_SHARD_BYTES,
+        "helper_ast_fallback_rows": helper_fallback,
+    }
+
+
+def load_hidden_oof(hidden_eval_dir: Path) -> tuple[pd.DataFrame, dict]:
+    run_manifest_path = hidden_eval_dir / "run_manifest.json"
+    run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    if run_manifest.get("status") != "complete":
+        raise RuntimeError("fresh hidden evaluation not complete")
+    if run_manifest.get("task_id") != FRESH_HIDDEN_EVAL_TASK_ID:
+        raise RuntimeError("fresh hidden evaluation task identity changed")
+    if run_manifest.get("cache_manifest_sha256") != FRESH_CACHE_MANIFEST_SHA256:
+        raise RuntimeError("fresh hidden evaluation used wrong cache")
+    if run_manifest.get("expected_cache_manifest_sha256") != FRESH_CACHE_MANIFEST_SHA256:
+        raise RuntimeError("fresh hidden evaluation cache expectation changed")
+    if run_manifest.get("rows") != EXPECTED_ROWS or run_manifest.get("outer_oof_coverage") is not True:
+        raise RuntimeError("fresh hidden evaluation OOF coverage incomplete")
+
+    path = hidden_eval_dir / "oof_predictions.csv"
+    frame = pd.read_csv(path)
+    required = {
+        "sample_id", "language", "label",
+        "mean_only_top5_ensemble",
+        "lumia_caller_literal_top5_ensemble",
+        "lumia_helper_language_aware_top5_ensemble",
+    }
+    if not required.issubset(frame.columns):
+        raise RuntimeError(f"fresh hidden OOF columns missing: {sorted(required-set(frame.columns))}")
+    if len(frame) != EXPECTED_ROWS or frame.sample_id.duplicated().any():
+        raise RuntimeError("fresh hidden OOF coverage changed")
+    frame["label"] = frame.label.astype(int)
+    counts = frame.groupby(["language", "label"]).size()
+    if len(counts) != 10 or not counts.eq(EXPECTED_LANGUAGE_LABEL).all():
+        raise RuntimeError("fresh hidden OOF balance changed")
+    return frame.reset_index(drop=True), {
+        "oof_predictions_sha256": sha256_file(path),
+        "hidden_run_manifest_sha256": sha256_file(run_manifest_path),
+        "hidden_metrics_sha256": sha256_file(hidden_eval_dir / "metrics.json"),
+        "hidden_decision_sha256": sha256_file(hidden_eval_dir / "decision.json"),
+        "hidden_fold_selection_sha256": sha256_file(hidden_eval_dir / "fold_selection.json"),
+    }
+
+
+def fusion_confirmation_decision(base, frame: pd.DataFrame, fusion: dict) -> dict:
+    hidden = fusion["metrics"][base.MEAN_TOP5]
+    candidates = {}
+    for weight in FROZEN_FUSION_WEIGHTS:
+        name = f"rank_fusion_hidden_{weight:.2f}"
+        metrics = fusion["metrics"][name]
+        bootstrap = fusion["paired_bootstrap"][f"{name}_minus_{base.MEAN_TOP5}"]
+        tpr_delta = float(metrics["tpr_at_0.01_fpr"] - hidden["tpr_at_0.01_fpr"])
+        auc_delta = float(metrics["auc"] - hidden["auc"])
+        tpr_lower = float(bootstrap["delta"]["tpr_at_0.01_fpr"]["lower_95"])
+        tpr_upper = float(bootstrap["delta"]["tpr_at_0.01_fpr"]["upper_95"])
+        auc_lower = float(bootstrap["delta"]["auc"]["lower_95"])
+        auc_upper = float(bootstrap["delta"]["auc"]["upper_95"])
+        gates = {
+            "tpr_at_1pct_delta_at_least_0_01": bool(tpr_delta >= FUSION_TPR_DELTA_MIN),
+            "paired_bootstrap_tpr_delta_lower_95_nonnegative": bool(
+                tpr_lower >= FUSION_TPR_BOOTSTRAP_LOWER_MIN
+            ),
+            "auc_delta_at_least_minus_0_005": bool(auc_delta >= FUSION_AUC_DELTA_MIN),
+        }
+        candidates[name] = {
+            "hidden_rank_weight": weight,
+            "metrics": metrics,
+            "delta_vs_hidden": {
+                "auc": auc_delta,
+                "auc_lower_95": auc_lower,
+                "auc_upper_95": auc_upper,
+                "tpr_at_0.01_fpr": tpr_delta,
+                "tpr_at_0.01_fpr_lower_95": tpr_lower,
+                "tpr_at_0.01_fpr_upper_95": tpr_upper,
+            },
+            "promotion_gates": gates,
+            "passes_all_promotion_gates": bool(all(gates.values())),
+        }
+    return {
+        "primary": PRIMARY_FUSION,
+        "secondary": SECONDARY_FUSION,
+        "hidden_reference": base.MEAN_TOP5,
+        "hidden_metrics": hidden,
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "no_additional_weights_evaluated": True,
+    }
+
+
+def target_specificity_summary(base, controls: dict) -> dict:
+    random_oof = controls["random_outer_oof"]
+    hidden = random_oof["hidden_mean_top5"]
+    c0 = random_oof["C0_static_logistic"]
+    c1 = random_oof["C1_hashed_char_token_ngram_logistic"]
+    by_auc = "C0_static_logistic" if c0["auc"] >= c1["auc"] else "C1_hashed_char_token_ngram_logistic"
+    strongest = random_oof[by_auc]
+    paired_name = "hidden_minus_C0" if by_auc.startswith("C0") else "hidden_minus_C1"
+    return {
+        "hidden": hidden,
+        "C0": c0,
+        "C1": c1,
+        "strongest_control_by_auc": by_auc,
