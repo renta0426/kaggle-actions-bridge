@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-cmi-flu-v3-batch1-readonly-reconcile-001",
+  "operation": "kernel_read_reconcile",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "read_only": true,
+  "side_effects": [],
+  "incident": {
+    "workflow_run": 34603833258,
+    "workflow_job": 103277431613,
+    "writer_request_id": "20260911-cmi-flu-strategy-v3-batch1-001",
+    "kernels_push_calls": 1,
+    "automatic_compute_retries": 0,
+    "competition_submissions": 0,
+    "model_fit_count": 0,
+    "failure_classification": "bridge_implementation_ambiguous_post_write_identity"
+  },
+  "candidate_kernel_refs": [
+    "renta0426/cmi-flu-v3-batch1-audit-diagnostics-20260911-001",
+    "renta0426/cmi-flu-strategy-v3-batch1-audit-diagnostics-20260911-001"
+  ],
+  "source_B": {
+    "kernel": "renta0426/cmi-flu-e12c-manual-submission-20260911-002",
+    "version": 1,
+    "bytes": 5926,
+    "sha256": "0f9df53c3aa8c6e4ac693f6a42dbd2633b4b61d1462df798a9bd767c220be3a5"
+  },
+  "authorization_boundary": {
+    "kaggle_writes_authorized": false,
+    "competition_submission_authorized": false,
+    "kernel_push_authorized": false,
+    "kernel_delete_authorized": false,
+    "output_read_authorized": true,
+    "aggregate_safe_recovery_authorized": true
+  },
+  "output_hygiene": {
+    "row_level_values_to_github": false,
+    "private_csv_contents_to_github": false,
+    "diagnostic_csv_hashes_to_github": true,
+    "aggregate_json_to_github_after_sanitizer": true
+  }
+}
