@@ -73,20 +73,15 @@ def raw_get(commit: str, path: str, maximum: int = 512_000) -> bytes:
     return data
 
 
-def reconstruct_source(parts_dir: Path, stem: str, expected_blob: str) -> bytes:
-    parts = sorted(parts_dir.glob(f"{stem}.part*.pyfrag"))
-    if len(parts) != 3:
-        raise RuntimeError(f"expected exactly three {stem} fragments, got {len(parts)}")
-    # Both frozen source splits occur after a line followed by one intentional
-    # blank line at the first boundary; the second boundary is an ordinary line
-    # boundary. Contents-API fragments omit their terminal newline, so restore
-    # those exact bytes explicitly before verifying the Git blob identity.
-    raw = [path.read_bytes() for path in parts]
-    data = raw[0] + b"\n\n" + raw[1] + b"\n" + raw[2] + b"\n"
+def exact_payload_source(payload_dir: Path, filename: str, expected_blob: str) -> bytes:
+    path = payload_dir / filename
+    if not path.is_file():
+        raise RuntimeError(f"exact science source missing from payload: {filename}")
+    data = path.read_bytes()
     observed = git_blob_sha(data)
     if observed != expected_blob:
-        raise RuntimeError(f"{stem} reassembly blob mismatch: {observed}")
-    compile(data, stem, "exec")
+        raise RuntimeError(f"exact science source blob mismatch for {filename}: {observed}")
+    compile(data, filename, "exec")
     return data
 
 
@@ -140,11 +135,11 @@ def reconstruct_research(payload_dir: Path, research_root: Path) -> dict:
     audit_out.write_bytes(current_audit)
     compile(current_audit, str(audit_out), "exec")
 
-    fresh_audit = reconstruct_source(payload_dir, "fresh_audit", SCIENCE_FRESH_AUDIT_BLOB)
+    fresh_audit = exact_payload_source(payload_dir, "fresh_audit.py", SCIENCE_FRESH_AUDIT_BLOB)
     fresh_out = research_root / "scripts/run_p1_03_fresh_5k_confirmation_audit_v1.py"
     fresh_out.write_bytes(fresh_audit)
 
-    builder = reconstruct_source(payload_dir, "builder", SCIENCE_BUILDER_BLOB)
+    builder = exact_payload_source(payload_dir, "builder.py", SCIENCE_BUILDER_BLOB)
     builder_out = research_root / "scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v1.py"
     builder_out.write_bytes(builder)
 
