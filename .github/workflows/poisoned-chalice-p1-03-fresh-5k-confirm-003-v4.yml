@@ -1,0 +1,299 @@
+name: Poisoned Chalice P1-03 fresh confirm-003 v4
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4.yml
+      - requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4.json
+      - payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4.yml
+      - requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4.json
+      - payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4/**
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kaggle-api-global
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  TARGET: renta0426/poisoned-chalice-p1-03-fresh-5k-confirm-003
+  TITLE: Poisoned Chalice P1-03 Fresh 5K Confirm 003
+  HISTORICAL_CONFIRM_COMMIT: 708ed2026c18556c745e020e2b59046c2c46e764
+  V4_NOTEBOOK_SHA256: ca3d89ad6c3c156035ead68b31e8be931813de06598ef1205d409d64e02bfd76
+
+jobs:
+  validate:
+    name: Validate exact v4 runtime-context repair without credentials
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Enforce secret-free boundary and fetch exact bundle
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:$name"; exit 1; }
+          done
+          source_sha="$EVENT_SHA"
+          [[ "$EVENT_NAME" != "pull_request" ]] || source_sha="$PR_HEAD_SHA"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          mkdir -p "$workdir/payload"
+          python3 - "$source_sha" "$HISTORICAL_CONFIRM_COMMIT" "$workdir" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          current_sha,historical_sha,root_value=sys.argv[1:]
+          root=pathlib.Path(root_value)
+          items=[
+            (current_sha,'requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4.json',root/'request.json'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4/materialize_v4.py',root/'materialize_v4.py'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-v3/materialize_v3.py',root/'payload/materialize_v3.py'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2/materialize_v2.py',root/'payload/materialize_v2.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/materialize.py',root/'payload/materialize_v1.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/fresh_audit.py',root/'payload/fresh_audit.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/builder.py',root/'payload/builder.py'),
+          ]
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for sha,path,out in items:
+              req=urllib.request.Request(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}',headers={'User-Agent':'p1-03-confirm-v4-pr/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(512001)
+              if not data or len(data)>512000:raise SystemExit(f'source byte budget failed:{path}')
+              out.parent.mkdir(parents=True,exist_ok=True);out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+
+      - name: Validate request and frozen scientific contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$WORKDIR/request.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r['request_id']=='20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-v4'
+          assert r['parent_request_id']=='20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-v3'
+          assert r['execution_policy']=='kaggle_native_capacity_v2'
+          assert r['operation']=='save_kernel_once'
+          assert r['target']=='renta0426/poisoned-chalice-p1-03-fresh-5k-confirm-003'
+          assert r['expected_current_version_before_write']==3
+          assert r['expected_state_before_write']=='ERROR'
+          assert r['expected_version_after_write']==4
+          assert r['science_commit']=='144b44261b46b87c4ac1c6fc662e20130d8740db'
+          assert r['science_files']['scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v4.py']=='0441581cd0fb5bc80377831a40e0fc492ed13474'
+          assert r['science_files']['docs/P1_03_FRESH_5K_CONFIRMATION_V3_RUNTIME_FAILURE_20260911.md']=='7150c18266174188822823ad8a3c62b576a0af5e'
+          assert r['science_files']['scripts/run_p1_03_fresh_5k_confirmation_v4_runtime_smoke.py']=='73437afc900d0fbd0d647e2dc7bc59453012c548'
+          assert r['v3_notebook_sha256']=='5141709b43a48787e269083d86776eb23597c56dd902fc694181d841f81eda33'
+          assert r['v4_notebook_sha256']=='ca3d89ad6c3c156035ead68b31e8be931813de06598ef1205d409d64e02bfd76'
+          resource=r['resource']
+          assert resource['accelerator']=='gpu' and resource['machine_shape']=='NvidiaTeslaT4'
+          assert 'max_active_runs' not in resource and 'min_remaining_quota_hours' not in resource
+          assert r['automatic_compute_retries']==0 and r['competition_submission'] is False
+          assert r['scientific_contract']['fusion_hidden_rank_weights']==[0.75,0.5]
+          assert r['scientific_contract']['fusion_formula_count']==2
+          assert r['scientific_contract']['portable_primary']=='mean pooling 96-feature scalar'
+          c=r['consumed_v3_result']
+          assert c['hidden_phase_completed'] is True
+          assert c['transport_identity_gate_passed'] is True
+          assert c['fusion_computation_reached'] is True
+          assert c['fusion_result_persisted_or_printed'] is False
+          assert c['content_controls_evaluated'] is False and c['portable_scalar_evaluated'] is False
+          assert c['failure']=="NameError: name 'ROOT' is not defined"
+          repair=r['runtime_repair']
+          assert repair['science_formulas_changed'] is False and repair['cohort_changed'] is False
+          assert repair['promotion_gates_changed'] is False
+          assert repair['execution_cell_changed'] is True and repair['execution_cell_change_is_operational_checkpoint_only'] is True
+          assert repair['base_module_root_context_injections']==1
+          assert repair['hidden_checkpoint_files']==6 and repair['raw_hidden_state_shards_checkpointed']==0
+          print('P1_03_CONFIRM_003_V4_REQUEST PASS write_calls=0 capacity_gate=0 formulas_changed=0')
+          PY
+
+      - name: Materialize byte-exact v4 Notebook
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/serializer-venv"
+          "$WORKDIR/serializer-venv/bin/python" -m pip install --disable-pip-version-check --no-input nbformat==5.11.1 >/dev/null
+          "$WORKDIR/serializer-venv/bin/python" "$WORKDIR/materialize_v4.py" --payload-dir "$WORKDIR/payload" --kernel-dir "$WORKDIR/kernel"
+          python3 - "$WORKDIR/request.json" "$WORKDIR/kernel" <<'PY'
+          import hashlib,json,pathlib,re,sys
+          r=json.load(open(sys.argv[1]));root=pathlib.Path(sys.argv[2]);mp=root/'kernel-metadata.json';meta=json.loads(mp.read_text());nb=root/meta['code_file']
+          sha=hashlib.sha256(nb.read_bytes()).hexdigest();assert sha==r['v4_notebook_sha256']
+          assert meta['code_file']=='poisoned-chalice-p1-03-fresh-5k-confirmation-v4.ipynb'
+          before=dict(meta);meta['id']=r['target'];meta['title']=r['title'];changed={k for k in before if before[k]!=meta[k]};assert changed=={'id','title'}
+          slug=re.sub(r'-+','-',re.sub(r'[^a-z0-9]+','-',r['title'].lower())).strip('-');assert slug==r['target'].split('/',1)[1]
+          mp.write_text(json.dumps(meta,indent=2,sort_keys=True)+'\n',encoding='utf-8');assert hashlib.sha256(nb.read_bytes()).hexdigest()==sha
+          assert meta['dataset_sources']==['renta0426/stage1-raw-fim-submission-v1-output']
+          assert meta['kernel_sources']==['renta0426/poisoned-chalice-lumia-fresh-cache-5000-v1']
+          print('P1_03_CONFIRM_003_V4_MATERIALIZE PASS notebook_sha256='+sha+' transport_delta=id,title write_calls=0')
+          PY
+
+      - name: Cleanup validation material
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+
+  launch:
+    name: Launch approved confirm-003 version 4 exactly once
+    needs: validate
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Enforce protected boundary and fetch exact bundle
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$EVENT_SHA" == "$WORKFLOW_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4.yml@refs/heads/main" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" ]]
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          workdir="$(mktemp -d)";echo "WORKDIR=$workdir" >> "$GITHUB_ENV";mkdir -p "$workdir/payload"
+          python3 - "$EVENT_SHA" "$HISTORICAL_CONFIRM_COMMIT" "$workdir" <<'PY'
+          import pathlib,ssl,sys,urllib.request
+          current_sha,historical_sha,root_value=sys.argv[1:];root=pathlib.Path(root_value)
+          items=[
+            (current_sha,'requests/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4.json',root/'request.json'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-v4/materialize_v4.py',root/'materialize_v4.py'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-v3/materialize_v3.py',root/'payload/materialize_v3.py'),
+            (current_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirm-003-hf-loader-v2/materialize_v2.py',root/'payload/materialize_v2.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/materialize.py',root/'payload/materialize_v1.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/fresh_audit.py',root/'payload/fresh_audit.py'),
+            (historical_sha,'payloads/poisoned-chalice-p1-03-fresh-5k-confirmation-v1/builder.py',root/'payload/builder.py'),
+            (current_sha,'scripts/kaggle_exact_identity.py',root/'kaggle_exact_identity.py'),
+            (current_sha,'scripts/kaggle_kernel_write_v2.py',root/'kaggle_kernel_write_v2.py'),
+            (current_sha,'requirements/kaggle-2.2.4.lock',root/'kaggle-2.2.4.lock'),
+          ]
+          ctx=ssl.create_default_context()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx),NoRedirect())
+          for sha,path,out in items:
+              req=urllib.request.Request(f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}',headers={'User-Agent':'p1-03-confirm-v4-launch/1'})
+              with opener.open(req,timeout=30) as response:data=response.read(512001)
+              if not data or len(data)>512000:raise SystemExit(f'source byte budget failed:{path}')
+              out.parent.mkdir(parents=True,exist_ok=True);out.write_bytes(data)
+              if path.endswith('.py'):compile(data,path,'exec')
+          PY
+          echo 'P1_03_CONFIRM_003_V4_BOUNDARY PASS capacity_gate=0 retries=0 submissions=0'
+
+      - name: Reconstruct exact v4 Notebook and locked Kaggle client
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/serializer-venv"
+          "$WORKDIR/serializer-venv/bin/python" -m pip install --disable-pip-version-check --no-input nbformat==5.11.1 >/dev/null
+          "$WORKDIR/serializer-venv/bin/python" "$WORKDIR/materialize_v4.py" --payload-dir "$WORKDIR/payload" --kernel-dir "$WORKDIR/kernel"
+          python3 - "$WORKDIR/request.json" "$WORKDIR/kernel" <<'PY'
+          import hashlib,json,pathlib,re,sys
+          r=json.load(open(sys.argv[1]));root=pathlib.Path(sys.argv[2]);mp=root/'kernel-metadata.json';meta=json.loads(mp.read_text());nb=root/meta['code_file']
+          sha=hashlib.sha256(nb.read_bytes()).hexdigest();assert sha==r['v4_notebook_sha256']
+          before=dict(meta);meta['id']=r['target'];meta['title']=r['title'];assert {k for k in before if before[k]!=meta[k]}=={'id','title'}
+          slug=re.sub(r'-+','-',re.sub(r'[^a-z0-9]+','-',r['title'].lower())).strip('-');assert slug==r['target'].split('/',1)[1]
+          mp.write_text(json.dumps(meta,indent=2,sort_keys=True)+'\n',encoding='utf-8');assert hashlib.sha256(nb.read_bytes()).hexdigest()==sha
+          print('P1_03_CONFIRM_003_V4_KERNEL PASS notebook_sha256='+sha+' capacity_gate=0')
+          PY
+          python3 -m venv "$WORKDIR/venv"
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/kaggle-2.2.4.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip check >/dev/null
+          "$WORKDIR/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Verify exact live target and input identities
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" - "$WORKDIR/request.json" <<'PY'
+          import json,sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kaggle_exact_identity import exact_metadata,status_name,verify_current
+          r=json.load(open(sys.argv[1]));api=KaggleApi();api.authenticate();target=r['target']
+          src=r['inputs']['fresh_hidden_cache']
+          if verify_current(api,src['ref'],src['version'],allow_failed=False,cpu=False)!='COMPLETE':raise SystemExit('fresh cache input not COMPLETE')
+          ds=r['inputs']['stage1_features'];p=json.loads(api.dataset_status(ds['ref'],format='json(current_version_number)'));dv=p.get('current_version_number')
+          if dv is None or int(dv)!=ds['version']:raise SystemExit('Stage1 dataset version mismatch')
+          meta=exact_metadata(api,target);state=status_name(getattr(api.kernels_status(target),'status',None))
+          if getattr(meta,'ref',None)!=target or int(getattr(meta,'current_version_number',0))!=3:raise SystemExit('target current version is not 3')
+          if state!='ERROR':raise SystemExit('target current state is not ERROR')
+          if getattr(meta,'is_private',None) is not True or getattr(meta,'enable_gpu',None) is not True or getattr(meta,'enable_tpu',None) is not False or getattr(meta,'enable_internet',None) is not True:raise SystemExit('target metadata changed')
+          print('P1_03_CONFIRM_003_V4_LIVE_IDENTITY PASS target_version=3 state=ERROR fresh_cache_version=1 stage1_version=1 capacity_gate=0 write_calls=0')
+          PY
+
+      - name: Perform one Kaggle version-4 write and reconcile
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$WORKDIR" "$WORKDIR/venv/bin/python" - "$WORKDIR/request.json" "$WORKDIR/kernel" <<'PY'
+          import json,sys
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kaggle_exact_identity import exact_metadata
+          from kaggle_kernel_write_v2 import push_kernel_version_once
+          r=json.load(open(sys.argv[1]));api=KaggleApi();api.authenticate()
+          outcome=push_kernel_version_once(
+              api,sys.argv[2],r['target'],
+              expected_before_version=3,
+              expected_after_version=4,
+              expected_before_state='ERROR',
+              reconcile_attempts=8,
+              reconcile_delay_seconds=2.0,
+          )
+          if outcome.classification=='platform_rejected_no_side_effect':
+              print('P1_03_CONFIRM_003_V4_PLATFORM_REJECTED_NO_SIDE_EFFECT before_version=3 observed_version=3 write_calls=1')
+              raise SystemExit(75)
+          if outcome.classification!='write_observed' or outcome.observed_version!=4:
+              raise SystemExit('unexpected write outcome')
+          post=exact_metadata(api,r['target'])
+          if getattr(post,'is_private',None) is not True or getattr(post,'enable_gpu',None) is not True or getattr(post,'enable_tpu',None) is not False or getattr(post,'enable_internet',None) is not True:raise SystemExit('post-write metadata mismatch')
+          print(f'P1_03_CONFIRM_003_V4_SAVE PASS version=4 state={outcome.observed_state} write_calls=1 capacity_gate=0 client_failure_kind={outcome.client_failure_kind or "none"}')
+          PY
+
+      - name: Cleanup runner-local material
+        if: always()
+        shell: bash
+        run: |
+          unset KAGGLE_API_TOKEN || true
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+          echo 'P1_03_CONFIRM_003_V4_CLEANUP PASS retention_days=0'
