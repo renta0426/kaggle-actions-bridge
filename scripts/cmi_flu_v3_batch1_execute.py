@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -19,7 +20,7 @@ from kaggle_exact_identity import exact_metadata, exact_metadata_eventually, saf
 REQUEST_ID = "20260911-cmi-flu-strategy-v3-batch1-001"
 COMPETITION = "cmi-flu-first-prediction-challenge"
 TARGET = "renta0426/cmi-flu-v3-batch1-audit-diagnostics-20260911-001"
-TITLE = "CMI Flu Strategy V3 Batch1 Audit Diagnostics 20260911 001"
+TITLE = "CMI Flu V3 Batch1 Audit Diagnostics 20260911 001"
 EXPECTED_VERSION = 1
 SOURCE_B = "renta0426/cmi-flu-e12c-manual-submission-20260911-002"
 SOURCE_B_VERSION = 1
@@ -46,6 +47,20 @@ def sha256_path(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def normalize_title_slug(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+
+def validate_title_target_identity() -> str:
+    owner, target_slug = TARGET.split("/", 1)
+    if owner != "renta0426":
+        raise RuntimeError("V3 batch1 target owner changed")
+    derived = normalize_title_slug(TITLE)
+    if derived != target_slug:
+        raise RuntimeError("V3 batch1 title does not resolve to target slug")
+    return derived
+
+
 def ensure_kaggle_cli_path() -> str:
     import os
     python_bin = Path(sys.executable).parent
@@ -63,7 +78,7 @@ def fresh_source_output_dir(parent: Path) -> Path:
     """Return a deliberately absent child path for kaggle_current_output_read.
 
     ``read_current_output`` owns creation of its output directory and rejects an
-    already-existing path.  Passing a ``TemporaryDirectory`` root directly is
+    already-existing path. Passing a ``TemporaryDirectory`` root directly is
     therefore invalid even though the root itself is otherwise fresh.
     """
     parent = parent.resolve()
@@ -104,6 +119,7 @@ def require_fresh_target(api: KaggleApi) -> None:
 
 
 def materialize(runtime: Path, root: Path) -> Path:
+    validate_title_target_identity()
     raw = runtime.read_bytes()
     if not raw or len(raw) >= 1100000:
         raise RuntimeError("V3 batch1 runtime source budget failed")
@@ -183,12 +199,13 @@ def main() -> int:
     args = parser.parse_args()
     cli = ensure_kaggle_cli_path()
     if args.path_self_test:
+        resolved_slug = validate_title_target_identity()
         with tempfile.TemporaryDirectory(prefix="cmi-v3-batch1-source-dir-self-test-") as tmp:
             parent = Path(tmp)
             source_dir = fresh_source_output_dir(parent)
             if source_dir.exists() or source_dir.parent != parent.resolve():
                 raise RuntimeError("V3 batch1 source precheck fresh-child regression failed")
-        print(f"CMI_FLU_V3_BATCH1_PATH_SELF_TEST PASS python_bin={Path(sys.executable).parent} cli_name={Path(cli).name} source_precheck_dir_fresh=true auth=false write=false compute=false")
+        print(f"CMI_FLU_V3_BATCH1_PATH_SELF_TEST PASS python_bin={Path(sys.executable).parent} cli_name={Path(cli).name} source_precheck_dir_fresh=true title_target_slug={resolved_slug} auth=false write=false compute=false")
         return 0
     if args.runtime is None or args.output_dir is None:
         raise SystemExit("--runtime and --output-dir are required")
