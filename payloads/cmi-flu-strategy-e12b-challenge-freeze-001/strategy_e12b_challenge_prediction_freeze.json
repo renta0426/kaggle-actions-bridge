@@ -1,0 +1,51 @@
+{
+  "challenge_contract": {
+    "changed_tasks_vs_regenerated_b21": [
+      "Task1.2",
+      "Task1.3"
+    ],
+    "changed_tasks_vs_regenerated_task12_only": [
+      "Task1.3"
+    ],
+    "historical_public_0_218_assumed_byte_identical": false,
+    "rows": 40,
+    "task13_expected_unique_values": 36,
+    "task13_predictor_feature": "flow_rank__Antibody-secreting_cells_(ASC)"
+  },
+  "date": "2026-09-11",
+  "execution": {
+    "aggregate_output_only": true,
+    "automatic_compute_retries": 0,
+    "competition_submission": false,
+    "new_model_selection": false,
+    "next_step_if_pass": "ready_for_separate_submission_authorization",
+    "public_probe": false,
+    "resource": "CPU",
+    "row_level_candidate_persisted": false
+  },
+  "experiment": "strategy_v2_e12b_challenge_prediction_freeze",
+  "final_portfolio": {
+    "Task1.1": "b21_pls_2",
+    "Task1.2": "task12_anchor_residual_et_d5_l5_sqrt_lambda0.5",
+    "Task1.3": "strict_asc_anchor",
+    "Task1.4": "raw_pre_vacc_conserved_anchor",
+    "Task2.1": "b21_et_subtype_d3_l5",
+    "Task2.2": "b21_et_subtype_d5_l10",
+    "Task2.3": "b21_ridge_exact_a100"
+  },
+  "fingerprint_contract": {
+    "canonical_csv_float_format": "%.17g",
+    "canonical_csv_lineterminator": "LF",
+    "per_task_prediction_hashes": true,
+    "row_order_and_participant_identity_in_semantic_hash": true,
+    "semantic_hash_version": "cmi-flu-e12b-semantic-v1"
+  },
+  "parent": {
+    "accepted_zip_sha256": "7dca4546caa96f3c8fedeba3e4e758c677cb9cd7e7627ab67a79570d66dc0b64",
+    "all_supervised_tasks_reproduced": true,
+    "experiment": "strategy_v2_e12a_v2_portfolio_reconciliation",
+    "next_step": "proceed_to_E12b_challenge_prediction_freeze",
+    "science_commit": "e6e05e578f172ce710bc0f1da55acdf290e83dd9"
+  },
+  "schema_version": 1
+}

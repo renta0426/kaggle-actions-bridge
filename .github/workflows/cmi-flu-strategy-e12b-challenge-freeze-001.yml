@@ -1,0 +1,283 @@
+name: CMI-Flu Strategy-v2 E12b Challenge prediction freeze 001
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-strategy-e12b-challenge-freeze-001.yml
+      - requests/cmi-flu-strategy-e12b-challenge-freeze-001.json
+      - payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b.py
+      - payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b_synthetic.py
+      - payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b_challenge_prediction_freeze.json
+      - scripts/cmi_flu_strategy_e12b_prepare.py
+      - scripts/cmi_flu_strategy_e12b_prepare_v2.py
+      - scripts/cmi_flu_strategy_e12b_execute.py
+      - scripts/cmi_flu_strategy_e12b_sanitize.py
+      - scripts/cmi_flu_strategy_e12b_ci.py
+      - docs/cmi-flu-e12b-challenge-freeze-001.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-strategy-e12b-challenge-freeze-001.yml
+      - requests/cmi-flu-strategy-e12b-challenge-freeze-001.json
+      - payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b.py
+      - payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b_synthetic.py
+      - payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b_challenge_prediction_freeze.json
+      - scripts/cmi_flu_strategy_e12b_prepare.py
+      - scripts/cmi_flu_strategy_e12b_prepare_v2.py
+      - scripts/cmi_flu_strategy_e12b_execute.py
+      - scripts/cmi_flu_strategy_e12b_sanitize.py
+      - scripts/cmi_flu_strategy_e12b_ci.py
+      - docs/cmi-flu-e12b-challenge-freeze-001.md
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-e12b-challenge-freeze-001-${{ github.event_name }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  REQUEST_ID: 20260911-cmi-flu-strategy-e12b-challenge-freeze-001
+  TARGET_KERNEL: renta0426/cmi-flu-e12b-challenge-freeze-20260911-001
+  SCIENCE_COMMIT: a411bf85a4a79fec2e9a2b9c2bc8cbe186adee5f
+  E12B_BLOB: af5df92ca81abc34a7f7046dba5bc284c98302d4
+  E12B_SYNTH_BLOB: 6b36d94299ee3656f9faed623a2ac030a97a714d
+  E12B_CONTRACT_BLOB: 7e844b2d56bd6739793888bf6306946a0028d966
+  PREPARE_BLOB: dd81662cc579c9f36222d2dcd27ecbe9300266d3
+  PREPARE_V2_BLOB: b506a0a4eee2b2c873f5da37ccccfef2e264b7b1
+  EXECUTOR_BLOB: 484ba634da6637cf35b933b2fbd6f342648584d9
+  SANITIZER_BLOB: daf24b91d10828fa5f31df230de425aeb0b91740
+  CI_BLOB: d44d512b63b7a052f9c2713de865c21a7932fb36
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate E12b freeze and output-reader PATH without credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Enforce secret-free validation boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
+          done
+
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e12b-ci/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(70_000_001)
+          if len(data)>70_000_000: raise SystemExit("bridge archive too large")
+          with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit("bridge archive layout")
+              prefix=next(iter(prefixes))+"/"
+              if not prefix.rstrip('/').endswith(ref): raise SystemExit("bridge codeload commit mismatch")
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit("unsafe bridge archive")
+                  out=target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
+
+      - name: Verify exact relays and run full credential-free E12b regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${WORKDIR}/bridge" <<'PY'
+          import hashlib,pathlib,os
+          root=pathlib.Path(os.environ['WORKDIR'])/'bridge'
+          expected={
+            'payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b.py':os.environ['E12B_BLOB'],
+            'payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b_synthetic.py':os.environ['E12B_SYNTH_BLOB'],
+            'payloads/cmi-flu-strategy-e12b-challenge-freeze-001/strategy_e12b_challenge_prediction_freeze.json':os.environ['E12B_CONTRACT_BLOB'],
+            'scripts/cmi_flu_strategy_e12b_prepare.py':os.environ['PREPARE_BLOB'],
+            'scripts/cmi_flu_strategy_e12b_prepare_v2.py':os.environ['PREPARE_V2_BLOB'],
+            'scripts/cmi_flu_strategy_e12b_execute.py':os.environ['EXECUTOR_BLOB'],
+            'scripts/cmi_flu_strategy_e12b_sanitize.py':os.environ['SANITIZER_BLOB'],
+            'scripts/cmi_flu_strategy_e12b_ci.py':os.environ['CI_BLOB'],
+          }
+          for rel,want in expected.items():
+              data=(root/rel).read_bytes()
+              got=hashlib.sha1(b'blob '+str(len(data)).encode('ascii')+b'\0'+data).hexdigest()
+              if got!=want: raise SystemExit(f'E12b blob mismatch:{rel}:{got}')
+          print('CMI_FLU_E12B_EXACT_RELAY PASS auth=false write=false compute=false')
+          PY
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e12b_ci.py" \
+            --repository-root "${WORKDIR}/bridge" \
+            --workdir "${WORKDIR}/e12b-ci"
+
+      - name: Validate locked Kaggle client and repaired reader PATH without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e12b_execute.py" --path-self-test
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
+
+  run:
+    name: Run one private CPU E12b freeze and read aggregate fingerprints
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    concurrency:
+      group: kaggle-resource-global
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - name: Enforce protected E12b execution boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == "renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-strategy-e12b-challenge-freeze-001.yml@refs/heads/main" ]]
+
+      - name: Materialize approved bridge commit and re-run exact secret-free checks
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${workdir}/bridge" "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" <<'PY'
+          import io,pathlib,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f"https://codeload.github.com/{repo}/tar.gz/{ref}",headers={"User-Agent":"cmi-flu-e12b-protected/1"})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:
+              data=response.read(70_000_001)
+          if len(data)>70_000_000: raise SystemExit("bridge archive too large")
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[item for item in archive.getmembers() if item.isfile()]
+              prefixes={item.name.split('/',1)[0] for item in files}
+              if len(prefixes)!=1: raise SystemExit("bridge archive layout")
+              prefix=next(iter(prefixes))+"/"
+              if not prefix.rstrip('/').endswith(ref): raise SystemExit("bridge codeload commit mismatch")
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name[len(prefix):])
+                  if not rel.parts or '..' in rel.parts: raise SystemExit("unsafe bridge archive")
+                  out=target.joinpath(*rel.parts)
+                  out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(archive.extractfile(item).read())
+          PY
+          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e12b_ci.py" \
+            --repository-root "${workdir}/bridge" \
+            --workdir "${workdir}/e12b-ci"
+          python3 "${workdir}/bridge/scripts/cmi_flu_strategy_e12b_prepare_v2.py" \
+            --repository-root "${workdir}/bridge" \
+            --output "${workdir}/runtime.py"
+          python3 "${workdir}/runtime.py" --self-test
+          [[ "$(stat -c '%s' "${workdir}/runtime.py")" -lt 900000 ]]
+          ! grep -F 'renta0426/cmi-flu-e12a-v2-portfolio-reconcile-20260911-001' "${workdir}/runtime.py" >/dev/null
+          ! grep -F 'kaggle competitions submit' "${workdir}/runtime.py" >/dev/null
+          echo 'CMI_FLU_E12B_PROTECTED_PREFLIGHT PASS write=false compute=false row_persisted=false submission=false'
+
+      - name: Install locked Kaggle client and verify output-reader PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e12b_execute.py" --path-self-test
+
+      - name: Run one approved E12b CPU operation and recover current aggregate output
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e12b_execute.py" \
+            --runtime "${WORKDIR}/runtime.py" \
+            --output-dir "${WORKDIR}/result"
+
+      - name: Validate and print aggregate-safe E12b fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_strategy_e12b_sanitize.py" --input-dir "${WORKDIR}/result"
+          python3 - "${WORKDIR}/result/metrics.json" <<'PY'
+          import json,sys
+          result=json.load(open(sys.argv[1],encoding='utf-8'))
+          safe={
+              'experiment':result['experiment'],
+              'challenge_rows':result['challenge_rows'],
+              'semantic_submission_sha256':result['fingerprint_contract']['semantic_submission_sha256'],
+              'canonical_csv_sha256':result['fingerprint_contract']['canonical_csv_sha256'],
+              'changed_vs_b21':result['structural_controls']['final_changed_tasks_vs_regenerated_b21'],
+              'changed_vs_task12_only':result['structural_controls']['final_changed_tasks_vs_regenerated_task12_only'],
+              'task12_rank_vs_b21':result['structural_controls']['task12_final_vs_b21']['rank_spearman'],
+              'task13_rank_vs_b21':result['structural_controls']['task13_final_vs_b21']['rank_spearman'],
+              'task13_unique':result['task_prediction_summaries']['Task1.3']['prediction_unique'],
+              'next_step':result['next_step'],
+              'row_level_candidate_persisted':result['row_level_candidate_persisted'],
+              'competition_submission_attempted':result['competition_submission_attempted'],
+          }
+          print('CMI_FLU_E12B_RESULT '+json.dumps(safe,sort_keys=True))
+          for task,row in result['task_prediction_summaries'].items():
+              print('CMI_FLU_E12B_TASK_FINGERPRINT '+json.dumps({
+                  'task':task,
+                  'prediction_sha256':row['prediction_sha256'],
+                  'unique':row['prediction_unique'],
+                  'min':row['prediction_min'],
+                  'max':row['prediction_max'],
+              },sort_keys=True))
+          PY
+
+      - name: Cleanup runner-local content
+        if: always()
+        shell: bash
+        run: |
+          unset KAGGLE_API_TOKEN || true
+          [[ -z "${WORKDIR-}" || ! -d "${WORKDIR}" ]] || rm -rf "${WORKDIR}"
