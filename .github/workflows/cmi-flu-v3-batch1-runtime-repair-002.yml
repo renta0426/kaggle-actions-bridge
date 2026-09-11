@@ -11,6 +11,7 @@ on:
       - scripts/cmi_flu_v3_batch1_runtime_repair_prepare.py
       - scripts/cmi_flu_v3_batch1_runtime_repair_execute.py
       - scripts/cmi_flu_v3_batch1_runtime_repair_ci.py
+      - scripts/v3_runtime_smoke_stubs/**
       - scripts/cmi_flu_v3_batch1_prepare.py
       - scripts/cmi_flu_v3_batch1_execute.py
       - scripts/cmi_flu_v3_batch1_sanitize.py
@@ -24,6 +25,7 @@ on:
       - scripts/cmi_flu_v3_batch1_runtime_repair_prepare.py
       - scripts/cmi_flu_v3_batch1_runtime_repair_execute.py
       - scripts/cmi_flu_v3_batch1_runtime_repair_ci.py
+      - scripts/v3_runtime_smoke_stubs/**
       - scripts/cmi_flu_v3_batch1_prepare.py
       - scripts/cmi_flu_v3_batch1_execute.py
       - scripts/cmi_flu_v3_batch1_sanitize.py
@@ -186,10 +188,10 @@ jobs:
           PYTHONPATH="${workdir}/bridge/scripts" python3 \
             "${workdir}/bridge/scripts/cmi_flu_v3_batch1_runtime_repair_prepare.py" \
             --repository-root "${workdir}/bridge" --output "${workdir}/runtime.py"
-          python3 "${workdir}/runtime.py" --self-test
+          PYTHONPATH="${workdir}/bridge/scripts/v3_runtime_smoke_stubs" python3 "${workdir}/runtime.py" --self-test
           ! grep -F 'kaggle competitions submit' "${workdir}/bridge/payloads/cmi-flu-v3-batch1-001/strategy_v3_batch1.py" >/dev/null
           ! grep -F '.fit(' "${workdir}/bridge/payloads/cmi-flu-v3-batch1-001/strategy_v3_batch1.py" >/dev/null
-          echo 'CMI_FLU_V3_BATCH1_RUNTIME_REPAIR_PROTECTED_STATIC PASS dependency_import_smoke=true write=false compute=false model_fit=false competition_submit=false'
+          echo 'CMI_FLU_V3_BATCH1_RUNTIME_REPAIR_PROTECTED_STATIC PASS dependency_import_smoke=true external_science_libs_stubbed=true write=false compute=false model_fit=false competition_submit=false'
 
       - name: Install locked Kaggle client
         shell: bash
