@@ -1,0 +1,93 @@
+    "hidden_metrics.json",
+    "hidden_oof_predictions.csv",
+    "hidden_run_manifest.json",
+    "portable_scalar_confirmation.json",
+    "portable_scalar_scores.parquet",
+    "portable_scalar_table.parquet",
+    "run_manifest.json",
+    "static_feature_table.parquet",
+])
+observed_outputs = sorted(path.name for path in OUTPUT.iterdir())
+if observed_outputs != expected_outputs:
+    raise RuntimeError(f"unexpected fresh confirmation outputs: {observed_outputs}")
+final_manifest = json.loads((OUTPUT / "run_manifest.json").read_text(encoding="utf-8"))
+if final_manifest.get("status") != "complete" or final_manifest.get("rows") != 5000:
+    raise RuntimeError("fresh confirmation final manifest incomplete")
+if final_manifest.get("cache_manifest_sha256") != FRESH_CACHE_MANIFEST_SHA256_VALUE:
+    raise RuntimeError("fresh confirmation final cache identity changed")
+if final_manifest.get("fusion_intersection_rows") != 5000:
+    raise RuntimeError("fresh confirmation did not achieve full Stage1/hidden overlap")
+if final_manifest.get("frozen_fusion_weights") != [0.75, 0.50]:
+    raise RuntimeError("fresh confirmation fusion weights changed")
+
+print(
+    "P1_03_FRESH_5K_CONFIRMATION_V1 COMPLETE "
+    f"rows=5000 fusion_intersection=5000 "
+    f"phase_b_wall_seconds={time.perf_counter()-phase_b_started:.3f}"
+)
+"""
+
+cleanup_cell = r"""
+shutil.rmtree(SITE_ROOT, ignore_errors=True)
+shutil.rmtree(SRC_ROOT, ignore_errors=True)
+shutil.rmtree(HIDDEN_OUTPUT, ignore_errors=True)
+print("P1_03_FRESH_CONFIRM_CLEANUP PASS raw_hidden_copied=0 submission=0")
+"""
+
+nb = nbformat.v4.new_notebook()
+nb.metadata.kernelspec = {"display_name": "Python 3", "language": "python", "name": "python3"}
+nb.metadata.language_info = {"name": "python", "version": "3.12"}
+nb.cells = [
+    nbformat.v4.new_markdown_cell(
+        "# P1-03 fresh-disjoint 5k confirmation\n\n"
+        "This Notebook consumes the completed fresh hidden cache in-place on Kaggle. "
+        "It first applies the previously frozen nested 5-fold hidden probe, then evaluates "
+        "only the two pre-frozen Stage1/hidden rank fusions (0.75 and 0.50), unchanged C0/C1 "
+        "content controls with SimHash group diagnostic, and the frozen mean 96-feature "
+        "portable scalar. No validation rows, Public-LB feedback, new target-model forward, "
+        "or competition submission are used."
+    ),
+    nbformat.v4.new_code_cell(textwrap.dedent(install_cell)),
+    nbformat.v4.new_code_cell(
+        "EVALUATION_SOURCE_TEXT = " + repr(EVALUATION_SOURCE) + "\n"
+        "FAITHFUL_SOURCE_TEXT = " + repr(FAITHFUL_SOURCE) + "\n"
+        "PILOT_SOURCE_TEXT = " + repr(PILOT_SOURCE) + "\n"
+        "CACHE_SOURCE_TEXT = " + repr(CACHE_SOURCE) + "\n"
+        "PROBE_SOURCE_TEXT = " + repr(PROBE_SOURCE) + "\n"
+        "SCALE_SOURCE_TEXT = " + repr(SCALE_SOURCE) + "\n"
+        "HIDDEN_EVAL_SOURCE_TEXT = " + repr(hidden_eval_source) + "\n"
+        "DEVELOPMENT_AUDIT_SOURCE_TEXT = " + repr(DEVELOPMENT_AUDIT_SOURCE) + "\n"
+        "FRESH_AUDIT_SOURCE_TEXT = " + repr(FRESH_AUDIT_SOURCE) + "\n"
+        "SCALE_CONFIG_TEXT_VALUE = " + repr(SCALE_CONFIG_TEXT) + "\n"
+        "FRESH_CACHE_MANIFEST_SHA256_VALUE = " + repr(FRESH_CACHE_MANIFEST_SHA256) + "\n"
+        "FRESH_COHORT_SET_SHA256_VALUE = " + repr(FRESH_COHORT_SET_SHA256) + "\n"
+        + textwrap.dedent(write_sources_cell)
+    ),
+    nbformat.v4.new_code_cell(textwrap.dedent(execute_cell)),
+    nbformat.v4.new_code_cell(textwrap.dedent(cleanup_cell)),
+]
+for index, cell in enumerate(nb.cells):
+    cell["id"] = f"p1-03-fresh-confirm-v1-{index:02d}"
+
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+nbformat.write(nb, OUT)
+metadata = {
+    "id": TARGET,
+    "title": TITLE,
+    "code_file": NOTEBOOK_NAME,
+    "language": "python",
+    "kernel_type": "notebook",
+    "is_private": True,
+    "enable_gpu": True,
+    "enable_tpu": False,
+    "enable_internet": True,
+    "machine_shape": "NvidiaTeslaT4",
+    "dataset_sources": [STAGE1_DATASET],
+    "kernel_sources": [CACHE_KERNEL],
+    "competition_sources": [],
+    "model_sources": [],
+}
+(OUT_DIR / "kernel-metadata.json").write_text(
+    json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+print(OUT)
