@@ -77,9 +77,12 @@ def reconstruct_source(parts_dir: Path, stem: str, expected_blob: str) -> bytes:
     parts = sorted(parts_dir.glob(f"{stem}.part*.pyfrag"))
     if len(parts) != 3:
         raise RuntimeError(f"expected exactly three {stem} fragments, got {len(parts)}")
-    # Contents-API fragment files intentionally omit their terminal newline.
-    # Restore the original source line boundaries and original final newline.
-    data = b"\n".join(path.read_bytes() for path in parts) + b"\n"
+    # Both frozen source splits occur after a line followed by one intentional
+    # blank line at the first boundary; the second boundary is an ordinary line
+    # boundary. Contents-API fragments omit their terminal newline, so restore
+    # those exact bytes explicitly before verifying the Git blob identity.
+    raw = [path.read_bytes() for path in parts]
+    data = raw[0] + b"\n\n" + raw[1] + b"\n" + raw[2] + b"\n"
     observed = git_blob_sha(data)
     if observed != expected_blob:
         raise RuntimeError(f"{stem} reassembly blob mismatch: {observed}")
