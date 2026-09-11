@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "request_id": "20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-v4",
+  "parent_request_id": "20260911-poisoned-chalice-p1-03-fresh-5k-confirm-003-v3",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "save_kernel_once",
+  "target": "renta0426/poisoned-chalice-p1-03-fresh-5k-confirm-003",
+  "title": "Poisoned Chalice P1-03 Fresh 5K Confirm 003",
+  "expected_current_version_before_write": 3,
+  "expected_state_before_write": "ERROR",
+  "expected_version_after_write": 4,
+  "science_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+  "science_commit": "144b44261b46b87c4ac1c6fc662e20130d8740db",
+  "science_files": {
+    "scripts/build_p1_03_fresh_5k_confirmation_evaluation_notebook_v4.py": "0441581cd0fb5bc80377831a40e0fc492ed13474",
+    "docs/P1_03_FRESH_5K_CONFIRMATION_V3_RUNTIME_FAILURE_20260911.md": "7150c18266174188822823ad8a3c62b576a0af5e",
+    "scripts/run_p1_03_fresh_5k_confirmation_v4_runtime_smoke.py": "73437afc900d0fbd0d647e2dc7bc59453012c548"
+  },
+  "v3_notebook_sha256": "5141709b43a48787e269083d86776eb23597c56dd902fc694181d841f81eda33",
+  "v4_notebook_sha256": "ca3d89ad6c3c156035ead68b31e8be931813de06598ef1205d409d64e02bfd76",
+  "historical_payload_bridge_commit": "708ed2026c18556c745e020e2b59046c2c46e764",
+  "inputs": {
+    "fresh_hidden_cache": {
+      "ref": "renta0426/poisoned-chalice-lumia-fresh-cache-5000-v1",
+      "version": 1,
+      "cache_manifest_sha256": "f2b9c6048f1496b5f0c96a369d9773754f13ebace14aacfce8c0ecec92ba4481",
+      "cohort_set_sha256": "8fd03b98b46ffd9b7ef9a69ea58eaaeb6e0307cdafecf9d1c35a1562bbeaad27",
+      "rows": 5000
+    },
+    "stage1_features": {
+      "ref": "renta0426/stage1-raw-fim-submission-v1-output",
+      "version": 1,
+      "train_rows": 10000,
+      "train_shards": 40
+    }
+  },
+  "resource": {
+    "accelerator": "gpu",
+    "machine_shape": "NvidiaTeslaT4",
+    "expected_visible_gpu_count": 2,
+    "expected_runtime_minutes": 100,
+    "hard_timeout_minutes": 180
+  },
+  "api_budget": {
+    "max_calls": 40
+  },
+  "side_effects": [
+    "create exactly one new private notebook version 4 under the existing approved target"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "select_as_final": false,
+  "clean_room": {
+    "fresh_hidden_holdout_first_opened_in_v2": true,
+    "v3_hidden_result_is_repeat_not_independent_confirmation": true,
+    "fresh_hidden_result_must_not_be_retuned": true,
+    "fusion_result_not_persisted_or_printed_in_v3": true,
+    "content_controls_not_completed_in_v3": true,
+    "portable_scalar_not_completed_in_v3": true,
+    "validation_rows_used": false,
+    "public_lb_feedback_used": false,
+    "new_target_model_forward": false,
+    "competition_submission": false,
+    "no_formula_added_after_fresh_result": true
+  },
+  "scientific_contract": {
+    "hidden_anchor": "same frozen nested 5-fold StarCoder2-3B probe/top5 procedure",
+    "fusion_hidden_rank_weights": [0.75, 0.5],
+    "fusion_formula_count": 2,
+    "learned_two_score_stack": false,
+    "content_controls": [
+      "C0 static lexical/layout/language logistic C=0.2",
+      "C1 hashed char 3-5 plus token 1-2 liblinear C=1",
+      "token 5gram SimHash64 Hamming<=6 StratifiedGroupKFold diagnostic"
+    ],
+    "portable_primary": "mean pooling 96-feature scalar",
+    "caller_helper_portable": "ablation only",
+    "fusion_promotion_all_required": {
+      "tpr_at_0.01_fpr_delta_min": 0.01,
+      "paired_bootstrap_tpr_delta_lower_95_min": 0.0,
+      "auc_delta_min": -0.005
+    }
+  },
+  "consumed_v3_result": {
+    "uploaded_log_sha256": "40cbfba602a400cf5e367559e74cc5801603bb29049c547e9738e0e090afb5b4",
+    "uploaded_log_bytes": 1144213,
+    "hidden_phase_completed": true,
+    "mean_top5_auc": 0.73670192,
+    "caller_top5_auc": 0.73655152,
+    "helper_top5_auc": 0.73505888,
+    "same_model_signal_confirmed": true,
+    "low_fpr_confirmed": true,
+    "weighting_increment_supported": false,
+    "transport_identity_gate_passed": true,
+    "fusion_computation_reached": true,
+    "fusion_result_persisted_or_printed": false,
+    "content_controls_evaluated": false,
+    "portable_scalar_evaluated": false,
+    "failure": "NameError: name 'ROOT' is not defined"
+  },
+  "runtime_repair": {
+    "kind": "inject_base_root_plus_pre_audit_hidden_checkpoint",
+    "science_formulas_changed": false,
+    "cohort_changed": false,
+    "labels_changed": false,
+    "promotion_gates_changed": false,
+    "execution_cell_changed": true,
+    "execution_cell_change_is_operational_checkpoint_only": true,
+    "base_module_root_context_injections": 1,
+    "hidden_checkpoint_files": 6,
+    "raw_hidden_state_shards_checkpointed": 0,
+    "automatic_retry": false
+  }
+}
