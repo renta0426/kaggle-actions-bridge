@@ -1,7 +1,25 @@
 name: Poisoned Chalice stable kernel runner
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - requests/poisoned-chalice-kernel-run-active.json
+      - runners/poisoned_chalice/**
+      - materialized/poisoned-chalice-*/**
+      - scripts/poisoned_chalice_active_request.py
+      - scripts/kaggle_policy_preflight.py
+      - requirements/kaggle-2.2.4.lock
+      - .github/workflows/200-poisoned-chalice-stable-kernel-runner.yml
+  pull_request:
+    paths:
+      - requests/poisoned-chalice-kernel-run-active.json
+      - runners/poisoned_chalice/**
+      - materialized/poisoned-chalice-*/**
+      - scripts/poisoned_chalice_active_request.py
+      - scripts/kaggle_policy_preflight.py
+      - requirements/kaggle-2.2.4.lock
+      - .github/workflows/200-poisoned-chalice-stable-kernel-runner.yml
 
 permissions: {}
 
@@ -85,7 +103,7 @@ jobs:
   launch:
     name: Launch approved Poisoned Chalice T4 request exactly once
     needs: validate
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
     concurrency:
       group: kaggle-resource-gpu-global
       cancel-in-progress: false
