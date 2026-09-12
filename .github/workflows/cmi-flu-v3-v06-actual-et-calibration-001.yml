@@ -6,20 +6,41 @@ on:
     paths:
       - .github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml
       - payloads/cmi-flu-v3-v06-actual-et-calibration-001/**
+      - requests/cmi-flu-v3-v06-actual-et-calibration-001.json
       - scripts/cmi_flu_v3_v06_*.py
       - requirements/v3-runtime-ci.*
+      - requirements/kaggle-2.2.4.lock
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml
+      - payloads/cmi-flu-v3-v06-actual-et-calibration-001/**
+      - requests/cmi-flu-v3-v06-actual-et-calibration-001.json
+      - scripts/cmi_flu_v3_v06_*.py
+      - requirements/v3-runtime-ci.*
+      - requirements/kaggle-2.2.4.lock
 
 permissions: {}
 concurrency:
-  group: cmi-flu-v3-v06-actual-et-calibration-001-pr
+  group: cmi-flu-v3-v06-actual-et-calibration-001-${{ github.event_name }}
   cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: '1354356687'
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: '71638068'
+  REQUEST_ID: 20260912-cmi-flu-strategy-v3-v06-actual-et-calibration-001
+  TARGET_KERNEL: renta0426/cmi-flu-v3-v06-actual-et-calibration-20260912-001
+  APPROVED_RUNTIME_SHA256: 1cacfde0f3a86ddd37e337a8bb92c67f447eb1f43b27df1ac735284083ee88d6
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
 
 jobs:
   validate:
     name: V3-06 exact source and full generated-runtime regression
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Enforce credential-free boundary
         shell: bash
@@ -31,7 +52,7 @@ jobs:
       - name: Materialize exact bridge commit
         shell: bash
         env:
-          EVENT_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -41,7 +62,7 @@ jobs:
           import io,pathlib,re,ssl,sys,tarfile,urllib.request
           repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
           if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
-          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v306-ci/1'})
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v306-ci/2'})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
           if not data or len(data)>80000000: raise SystemExit('archive byte budget')
           target.mkdir(parents=True)
@@ -53,29 +74,121 @@ jobs:
                   if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
                   out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
           PY
-      - name: Install hash-locked real numerical libraries
+      - name: Install hash-locked real numerical libraries and official Kaggle client
         shell: bash
         run: |
           set -euo pipefail
           python3 -m venv "${WORKDIR}/venv"
-          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
-          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
-      - name: Execute deterministic runtime and full synthetic science path
+          python="${WORKDIR}/venv/bin/python"
+          "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
+          "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "$python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4'
+      - name: Execute deterministic final runtime and full synthetic science path
         shell: bash
         run: |
           set -euo pipefail
           PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
             "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci_v2.py" \
             --repository-root "${WORKDIR}/bridge" --workdir "${WORKDIR}/v306-ci"
+          echo "$APPROVED_RUNTIME_SHA256  ${WORKDIR}/v306-ci/runtime.py" | sha256sum --check --status
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_execute.py" \
+            --runtime "${WORKDIR}/v306-ci/runtime.py" --output-dir "${WORKDIR}/unused-safe-result" \
+            --approved-runtime-sha256 "$APPROVED_RUNTIME_SHA256" --path-self-test
           python3 -m py_compile \
             "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare_v3.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare_v4.py" \
             "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci.py" \
-            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci_v2.py"
-          python3 "${WORKDIR}/bridge/scripts/kaggle_workflow_shell_v2.py" workflow \
-            "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml"
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci_v2.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_execute.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_sanitize.py"
+      - name: Enforce request, launch and shell policies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" request "${WORKDIR}/bridge/requests/cmi-flu-v3-v06-actual-et-calibration-001.json" --require-v2
+          python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml"
+          python3 "${WORKDIR}/bridge/scripts/kaggle_workflow_shell_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml"
+          grep -F '"automatic_compute_retries": 0' "${WORKDIR}/bridge/requests/cmi-flu-v3-v06-actual-et-calibration-001.json" >/dev/null
+          grep -F '"competition_submission_authorized": false' "${WORKDIR}/bridge/requests/cmi-flu-v3-v06-actual-et-calibration-001.json" >/dev/null
+          grep -F '"affine_or_power_grid_reopened": false' "${WORKDIR}/bridge/requests/cmi-flu-v3-v06-actual-et-calibration-001.json" >/dev/null
       - name: Cleanup
         if: always()
         shell: bash
         run: '[[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"'
+
+  run:
+    name: Run one approved private V3-06 actual ET calibration Notebook
+    needs: validate
+    if: github.event_name == 'push' && github.repository == 'renta0426/kaggle-actions-bridge' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - name: Check approved event and materialize exact public bridge commit
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == 'renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml@refs/heads/main' ]]
+          [[ "$APPROVED_RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${workdir}/bridge" "$EXPECTED_REPOSITORY" "$EVENT_SHA" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          target,repo,ref=pathlib.Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+          if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
+          target.mkdir(parents=True)
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v306-protected/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
+          if not data or len(data)>80000000: raise SystemExit('archive byte budget')
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref): raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+          PYTHONPATH="${workdir}/bridge/scripts" python3 "${workdir}/bridge/scripts/cmi_flu_v3_v06_prepare_v4.py" \
+            --repository-root "${workdir}/bridge" --output "${workdir}/runtime.py"
+          echo "$APPROVED_RUNTIME_SHA256  ${workdir}/runtime.py" | sha256sum --check --status
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/bridge/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
+      - name: Execute exactly one approved Kaggle operation
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_execute.py" \
+            --runtime "${WORKDIR}/runtime.py" --output-dir "${WORKDIR}/safe-result" \
+            --approved-runtime-sha256 "$APPROVED_RUNTIME_SHA256"
+      - name: Emit only aggregate-safe V3-06 JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_sanitize.py" --input-dir "${WORKDIR}/safe-result"
+      - name: Unconditionally remove runner-local private content
+        if: always()
+        shell: bash
+        run: |
+          unset KAGGLE_API_TOKEN || true
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+          echo 'V3-06 runner-local content removed; row-level prediction banks remain private Kaggle output only'
