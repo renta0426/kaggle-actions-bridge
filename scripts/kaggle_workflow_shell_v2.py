@@ -22,7 +22,12 @@ class ShellPolicyError(RuntimeError):
     pass
 
 
-_RUN_BLOCK = re.compile(r"^(?P<indent>[ ]*)run:[ ]*[|>][+-]?[0-9]*[ ]*$")
+# Actions steps normally use ``- run: |`` while mapping-style reusable blocks
+# can use ``run: |``. The indentation captured here is the indentation of the
+# list marker / mapping key, which is also where the next step begins.
+_RUN_BLOCK = re.compile(
+    r"^(?P<indent>[ ]*)(?:-[ ]+)?run:[ ]*[|>][+-]?[0-9]*[ ]*$"
+)
 _DIRECT_ASSIGN = re.compile(r"^[ ]*(?:export[ ]+)?(?P<name>[A-Z][A-Z0-9_]*)=")
 _GITHUB_ENV_NAME = re.compile(r"\b(?P<name>[A-Z][A-Z0-9_]*)=")
 
