@@ -11,8 +11,6 @@ import subprocess
 import sys
 import time
 
-import cmi_flu_strategy_e05_execute as base
-
 CONTRACTS = {
     "task22_panel_mean": {
         "request_id": "20260912-cmi-flu-strategy-v3-v07-h1-panel-mean-001",
@@ -44,7 +42,14 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def configure(condition: str) -> dict[str, str]:
+def submission_markers() -> tuple[str, ...]:
+    return (
+        "competition_" + "submit(",
+        "kaggle competitions " + "submit",
+    )
+
+
+def configure(condition: str, base) -> dict[str, str]:
     c = CONTRACTS[condition]
     base.REQUEST_ID = c["request_id"]
     base.TARGET = c["target"]
@@ -56,7 +61,7 @@ def configure(condition: str) -> dict[str, str]:
     return c
 
 
-def prewrite_guard(api, c: dict[str, str]) -> None:
+def prewrite_guard(api, c: dict[str, str], base) -> None:
     owner, slug = c["target"].split("/", 1)
     if owner != "renta0426" or slug != base.TARGET_SLUG or base.TITLE != c["title"]:
         raise RuntimeError("V3-07 target identity contract changed")
@@ -68,7 +73,7 @@ def prewrite_guard(api, c: dict[str, str]) -> None:
         raise RuntimeError("V3-07 duplicate sentinel found exact target; write refused")
 
 
-def wait(api, target: str) -> str:
+def wait(api, target: str, base) -> str:
     for _ in range(MAX_POLLS):
         direct = base.kernel_meta(api, target)
         if int(getattr(direct, "current_version_number", 0) or 0) != EXPECTED_VERSION:
@@ -91,7 +96,8 @@ def validate_runtime(path: Path, expected_sha: str, condition: str) -> None:
     source = path.read_text(encoding="utf-8")
     if f"V307_CONDITION = {condition!r}" not in source:
         raise RuntimeError("V3-07 runtime condition mismatch")
-    if "competition_submit(" in source.casefold() or "kaggle competitions submit" in source.casefold():
+    low = source.casefold()
+    if any(token in low for token in submission_markers()):
         raise RuntimeError("V3-07 runtime contains submission path")
 
 
@@ -106,7 +112,7 @@ def output_allowlist(prefix: str) -> list[tuple[str, int]]:
 
 def main() -> int:
     args = parse_args()
-    c = configure(args.condition)
+    c = CONTRACTS[args.condition]
     runtime = args.runtime.resolve()
     validate_runtime(runtime, args.approved_runtime_sha256, args.condition)
     if args.path_self_test:
@@ -116,12 +122,14 @@ def main() -> int:
     token = os.environ.get("KAGGLE_API_TOKEN", "")
     if not token.startswith("KGAT_"):
         raise SystemExit("KAGGLE_API_TOKEN contract failed")
+    import cmi_flu_strategy_e05_execute as base
     from kaggle.api.kaggle_api_extended import KaggleApi
+    c = configure(args.condition, base)
     api = KaggleApi(); api.authenticate()
     # Kaggle is the capacity/quota authority under execution policy v2. Do not
     # enumerate active sessions or impose a bridge-local concurrency admission gate.
     base.live_rules(api)
-    prewrite_guard(api, c)
+    prewrite_guard(api, c, base)
 
     output_dir = args.output_dir.resolve()
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -132,7 +140,7 @@ def main() -> int:
     try:
         # Exactly one write occurs here. No caller retries this operation.
         base.push(api, runtime, args.reference_dir.resolve(), work)
-        status = wait(api, c["target"])
+        status = wait(api, c["target"], base)
         direct = base.kernel_meta(api, c["target"])
         if int(getattr(direct, "current_version_number", 0) or 0) != EXPECTED_VERSION:
             raise RuntimeError("V3-07 version changed before output read")
