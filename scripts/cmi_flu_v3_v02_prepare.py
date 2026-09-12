@@ -69,8 +69,47 @@ def build_runtime(root: Path, output: Path) -> str:
 
     loader = r'''def load_v3_v02_module() -> object:
     import sys, types
+    import numpy as np
+    import pandas as pd
     load_e12c_v2_module()
     load_v3_dependency_closure()
+    # Frozen E12c/B2 runtime predates models.evaluate_model_spec(...,
+    # aggregate_repeats=...). Install a provenance-local compatibility shim
+    # before V3-02 imports the callable. It changes no fit, split or prediction;
+    # it only collapses repeated single-study OOF rows exactly as current science
+    # does (target invariant, prediction mean per original row).
+    import cmi_flu.models as _models
+    _native_evaluate_model_spec = _models.evaluate_model_spec
+    def _evaluate_model_spec_compat(*args, aggregate_repeats=False, **kwargs):
+        result = _native_evaluate_model_spec(*args, **kwargs)
+        if not aggregate_repeats:
+            return result
+        oof = result.oof_predictions.copy()
+        required = {"row_index", "target", "prediction"}
+        if not required.issubset(oof.columns):
+            raise BridgeContractError("v302_frozen_oof_schema_missing")
+        counts = oof.groupby("row_index", observed=True).size()
+        if counts.empty:
+            raise BridgeContractError("v302_frozen_oof_empty")
+        if int(counts.max()) > 1:
+            spread = oof.groupby("row_index", observed=True)["target"].agg(["min", "max"])
+            if not np.allclose(spread["min"].to_numpy(dtype=float), spread["max"].to_numpy(dtype=float), rtol=0.0, atol=1e-12):
+                raise BridgeContractError("v302_repeated_oof_target_disagreement")
+            grouped = oof.groupby("row_index", as_index=False, observed=True).agg(
+                target=("target", "first"), prediction=("prediction", "mean")
+            ).sort_values("row_index").reset_index(drop=True)
+            if "target_transformed" in oof:
+                transformed = oof.groupby("row_index", as_index=False, observed=True).agg(
+                    target_transformed=("target_transformed", "first"),
+                    prediction_transformed=("prediction_transformed", "mean"),
+                )
+                grouped = grouped.merge(transformed, on="row_index", how="left", validate="one_to_one")
+            grouped["split"] = "aggregated_repeats"
+            grouped["held_out_group"] = None
+            grouped["repeat_count"] = counts.reindex(grouped["row_index"]).to_numpy(dtype=int)
+            result.oof_predictions = grouped
+        return result
+    _models.evaluate_model_spec = _evaluate_model_spec_compat
     module = types.ModuleType("cmi_flu.strategy_v3_v02")
     module.__file__ = "<cmi_flu.strategy_v3_v02>"
     module.__package__ = "cmi_flu"
@@ -207,7 +246,7 @@ def build_runtime(root: Path, output: Path) -> str:
     raw = replace_function(raw, "execute", execution)
 
     self_test = r'''def self_test() -> int:
-    import ast, sys, tempfile
+    import ast, inspect, sys, tempfile
     if git_blob_sha(V302_SOURCE.encode()) != V302_SCIENCE_BLOB:
         raise BridgeContractError("v302_blob_mismatch")
     tree = ast.parse(V302_SOURCE)
@@ -216,12 +255,19 @@ def build_runtime(root: Path, output: Path) -> str:
     with tempfile.TemporaryDirectory(prefix="v302-selftest-") as tmp:
         package = Path(tmp) / "cmi_flu_bundle.zip"; package.write_bytes(package_bytes()); sys.path.insert(0, str(package))
         try:
+            import cmi_flu.models as models
+            native_signature = str(inspect.signature(models.evaluate_model_spec))
             module = load_v3_v02_module()
+            compat_signature = str(inspect.signature(models.evaluate_model_spec))
             if module.EXPERIMENT != "strategy_v3_v02_paired_validation_and_private_prediction_store":
                 raise BridgeContractError("v302_experiment_identity")
+            if "aggregate_repeats" in native_signature:
+                raise BridgeContractError("v302_expected_frozen_api_not_observed")
+            if "aggregate_repeats" not in compat_signature:
+                raise BridgeContractError("v302_frozen_api_compat_not_installed")
         finally:
             if sys.path and sys.path[0] == str(package): sys.path.pop(0)
-    print(f"CMI_FLU_V3_V02_SELF_TEST PASS request_id={V302_REQUEST_ID} blob={V302_SCIENCE_BLOB} fit_limit=256 submission=false")
+    print(f"CMI_FLU_V3_V02_SELF_TEST PASS request_id={V302_REQUEST_ID} blob={V302_SCIENCE_BLOB} fit_limit=256 frozen_api_compat=true submission=false")
     return 0
 '''
     raw = replace_function(raw, "self_test", self_test)
@@ -254,7 +300,7 @@ def build_runtime(root: Path, output: Path) -> str:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__); p.add_argument("--repository-root", required=True, type=Path); p.add_argument("--output", required=True, type=Path); a = p.parse_args()
-    raw = build_runtime(a.repository_root.resolve(), a.output.resolve()).encode(); print(f"CMI_FLU_V3_V02_PREPARE PASS bytes={len(raw)} sha256={hashlib.sha256(raw).hexdigest()} science_blob={SCIENCE_BLOB} submission=false"); return 0
+    raw = build_runtime(a.repository_root.resolve(), a.output.resolve()).encode(); print(f"CMI_FLU_V3_V02_PREPARE PASS bytes={len(raw)} sha256={hashlib.sha256(raw).hexdigest()} science_blob={SCIENCE_BLOB} frozen_api_compat=true submission=false"); return 0
 
 
 if __name__ == "__main__": raise SystemExit(main())
