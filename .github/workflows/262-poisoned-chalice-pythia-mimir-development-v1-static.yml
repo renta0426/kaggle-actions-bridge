@@ -1,0 +1,179 @@
+name: Poisoned Chalice Pythia MIMIR development v1 static
+
+on:
+  pull_request:
+    paths:
+      - configs/poisoned-chalice-pythia-mimir-development-v1.json
+      - runners/poisoned_chalice/pythia_mimir_development_v1.py
+      - runners/poisoned_chalice/pythia_mimir_development_v1_entry.py
+      - scripts/build_poisoned_chalice_pythia_mimir_development_v1.py
+      - .github/workflows/262-poisoned-chalice-pythia-mimir-development-v1-static.yml
+  push:
+    branches: [main]
+    paths:
+      - configs/poisoned-chalice-pythia-mimir-development-v1.json
+      - runners/poisoned_chalice/pythia_mimir_development_v1.py
+      - runners/poisoned_chalice/pythia_mimir_development_v1_entry.py
+      - scripts/build_poisoned_chalice_pythia_mimir_development_v1.py
+      - .github/workflows/262-poisoned-chalice-pythia-mimir-development-v1-static.yml
+
+permissions: {}
+
+concurrency:
+  group: poisoned-chalice-pythia-mimir-development-v1-static-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+
+jobs:
+  static:
+    name: Compile and materialize frozen Pythia MIMIR notebook without compute
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce secret-free lightweight boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY RESEARCH_REPO_READ_TOKEN GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY HF_TOKEN HUGGING_FACE_HUB_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          printf '%s\n' "${source_sha}" > "${workdir}/source_sha"
+          printf '%s\n' "${workdir}" > "${RUNNER_TEMP}/pythia-mimir-dev-v1-static-workdir"
+          echo "PYTHIA_MIMIR_DEV_STATIC_BOUNDARY PASS credentials=0 kaggle_calls=0 model_downloads=0 model_inference=0 expected_runner_minutes=2"
+
+      - name: Materialize exact event source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(cat "${RUNNER_TEMP}/pythia-mimir-dev-v1-static-workdir")"
+          source_sha="$(cat "${workdir}/source_sha")"
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import pathlib,re,sys,urllib.request
+          sha,root_value=sys.argv[1:]
+          if not re.fullmatch(r'[0-9a-f]{40}',sha): raise SystemExit('invalid source SHA')
+          root=pathlib.Path(root_value)
+          paths={
+              'configs/poisoned-chalice-pythia-mimir-development-v1.json':131072,
+              'runners/poisoned_chalice/pythia_mimir_development_v1.py':262144,
+              'runners/poisoned_chalice/pythia_mimir_development_v1_entry.py':131072,
+              'scripts/build_poisoned_chalice_pythia_mimir_development_v1.py':262144,
+              'materialized/poisoned-chalice-stage2-deployment-validation-v1/src/poisoned_chalice/stage2_api.py':262144,
+              'materialized/poisoned-chalice-stage2-deployment-validation-v1/src/poisoned_chalice/evaluation.py':262144,
+          }
+          for rel,maximum in paths.items():
+              request=urllib.request.Request(
+                  f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',
+                  headers={'User-Agent':'kaggle-actions-bridge/1'},
+              )
+              with urllib.request.urlopen(request,timeout=30) as response: data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f'event source byte budget failed:{rel}')
+              destination=root/rel
+              destination.parent.mkdir(parents=True,exist_ok=True)
+              destination.write_bytes(data)
+          PY
+
+      - name: Compile, self-test, and build notebook without dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(cat "${RUNNER_TEMP}/pythia-mimir-dev-v1-static-workdir")"
+          cd "${workdir}"
+          python3 -m py_compile \
+            runners/poisoned_chalice/pythia_mimir_development_v1.py \
+            runners/poisoned_chalice/pythia_mimir_development_v1_entry.py \
+            scripts/build_poisoned_chalice_pythia_mimir_development_v1.py
+          PYTHONPATH="${workdir}/runners/poisoned_chalice" python3 \
+            runners/poisoned_chalice/pythia_mimir_development_v1_entry.py \
+            --config configs/poisoned-chalice-pythia-mimir-development-v1.json \
+            --self-test
+          python3 scripts/build_poisoned_chalice_pythia_mimir_development_v1.py
+
+      - name: Validate frozen notebook contract and intentional runtime block
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(cat "${RUNNER_TEMP}/pythia-mimir-dev-v1-static-workdir")"
+          python3 - "${workdir}" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          cfg=json.loads((root/'configs/poisoned-chalice-pythia-mimir-development-v1.json').read_text())
+          assert cfg['status']=='implementation_ready_blocked_on_upstream_bundle_identity'
+          assert cfg['source_bundle']['bundle_manifest_sha256'] is None
+          assert cfg['source_bundle']['require_exact_bundle_manifest_sha256_before_launch'] is True
+          assert cfg['clean_room']['candidate_predictions_hashed_before_target_label_load'] is True
+          assert cfg['clean_room']['sealed_confirmation_environment_consumed'] is False
+          assert cfg['automatic_compute_retries']==0 and cfg['competition_submission'] is False
+          out=root/'notebooks/experiments/poisoned-chalice-pythia-mimir-development-v1'
+          metadata=json.loads((out/'kernel-metadata.json').read_text())
+          notebook=json.loads((out/'poisoned-chalice-pythia-mimir-development-v1.ipynb').read_text())
+          assert metadata=={
+              'code_file':'poisoned-chalice-pythia-mimir-development-v1.ipynb',
+              'competition_sources':[],
+              'dataset_sources':[],
+              'enable_gpu':True,
+              'enable_internet':True,
+              'enable_tpu':False,
+              'id':'renta0426/poisoned-chalice-pythia-mimir-development-v1',
+              'is_private':True,
+              'kernel_sources':['renta0426/poisoned-chalice-stage2-deployment-validation-v1'],
+              'kernel_type':'notebook',
+              'language':'python',
+              'machine_shape':'NvidiaTeslaT4',
+              'title':'Poisoned Chalice Pythia MIMIR Development V1',
+          }
+          assert notebook['nbformat']==4 and notebook['nbformat_minor']==5 and len(notebook['cells'])==4
+          code='\n'.join(str(cell.get('source','')) for cell in notebook['cells'])
+          for marker in (
+              'PYTHIA_MIMIR_DEV_INSTALL PASS',
+              'PYTHIA_MIMIR_DEV_MATERIALIZE PASS',
+              'PYTHIA_MIMIR_DEVELOPMENT_V1_NOTEBOOK COMPLETE',
+              'predictions_label_free.sha256',
+              'dbe7ae300a54abcdc475a33907b3dff81d25709f',
+              '733247c55e3f73af49ce8e9c7949bf14af205928',
+          ):
+              assert marker in code, marker
+          lowered=code.casefold()
+          for forbidden in ('kaggle competitions submit','kagglehub.competition_submit','kaggle competitions files','kaggle competitions download'):
+              assert forbidden not in lowered, forbidden
+          print('PYTHIA_MIMIR_DEV_STATIC PASS runtime_launch_blocked=true bundle_sha_frozen=false submissions=0')
+          PY
+
+      - name: Cleanup static material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="${RUNNER_TEMP}/pythia-mimir-dev-v1-static-workdir"
+          if [[ -f "${marker}" ]]; then
+            workdir="$(cat "${marker}")"
+            [[ ! -d "${workdir}" ]] || rm -rf "${workdir}"
+            rm -f "${marker}"
+          fi
+          echo "PYTHIA_MIMIR_DEV_STATIC_CLEANUP PASS credentials=0 artifacts=0"
