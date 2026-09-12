@@ -1,4 +1,4 @@
-name: Poisoned Chalice Stage2 deployment analysis v1
+name: Poisoned Chalice Stage2 deployment analysis v2 repair
 
 on:
   pull_request:
@@ -6,18 +6,20 @@ on:
     paths:
       - requests/poisoned-chalice-stage2-deployment-analysis-v1.json
       - scripts/build_poisoned_chalice_stage2_deployment_analysis_v1_notebook.py
+      - scripts/poisoned_chalice_stage2_deployment_analysis_v2.py
       - .github/workflows/poisoned-chalice-stage2-deployment-analysis-v1.yml
   push:
     branches: [main]
     paths:
       - requests/poisoned-chalice-stage2-deployment-analysis-v1.json
       - scripts/build_poisoned_chalice_stage2_deployment_analysis_v1_notebook.py
+      - scripts/poisoned_chalice_stage2_deployment_analysis_v2.py
       - .github/workflows/poisoned-chalice-stage2-deployment-analysis-v1.yml
 
 permissions: {}
 
 concurrency:
-  group: poisoned-chalice-stage2-deployment-analysis-v1-${{ github.ref }}
+  group: poisoned-chalice-stage2-deployment-analysis-v2-repair-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -27,33 +29,29 @@ env:
   EXPECTED_ACTOR_ID: "71638068"
   REQUEST_PATH: requests/poisoned-chalice-stage2-deployment-analysis-v1.json
   BUILDER_PATH: scripts/build_poisoned_chalice_stage2_deployment_analysis_v1_notebook.py
+  ANALYZER_PATH: scripts/poisoned_chalice_stage2_deployment_analysis_v2.py
   WORKFLOW_PATH: .github/workflows/poisoned-chalice-stage2-deployment-analysis-v1.yml
   LOCK_PATH: requirements/kaggle-2.2.4.lock
+  IDENTITY_PATH: scripts/kaggle_exact_identity.py
+  WRITE_HELPER_PATH: scripts/kaggle_kernel_write_v2.py
   TARGET: renta0426/poisoned-chalice-stage2-deployment-analysis-v1
-  SOURCE_KERNEL: renta0426/poisoned-chalice-stage2-deployment-validation-v1
 
 jobs:
   validate:
-    name: Validate Stage2 CPU analysis without credentials
+    name: Validate Stage2 analysis v2 repair without credentials
     if: github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Validate request and materialize exact notebook
+      - name: Validate request and materialize repaired notebook
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SHA: ${{ github.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_REPOSITORY: ${{ github.repository }}
-          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
-          EVENT_ACTOR: ${{ github.actor }}
-          EVENT_ACTOR_ID: ${{ github.actor_id }}
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" && "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
-          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" && "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
           [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
           for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY; do
             [[ -z "${!name-}" ]] || { echo "unexpected credential variable: ${name}"; exit 1; }
@@ -62,69 +60,61 @@ jobs:
           if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
           workdir="$(mktemp -d)"; trap 'rm -rf "${workdir}"' EXIT
           python3 - "${source_sha}" "${workdir}" <<'PY'
-          import pathlib, ssl, sys, urllib.request
-          sha, root_value = sys.argv[1:]; root = pathlib.Path(root_value); ctx = ssl.create_default_context()
-          for path, maximum in {
-              "requests/poisoned-chalice-stage2-deployment-analysis-v1.json": 32768,
-              "scripts/build_poisoned_chalice_stage2_deployment_analysis_v1_notebook.py": 32768,
-              ".github/workflows/poisoned-chalice-stage2-deployment-analysis-v1.yml": 32768,
-          }.items():
-              req=urllib.request.Request(f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}", headers={"User-Agent":"kaggle-actions-bridge/1"})
-              with urllib.request.urlopen(req,timeout=30,context=ctx) as response: data=response.read(maximum+1)
-              if not data or len(data)>maximum: raise SystemExit(f"source byte budget failed: {path}")
-              dest=root/path; dest.parent.mkdir(parents=True,exist_ok=True); dest.write_bytes(data)
-          PY
-          python3 - "${workdir}/${REQUEST_PATH}" "${workdir}/${BUILDER_PATH}" "${workdir}/${WORKFLOW_PATH}" <<'PY'
-          import json, pathlib, sys
-          request_path,builder_path,workflow_path=map(pathlib.Path,sys.argv[1:])
-          request=json.loads(request_path.read_text())
-          expected={
-            "schema_version":1,"request_id":"20260913-poisoned-chalice-stage2-deployment-analysis-v1-001",
-            "execution_policy":"kaggle_native_capacity_v2","competition":"poisoned-chalice-icse27","operation":"kernel_run",
-            "target":"renta0426/poisoned-chalice-stage2-deployment-analysis-v1",
-            "source_kernel":"renta0426/poisoned-chalice-stage2-deployment-validation-v1","source_script_version_id":349274389,
-            "automatic_compute_retries":0,"enable_internet":True,"competition_submission":False,"select_as_final":False,
+          import pathlib,ssl,sys,urllib.request
+          sha,root_value=sys.argv[1:];root=pathlib.Path(root_value);ctx=ssl.create_default_context()
+          files={
+            "requests/poisoned-chalice-stage2-deployment-analysis-v1.json":32768,
+            "scripts/build_poisoned_chalice_stage2_deployment_analysis_v1_notebook.py":16384,
+            "scripts/poisoned_chalice_stage2_deployment_analysis_v2.py":32768,
+            ".github/workflows/poisoned-chalice-stage2-deployment-analysis-v1.yml":32768,
           }
-          for k,v in expected.items():
-              assert request.get(k)==v,(k,request.get(k),v)
-          assert request["resource"]=={"accelerator":"cpu","expected_runtime_minutes":15,"hard_timeout_minutes":60}
-          assert request["side_effects"]==["create one private CPU analysis notebook version"]
-          assert request["analysis_contract"]["no_model_inference"] is True
-          assert request["analysis_contract"]["no_weight_or_threshold_search_for_promotion"] is True
-          assert request["analysis_contract"]["row_level_prediction_plus_label_artifact_persisted"] is False
-          builder=builder_path.read_text(); compile(builder,str(builder_path),"exec")
-          workflow=workflow_path.read_text()
-          for marker in ("environment: kaggle-readonry","github.event_name == 'push'","automatic_retries=0","competition_submission=0"):
-              assert marker in workflow, marker
-          for forbidden in ("competitions "+"submit","competition_"+"submit(","min_remaining_"+"quota_hours","max_active_"+"runs"):
-              assert forbidden not in workflow.casefold(), forbidden
+          for path,limit in files.items():
+            req=urllib.request.Request(f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}",headers={"User-Agent":"kaggle-actions-bridge/1"})
+            with urllib.request.urlopen(req,timeout=30,context=ctx) as response:data=response.read(limit+1)
+            if not data or len(data)>limit:raise SystemExit(f"source byte budget failed: {path}")
+            dest=root/path;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
           PY
-          (cd "${workdir}" && python3 "${BUILDER_PATH}" >/dev/null)
+          python3 - "${workdir}/${REQUEST_PATH}" "${workdir}/${BUILDER_PATH}" "${workdir}/${ANALYZER_PATH}" <<'PY'
+          import json,pathlib,sys
+          request_path,builder_path,analyzer_path=map(pathlib.Path,sys.argv[1:])
+          request=json.loads(request_path.read_text())
+          assert request["schema_version"]==2
+          assert request["request_id"]=="20260913-poisoned-chalice-stage2-deployment-analysis-v1-v2-repair-001"
+          assert request["execution_policy"]=="kaggle_native_capacity_v2"
+          assert request["target"]=="renta0426/poisoned-chalice-stage2-deployment-analysis-v1"
+          assert request["expected_before_version"]==1 and request["expected_before_state"]=="ERROR" and request["expected_after_version"]==2
+          assert request["automatic_compute_retries"]==0 and request["competition_submission"] is False and request["select_as_final"] is False
+          assert request["resource"]=={"accelerator":"cpu","expected_runtime_minutes":15,"hard_timeout_minutes":60}
+          contract=request["analysis_contract"]
+          assert contract["saved_frozen_scores_only_for_candidate_metrics"] is True
+          assert contract["fusion_reconstruction_forbidden"] is True
+          assert contract["no_model_inference"] is True
+          compile(builder_path.read_text(),str(builder_path),"exec")
+          compile(analyzer_path.read_text(),str(analyzer_path),"exec")
+          PY
+          (cd "${workdir}" && python3 "${BUILDER_PATH}" "${ANALYZER_PATH}" >/dev/null)
           python3 - "${workdir}/notebooks/poisoned-chalice-stage2-deployment-analysis-v1" <<'PY'
           import json,pathlib,sys
-          root=pathlib.Path(sys.argv[1]); meta=json.loads((root/"kernel-metadata.json").read_text())
-          assert meta=={
-            "id":"renta0426/poisoned-chalice-stage2-deployment-analysis-v1","title":"Poisoned Chalice Stage2 Deployment Analysis V1",
-            "code_file":"poisoned-chalice-stage2-deployment-analysis-v1.ipynb","language":"python","kernel_type":"notebook","is_private":True,
-            "enable_gpu":False,"enable_tpu":False,"enable_internet":True,"dataset_sources":[],
-            "kernel_sources":["renta0426/poisoned-chalice-stage2-deployment-validation-v1"],"competition_sources":[],
-          }
-          nb=json.loads((root/meta["code_file"]).read_text()); code="\n".join(str(c.get("source","")) for c in nb["cells"])
-          for marker in ("349274389","aa67746f23b3b1bf73d4d1b1d81e746b7909eae69c6059187b711071608d228c","STAGE2_DEPLOYMENT_ANALYSIS_V1_NOTEBOOK COMPLETE"):
-              assert marker in code, marker
+          root=pathlib.Path(sys.argv[1]);meta=json.loads((root/"kernel-metadata.json").read_text())
+          assert meta["id"]=="renta0426/poisoned-chalice-stage2-deployment-analysis-v1"
+          assert meta["is_private"] is True and meta["enable_gpu"] is False and meta["enable_tpu"] is False and meta["enable_internet"] is True
+          assert meta["kernel_sources"]==["renta0426/poisoned-chalice-stage2-deployment-validation-v1"] and meta["competition_sources"]==[]
+          nb=json.loads((root/meta["code_file"]).read_text());code="\n".join(str(c.get("source","")) for c in nb["cells"])
+          for marker in ("349274389","57aa7ff4633e88808c135443e9dea2711a0ed869b04e7765e7709242bd842e63","STAGE2_DEPLOYMENT_ANALYSIS_V1_V2 COMPLETE","persisted predictions_label_free.csv column"):
+            assert marker in code,marker
           assert ("competitions "+"submit") not in code.casefold()
           PY
-          echo "STAGE2_DEPLOYMENT_ANALYSIS_V1_VALIDATE PASS expected_runner_minutes_lt_5 automatic_retries=0 competition_submission=0"
+          echo "STAGE2_ANALYSIS_V2_REPAIR_VALIDATE PASS expected_runner_minutes_lt_5 writes_on_pr=0"
 
   launch:
-    name: Launch approved Stage2 CPU analysis exactly once
+    name: Launch approved Stage2 analysis successor v2 exactly once
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'renta0426/kaggle-actions-bridge' && github.actor == 'renta0426' && github.actor_id == '71638068'
     environment: kaggle-readonry
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Enforce boundary, rebuild, and push once
+      - name: Rebuild and create exactly version 2 from failed version 1
         shell: bash
         env:
           EVENT_SHA: ${{ github.sha }}
@@ -144,43 +134,48 @@ jobs:
           [[ "${EVENT_SHA}" == "${WORKFLOW_SHA}" ]]
           [[ "${WORKFLOW_REF}" == "renta0426/kaggle-actions-bridge/.github/workflows/poisoned-chalice-stage2-deployment-analysis-v1.yml@refs/heads/main" ]]
           [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" && -n "${KAGGLE_API_TOKEN}" && "${KAGGLE_API_TOKEN}" == KGAT_* ]]
-          workdir="${RUNNER_TEMP}/stage2-deployment-analysis-v1"; rm -rf "${workdir}"; mkdir -p "${workdir}"
+          workdir="${RUNNER_TEMP}/stage2-analysis-v2-repair";rm -rf "${workdir}";mkdir -p "${workdir}"
           python3 - "${EVENT_SHA}" "${workdir}" <<'PY'
           import pathlib,ssl,sys,urllib.request
-          sha,root_value=sys.argv[1:]; root=pathlib.Path(root_value); ctx=ssl.create_default_context()
-          for path,maximum in {
+          sha,root_value=sys.argv[1:];root=pathlib.Path(root_value);ctx=ssl.create_default_context()
+          files={
             "requests/poisoned-chalice-stage2-deployment-analysis-v1.json":32768,
-            "scripts/build_poisoned_chalice_stage2_deployment_analysis_v1_notebook.py":32768,
-            ".github/workflows/poisoned-chalice-stage2-deployment-analysis-v1.yml":32768,
+            "scripts/build_poisoned_chalice_stage2_deployment_analysis_v1_notebook.py":16384,
+            "scripts/poisoned_chalice_stage2_deployment_analysis_v2.py":32768,
+            "scripts/kaggle_exact_identity.py":32768,
+            "scripts/kaggle_kernel_write_v2.py":32768,
             "requirements/kaggle-2.2.4.lock":65536,
-          }.items():
+          }
+          for path,limit in files.items():
             req=urllib.request.Request(f"https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{path}",headers={"User-Agent":"kaggle-actions-bridge/1"})
-            with urllib.request.urlopen(req,timeout=30,context=ctx) as response:data=response.read(maximum+1)
-            if not data or len(data)>maximum:raise SystemExit(f"source byte budget failed: {path}")
+            with urllib.request.urlopen(req,timeout=30,context=ctx) as response:data=response.read(limit+1)
+            if not data or len(data)>limit:raise SystemExit(f"source byte budget failed: {path}")
             dest=root/path;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
           PY
-          (cd "${workdir}" && python3 "${BUILDER_PATH}" >/dev/null)
+          (cd "${workdir}" && python3 "${BUILDER_PATH}" "${ANALYZER_PATH}" >/dev/null)
           python3 -m venv "${workdir}/venv"
           "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/${LOCK_PATH}" >/dev/null
           "${workdir}/venv/bin/python" -m pip check >/dev/null
-          "${workdir}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
-          "${workdir}/venv/bin/python" - "${workdir}/notebooks/poisoned-chalice-stage2-deployment-analysis-v1" "${workdir}/venv/bin/kaggle" <<'PY'
-          import hashlib,os,pathlib,subprocess,sys
+          "${workdir}/venv/bin/python" - "${workdir}" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]);sys.path.insert(0,str(root/"scripts"))
           from kaggle.api.kaggle_api_extended import KaggleApi
-          kernel_dir=pathlib.Path(sys.argv[1]); kaggle_bin=sys.argv[2]
-          target="renta0426/poisoned-chalice-stage2-deployment-analysis-v1";slug=target.split('/',1)[1]
+          from kaggle_kernel_write_v2 import push_kernel_version_once
+          request=json.loads((root/"requests/poisoned-chalice-stage2-deployment-analysis-v1.json").read_text())
           api=KaggleApi();api.authenticate()
-          before=api.kernels_list(user="renta0426",search=slug,page_size=20) or []
-          if any(str(getattr(x,"ref",""))==target for x in before):raise SystemExit("analysis target already exists; refusing overwrite")
-          completed=subprocess.run([kaggle_bin,"kernels","push","-p",str(kernel_dir)],env=os.environ.copy(),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=120)
-          stdout,stderr=completed.stdout or "",completed.stderr or ""
-          after=api.kernels_list(user="renta0426",search=slug,page_size=20) or []
-          exact=[x for x in after if str(getattr(x,"ref",""))==target]
-          if len(exact)!=1:
-            raise SystemExit("write reconciliation failed rc="+str(completed.returncode)+" stdout_sha256="+hashlib.sha256(stdout.encode()).hexdigest()+" stderr_sha256="+hashlib.sha256(stderr.encode()).hexdigest())
-          try:state=str(getattr(api.kernels_status(target),"status","UNKNOWN"))
-          except Exception:state="UNKNOWN"
-          print("STAGE2_DEPLOYMENT_ANALYSIS_V1_LAUNCH_ACCEPTED target="+target+" state="+state+" write_calls=1 automatic_retries=0 competition_submission=0 client_rc="+str(completed.returncode))
+          outcome=push_kernel_version_once(
+            api,
+            root/"notebooks/poisoned-chalice-stage2-deployment-analysis-v1",
+            request["target"],
+            expected_before_version=request["expected_before_version"],
+            expected_after_version=request["expected_after_version"],
+            expected_before_state=request["expected_before_state"],
+            reconcile_attempts=8,
+            reconcile_delay_seconds=2.0,
+          )
+          if outcome.classification!="write_observed" or outcome.observed_version!=2 or outcome.write_calls!=1:
+            raise SystemExit("unexpected one-shot write outcome")
+          print(f"STAGE2_ANALYSIS_V2_REPAIR_LAUNCH_ACCEPTED version={outcome.observed_version} state={outcome.observed_state} write_calls=1 automatic_retries=0 competition_submission=0")
           PY
           rm -rf "${workdir}"
-          echo "STAGE2_DEPLOYMENT_ANALYSIS_V1_CLEANUP PASS retention_days=0 automatic_retries=0 competition_submission=0"
+          echo "STAGE2_ANALYSIS_V2_REPAIR_CLEANUP PASS"
