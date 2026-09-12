@@ -1,0 +1,118 @@
+            raise ValueError(f"prediction column invalid: {name}")
+        frame[name] = array
+    return frame
+
+
+TOKEN_RE = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|==|!=|<=|>=|=>|->|::|&&|\|\||\S"
+)
+
+
+class DSU:
+    def __init__(self, n: int):
+        self.p = list(range(n))
+        self.sz = [1] * n
+
+    def find(self, x: int) -> int:
+        while self.p[x] != x:
+            self.p[x] = self.p[self.p[x]]
+            x = self.p[x]
+        return x
+
+    def union(self, a: int, b: int) -> None:
+        a, b = self.find(a), self.find(b)
+        if a == b:
+            return
+        if self.sz[a] < self.sz[b]:
+            a, b = b, a
+        self.p[b] = a
+        self.sz[a] += self.sz[b]
+
+
+def simhash64(text: str) -> int:
+    tokens = TOKEN_RE.findall(str(text))
+    if len(tokens) < 5:
+        shingles = [" ".join(tokens)]
+    else:
+        total = len(tokens) - 4
+        starts = range(total) if total <= 256 else np.linspace(0, total - 1, 256, dtype=int)
+        shingles = [" ".join(tokens[int(i):int(i) + 5]) for i in starts]
+    digests = b"".join(
+        hashlib.blake2b(shingle.encode("utf-8", errors="ignore"), digest_size=8).digest()
+        for shingle in shingles
+    )
+    if not digests:
+        return 0
+    bits = np.unpackbits(
+        np.frombuffer(digests, dtype=np.uint8).reshape(-1, 8),
+        axis=1,
+        bitorder="little",
+    )
+    majority = bits.sum(axis=0) * 2 >= bits.shape[0]
+    value = 0
+    for bit, flag in enumerate(majority.tolist()):
+        if flag:
+            value |= 1 << bit
+    return value
+
+
+def _simhash_block_values(value: int) -> tuple[int, ...]:
+    """Seven disjoint blocks make Hamming<=6 candidate generation exact.
+
+    By the pigeonhole principle, if at most six of 64 bits differ, at least one
+    of seven disjoint blocks is unchanged. Therefore every true <=6 pair shares
+    at least one bucket and is compared below; no bucket-size cutoff is allowed.
+    """
+    if sum(SIMHASH_BLOCK_WIDTHS) != SIMHASH_BITS or len(SIMHASH_BLOCK_WIDTHS) != SIMHASH_MAX_HAMMING + 1:
+        raise RuntimeError("SimHash exact-blocking contract changed")
+    output = []
+    offset = 0
+    for width in SIMHASH_BLOCK_WIDTHS:
+        output.append((int(value) >> offset) & ((1 << width) - 1))
+        offset += width
+    return tuple(output)
+
+
+def _content_groups_from_hashes(hashes: Sequence[int]) -> tuple[np.ndarray, dict[str, Any]]:
+    hashes = [int(value) & ((1 << SIMHASH_BITS) - 1) for value in hashes]
+    block_values = [_simhash_block_values(value) for value in hashes]
+    buckets: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for idx, values in enumerate(block_values):
+        for block_index, block_value in enumerate(values):
+            buckets[(block_index, block_value)].append(idx)
+
+    dsu = DSU(len(hashes))
+    candidate_pairs_checked = 0
+    for (block_index, _), items in buckets.items():
+        for pos, left in enumerate(items):
+            for right in items[pos + 1:]:
+                # A pair can share several blocks. Compare it only in the first
+                # shared block, avoiding a large global `checked` set while
+                # keeping exhaustive candidate coverage.
+                if any(
+                    block_values[left][previous] == block_values[right][previous]
+                    for previous in range(block_index)
+                ):
+                    continue
+                candidate_pairs_checked += 1
+                if (hashes[left] ^ hashes[right]).bit_count() <= SIMHASH_MAX_HAMMING:
+                    dsu.union(left, right)
+
+    groups = np.asarray([dsu.find(i) for i in range(len(hashes))], dtype=int)
+    sizes = pd.Series(groups).value_counts()
+    return groups, {
+        "method": "token_5gram_simhash64_hamming_le_6",
+        "blocking": "7_disjoint_blocks_exact_for_hamming_le_6_no_bucket_cutoff",
+        "block_widths": list(SIMHASH_BLOCK_WIDTHS),
+        "non_singleton_groups": int((sizes > 1).sum()),
+        "rows_in_non_singleton_groups": int(sizes[sizes > 1].sum()) if (sizes > 1).any() else 0,
+        "max_group_size": int(sizes.max()) if len(sizes) else 0,
+        "candidate_pairs_checked": int(candidate_pairs_checked),
+    }
+
+
+def content_groups(frame: pd.DataFrame) -> tuple[np.ndarray, dict[str, Any]]:
+    if "content" not in frame:
+        raise ValueError("content_groups requires content")
+    hashes = [simhash64(text) for text in frame.content]
+    return _content_groups_from_hashes(hashes)
