@@ -1,0 +1,134 @@
+name: CMI-Flu saved-bank audit 001 (read only)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+concurrency:
+  group: cmi-flu-saved-bank-audit-001
+  cancel-in-progress: false
+
+env:
+  DRIVER_SHA256: 18341cb7e5707815a6b76e51c03b50b5deecd2e9b482a4c54dfbcafb27200424
+  REQUEST_SHA256: 78668f26b4d3312717ac879b6e9786ab171fd1d84e93bad33667a1b5c9ca8c7b
+
+jobs:
+  validate:
+    name: Validate exact no-fit saved-bank auditor
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Materialize exact public bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == 'renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-saved-bank-audit-001.yml@refs/heads/main' ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          python3 - "$EVENT_SHA" "$workdir/bridge" <<'PYCODE'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          ref,target=sys.argv[1],pathlib.Path(sys.argv[2])
+          if not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('invalid commit')
+          req=urllib.request.Request('https://codeload.github.com/renta0426/kaggle-actions-bridge/tar.gz/'+ref,headers={'User-Agent':'cmi-saved-bank-audit/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
+          if not data or len(data)>80000000: raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]
+              prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref): raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
+                  out=target.joinpath(*rel.parts);out.parent.mkdir(parents=True,exist_ok=True);out.write_bytes(archive.extractfile(item).read())
+          PYCODE
+          echo "$DRIVER_SHA256  $workdir/bridge/scripts/cmi_flu_saved_bank_audit_v1.py" | sha256sum --check --status
+          echo "$REQUEST_SHA256  $workdir/bridge/requests/cmi-flu-saved-bank-audit-001.json" | sha256sum --check --status
+      - name: Install existing hash-locked runtime libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/venv"
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/bridge/requirements/v3-runtime-ci.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/bridge/requirements/kaggle-2.2.4.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip check >/dev/null
+      - name: Run complete synthetic regressions without Kaggle credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -z "${KAGGLE_API_TOKEN-}" && -z "${KAGGLE_KEY-}" && -z "${KAGGLE_USERNAME-}" ]]
+          "$WORKDIR/venv/bin/python" -m unittest discover -s "$WORKDIR/bridge/tests" -p 'test_*saved_bank*.py' -v
+          "$WORKDIR/venv/bin/python" -W error::SyntaxWarning -m py_compile "$WORKDIR/bridge/scripts/cmi_flu_saved_bank_audit_v1.py" "$WORKDIR/bridge/payloads/cmi-flu-saved-bank-audit-001/strategy_v3_saved_bank_audit.py"
+      - name: Unconditional private scratch cleanup
+        if: always()
+        shell: bash
+        run: |
+          unset KAGGLE_API_TOKEN || true
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+  readout:
+    name: Read two pinned banks and emit aggregate reconciliation
+    needs: validate
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'renta0426' && github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: kaggle-readonry
+    steps:
+      - name: Materialize exact public bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == 'renta0426/kaggle-actions-bridge/.github/workflows/cmi-flu-saved-bank-audit-001.yml@refs/heads/main' ]]
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=$workdir" >> "$GITHUB_ENV"
+          python3 - "$EVENT_SHA" "$workdir/bridge" <<'PYCODE'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          ref,target=sys.argv[1],pathlib.Path(sys.argv[2])
+          if not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('invalid commit')
+          req=urllib.request.Request('https://codeload.github.com/renta0426/kaggle-actions-bridge/tar.gz/'+ref,headers={'User-Agent':'cmi-saved-bank-audit/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
+          if not data or len(data)>80000000: raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]
+              prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref): raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
+                  out=target.joinpath(*rel.parts);out.parent.mkdir(parents=True,exist_ok=True);out.write_bytes(archive.extractfile(item).read())
+          PYCODE
+          echo "$DRIVER_SHA256  $workdir/bridge/scripts/cmi_flu_saved_bank_audit_v1.py" | sha256sum --check --status
+          echo "$REQUEST_SHA256  $workdir/bridge/requests/cmi-flu-saved-bank-audit-001.json" | sha256sum --check --status
+      - name: Install existing hash-locked runtime libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$WORKDIR/venv"
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/bridge/requirements/v3-runtime-ci.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "$WORKDIR/bridge/requirements/kaggle-2.2.4.lock" >/dev/null
+          "$WORKDIR/venv/bin/python" -m pip check >/dev/null
+      - name: Execute approved read-only reconciliation
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          PYTHONPATH="$WORKDIR/bridge/scripts" "$WORKDIR/venv/bin/python" "$WORKDIR/bridge/scripts/cmi_flu_saved_bank_audit_v1.py" --repository-root "$WORKDIR/bridge" --output-dir "$WORKDIR/safe"
+      - name: Unconditional private scratch cleanup
+        if: always()
+        shell: bash
+        run: |
+          unset KAGGLE_API_TOKEN || true
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"

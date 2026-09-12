@@ -1,0 +1,82 @@
+{
+  "authorization": {
+    "latest_or_historical_version_fallback_allowed": false,
+    "manual_dispatch_required": true,
+    "notebook_reexecution_allowed": false,
+    "protected_environment": "kaggle-readonry",
+    "public_private_prediction_output_allowed": false
+  },
+  "automatic_compute_retries": 0,
+  "automatic_readout_retries": 0,
+  "competition_submission_count": 0,
+  "diagnostic_scope_only": true,
+  "documentation": [
+    "docs/EXECUTION_POLICY_V2.md",
+    "docs/OPERATIONAL_LESSONS.md",
+    "docs/CMI_SAVED_BANK_AUDIT_001.md"
+  ],
+  "execution_policy": "kaggle_native_capacity_v2",
+  "kaggle_compute_launch_count": 0,
+  "kaggle_write_count": 0,
+  "model_fit_count": 0,
+  "operation": "read_current_outputs_and_reconcile",
+  "original_planning_documents_unchanged": true,
+  "output_filename": "saved_bank_audit.json",
+  "purpose": "Check paired V02/V05 saved PLS predictions and the positive-slope S3 constant output without fitting or changing predictors.",
+  "request_id": "20260912-cmi-flu-saved-bank-audit-001",
+  "schema_version": 1,
+  "science_blob": "aace13086964535ffc6c3ef5a0dcfe976b54289b",
+  "science_commit": "c822a0ca0bfb8406e4ea293a2d9706855bf6e181",
+  "side_effects": [
+    "temporary runner-local private downloads, deleted unconditionally",
+    "one aggregate-only JSON in sanitized logs; no Actions artifact"
+  ],
+  "sources": [
+    {
+      "expected_current_version": 1,
+      "files": {
+        "v3_v02_bank_manifest.json": {
+          "bytes": 661,
+          "sha256": "accf5b9090074dba0af8ac2988fab417c5f3309b4a08e5eedaecf45d9c7cc532"
+        },
+        "v3_v02_challenge_bank.csv": {
+          "bytes": 125889,
+          "sha256": "44fe10216e588423cbfe00a997c2fc94951b86b46c67593eac56d1c22f29a137"
+        },
+        "v3_v02_oof_bank.csv": {
+          "bytes": 1636096,
+          "sha256": "a0c4b4a02eceae7ce31806ecbca8cf45d084c45d2041fe82101750f5f46502c6"
+        },
+        "v3_v02_summary.json": {
+          "bytes": 125930,
+          "sha256": "1ed0f4998e6d9c90c8a9caa7abbca84844524fb92131aabee2088dbea5908c41"
+        }
+      },
+      "kernel": "renta0426/cmi-flu-v3-v02-validation-bank-20260912-001",
+      "key": "v02"
+    },
+    {
+      "expected_current_version": 1,
+      "files": {
+        "v3_v05_task13_bank_manifest.json": {
+          "bytes": 649,
+          "sha256": "e3056e6d8237845957e69bad2a568add6aa3b67a74d476109f0e5b4654c9af50"
+        },
+        "v3_v05_task13_challenge_bank.csv": {
+          "bytes": 6846,
+          "sha256": "da782f693a98b145302fcf91f757bda796c2c654752b0ca05ddb041e2216b016"
+        },
+        "v3_v05_task13_oof_bank.csv": {
+          "bytes": 13975,
+          "sha256": "36699e669464f1408163888248af1e750502e2455c05048cfb8b821d368fd28f"
+        },
+        "v3_v05_task13_summary.json": {
+          "bytes": 19568,
+          "sha256": "f479fb84173ed52bf1e89862ee2493000cbfe7ded24087592eec2a687aaaeb12"
+        }
+      },
+      "kernel": "renta0426/cmi-flu-v3-v05-task13-scale-20260912-002",
+      "key": "v05"
+    }
+  ]
+}
