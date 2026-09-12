@@ -1,0 +1,220 @@
+"""Frozen deployment-validation helpers for STAGE2-DEPLOYMENT-VALIDATION-V1.
+
+This module contains only source-fitted / label-free scoring primitives. Holdout
+labels are intentionally absent from every prediction API.
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import asdict
+from hashlib import sha256
+from pathlib import Path
+from typing import Any, Sequence
+import hashlib
+import json
+import re
+
+import numpy as np
+import pandas as pd
+
+from poisoned_chalice.lumia_hidden_state_probe import (
+    LumiaProbeConfig,
+    _make_probe,
+    predict_probe,
+    train_probe,
+)
+
+LANGUAGES = ("Go", "Java", "Python", "Ruby", "Rust")
+SOURCE_ROWS = 5000
+SOURCE_ROWS_PER_CELL = 500
+DEPLOYMENT_ROWS = 5000
+DEPLOYMENT_ROWS_PER_CELL = 500
+DEPLOYMENT_SPLIT_SEED = 20260909
+DEPLOYMENT_HOLDOUT_SEED = 20260911
+PORTABLE_FEATURE_COUNT = 96
+PORTABLE_GRID_POINTS = 16
+PORTABLE_SUMMARIES = ("mean", "std", "min", "max", "q25", "q50", "q75", "slope")
+SIMHASH_BITS = 64
+SIMHASH_MAX_HAMMING = 6
+SIMHASH_BLOCK_WIDTHS = (10, 9, 9, 9, 9, 9, 9)
+
+
+def sha256_file(path: str | Path) -> str:
+    digest = sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def normalize_membership(values: Sequence[object]) -> np.ndarray:
+    normalized = pd.Series(values, dtype="string").str.strip().str.lower().str.replace("_", "-", regex=False)
+    labels = normalized.map({"member": 1, "non-member": 0, "nonmember": 0})
+    if labels.isna().any():
+        raise ValueError("membership labels contain an unsupported value")
+    return labels.to_numpy(dtype=int)
+
+
+def validate_balanced_source_frame(frame: pd.DataFrame) -> None:
+    required = {"sample_id", "language", "label"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"source frame missing columns: {sorted(missing)}")
+    if len(frame) != SOURCE_ROWS or frame.sample_id.duplicated().any():
+        raise ValueError("source frame identity/coverage changed")
+    counts = frame.groupby(["language", "label"]).size().to_dict()
+    expected = {(language, label): SOURCE_ROWS_PER_CELL for language in LANGUAGES for label in (0, 1)}
+    if counts != expected:
+        raise ValueError(f"source frame language-label balance changed: {counts}")
+
+
+def source_train_early_select_split(
+    frame: pd.DataFrame,
+    seed: int = DEPLOYMENT_SPLIT_SEED,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Reuse the historical 60/20/20 inner split recipe on the full source 5k."""
+    from sklearn.model_selection import train_test_split
+
+    validate_balanced_source_frame(frame)
+    indices = np.arange(len(frame))
+    strata = frame.language.astype(str) + "_" + frame.label.astype(int).astype(str)
+    trainval, select = train_test_split(
+        indices,
+        test_size=0.20,
+        random_state=seed + 1000,
+        stratify=strata.to_numpy(),
+    )
+    trainval_strata = strata.iloc[trainval].to_numpy()
+    train, early = train_test_split(
+        trainval,
+        test_size=0.25,
+        random_state=seed + 2000,
+        stratify=trainval_strata,
+    )
+    if (len(train), len(early), len(select)) != (3000, 1000, 1000):
+        raise RuntimeError("deployment source split sizes changed")
+    for subset, rows_per_cell in ((train, 300), (early, 100), (select, 100)):
+        counts = frame.iloc[subset].groupby(["language", "label"]).size().to_dict()
+        expected = {(language, label): rows_per_cell for language in LANGUAGES for label in (0, 1)}
+        if counts != expected:
+            raise RuntimeError(f"deployment source stratification changed: {counts}")
+    if set(train) & set(early) or set(train) & set(select) or set(early) & set(select):
+        raise RuntimeError("deployment source split overlap detected")
+    if set(train) | set(early) | set(select) != set(indices):
+        raise RuntimeError("deployment source split coverage changed")
+    return np.asarray(train), np.asarray(early), np.asarray(select)
+
+
+def profile_features(values: np.ndarray, prefix: str) -> tuple[np.ndarray, list[str]]:
+    values = np.asarray(values, dtype=np.float64)
+    if values.ndim != 2:
+        raise ValueError("portable profile must be [rows, depth]")
+    _, depth = values.shape
+    if depth < 2:
+        raise ValueError(f"portable profile too short: {prefix} depth={depth}")
+    x = np.linspace(0.0, 1.0, depth)
+    grid = np.linspace(0.0, 1.0, PORTABLE_GRID_POINTS)
+    interp = np.vstack([np.interp(grid, x, row) for row in values])
+    q = np.quantile(values, [0.25, 0.50, 0.75], axis=1).T
+    xm = x - x.mean()
+    slope = ((values - values.mean(axis=1, keepdims=True)) @ xm) / float(np.dot(xm, xm))
+    stats = np.column_stack([
+        values.mean(axis=1),
+        values.std(axis=1),
+        values.min(axis=1),
+        values.max(axis=1),
+        q,
+        slope,
+    ])
+    names = [f"{prefix}_depth_{i:02d}" for i in range(PORTABLE_GRID_POINTS)]
+    names += [f"{prefix}_{name}" for name in PORTABLE_SUMMARIES]
+    return np.column_stack([interp, stats]), names
+
+
+def scalarize_hidden_mean_96(array: np.ndarray) -> tuple[np.ndarray, list[str]]:
+    """Exact 96-feature mean-hidden scalarization used by the post-5k audit."""
+    x = np.asarray(array, dtype=np.float64)
+    if x.ndim != 3:
+        raise ValueError("hidden array must be [rows, layers, hidden]")
+    if x.shape[1] < 3 or x.shape[2] < 1:
+        raise ValueError("hidden array dimensions are too small")
+    eps = 1e-12
+    rms = np.sqrt(np.mean(x * x, axis=2))
+    left, right = x[:, :-1, :], x[:, 1:, :]
+    left_norm = np.linalg.norm(left, axis=2)
+    right_norm = np.linalg.norm(right, axis=2)
+    adjacent_cos = np.sum(left * right, axis=2) / np.maximum(left_norm * right_norm, eps)
+    delta = right - left
+    rel_delta = np.linalg.norm(delta, axis=2) / np.maximum(right_norm, eps)
+    dleft, dright = delta[:, :-1, :], delta[:, 1:, :]
+    delta_direction_cos = np.sum(dleft * dright, axis=2) / np.maximum(
+        np.linalg.norm(dleft, axis=2) * np.linalg.norm(dright, axis=2), eps
+    )
+    blocks: list[np.ndarray] = []
+    names: list[str] = []
+    for values, prefix in (
+        (rms, "rms"),
+        (adjacent_cos, "adjacent_cos"),
+        (rel_delta, "relative_delta_norm"),
+        (delta_direction_cos, "delta_direction_cos"),
+    ):
+        block, block_names = profile_features(values, prefix)
+        blocks.append(block)
+        names.extend(block_names)
+    result = np.column_stack(blocks)
+    if result.shape != (x.shape[0], PORTABLE_FEATURE_COUNT) or len(names) != PORTABLE_FEATURE_COUNT:
+        raise RuntimeError("portable 96-feature schema changed")
+    if len(set(names)) != PORTABLE_FEATURE_COUNT or not np.isfinite(result).all():
+        raise RuntimeError("portable 96-feature finite/identity check failed")
+    return result, names
+
+
+def fit_gr_source(
+    mean_hidden: np.ndarray,
+    labels: Sequence[int],
+    *,
+    seed: int = DEPLOYMENT_SPLIT_SEED,
+) -> tuple[dict[str, Any], np.ndarray]:
+    """Fit exact median -> StandardScaler -> LR(C=.2) GR on source only."""
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+
+    X, names = scalarize_hidden_mean_96(mean_hidden)
+    y = np.asarray(labels, dtype=int)
+    if X.shape[0] != len(y) or sorted(np.unique(y).tolist()) != [0, 1]:
+        raise ValueError("GR source labels/coverage invalid")
+    imputer = SimpleImputer(strategy="median")
+    Xi = imputer.fit_transform(X)
+    scaler = StandardScaler()
+    Xs = scaler.fit_transform(Xi)
+    learner = LogisticRegression(C=0.2, max_iter=2000, random_state=seed)
+    learner.fit(Xs, y)
+    direct = learner.predict_proba(Xs)[:, 1]
+    bundle = {
+        "schema_version": 1,
+        "feature_names": names,
+        "imputer_statistics": np.asarray(imputer.statistics_, dtype=np.float64),
+        "scaler_mean": np.asarray(scaler.mean_, dtype=np.float64),
+        "scaler_scale": np.asarray(scaler.scale_, dtype=np.float64),
+        "coef": np.asarray(learner.coef_[0], dtype=np.float64),
+        "intercept": float(learner.intercept_[0]),
+        "learner": {"type": "LogisticRegression", "C": 0.2, "max_iter": 2000, "random_state": seed},
+        "score_direction": "higher_is_member",
+    }
+    replay = predict_gr_from_features(bundle, X)
+    if not np.allclose(direct, replay, rtol=0.0, atol=1e-12):
+        raise RuntimeError("GR exported bundle replay mismatch")
+    return bundle, direct
+
+
+def predict_gr_from_features(bundle: dict[str, Any], X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64).copy()
+    if X.ndim != 2 or X.shape[1] != PORTABLE_FEATURE_COUNT:
+        raise ValueError("GR feature shape changed")
+    stats = np.asarray(bundle["imputer_statistics"], dtype=np.float64)
+    if stats.shape != (PORTABLE_FEATURE_COUNT,):
+        raise ValueError("GR imputer shape changed")
+    rows, cols = np.where(~np.isfinite(X))
+    if len(rows):
+        X[rows, cols] = stats[cols]
