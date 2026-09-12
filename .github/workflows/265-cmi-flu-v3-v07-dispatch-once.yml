@@ -1,4 +1,4 @@
-name: Dispatch protected CMI-Flu V3-07 H1/H2 successor once
+name: Dispatch corrected protected CMI-Flu V3-07 H1/H2 once
 
 on:
   push:
@@ -15,11 +15,11 @@ jobs:
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
       github.actor == 'renta0426' &&
-      github.event.head_commit.message == 'Dispatch protected CMI-Flu V3-07 H1/H2 successor once'
+      github.event.head_commit.message == 'Dispatch corrected protected CMI-Flu V3-07 H1/H2 once'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Dispatch one protected successor workflow containing independent H1/H2 jobs
+      - name: Dispatch corrected protected successor workflow containing independent H1/H2 jobs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -27,4 +27,4 @@ jobs:
         run: |
           set -euo pipefail
           gh api --method POST "/repos/${REPOSITORY}/actions/workflows/266-cmi-flu-v3-v07-protected-successor.yml/dispatches" -f ref=main
-          echo 'Protected V3-07 H1/H2 successor dispatched. Each request keeps one write maximum and zero automatic retries; both jobs remain gated by kaggle-readonry human approval.'
+          echo 'Corrected protected V3-07 H1/H2 successor dispatched after a proven before-write CLI PATH failure. Each request still has zero Kaggle writes consumed, one write maximum, zero automatic retries, and remains gated by kaggle-readonry approval.'
