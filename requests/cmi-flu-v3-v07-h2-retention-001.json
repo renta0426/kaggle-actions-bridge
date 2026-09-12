@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-cmi-flu-strategy-v3-v07-h2-retention-001",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-v07-h2-retention-20260912-001",
+  "title": "CMI Flu V3-07 H2 Retention 20260912 001",
+  "expected_version": 1,
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "9bfe05664e4d96f09631a3210f7951bf9dfefe71",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_v3_v07_blob_sha": "4cf804e0c10889d0e037457ac096711b77200ea9",
+  "approved_runtime_binding": {
+    "method": "credential_free_validate_job_sha256_before_protected_environment_approval",
+    "deterministic_double_build_required": true,
+    "protected_job_rebuild_and_exact_sha256_match_required": true,
+    "runtime_digest_must_exist_before_human_environment_approval": true
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 75,
+    "hard_timeout_minutes": 120
+  },
+  "scientific_contract": {
+    "stage": "V3-07",
+    "condition": "task23_retention",
+    "task": "Task2.3",
+    "teacher": "same-subject same-strain D28/D365 only",
+    "auxiliary_target": "log2(Y365/Y28)",
+    "features": ["baseline HAI", "age", "predicted D28"],
+    "ridge_alpha": 100.0,
+    "d28_prediction": "nested inner OOF on outer-training data only",
+    "held_observed_d28_used": false,
+    "challenge_observed_d28_used": false,
+    "controls": ["ridge_exact_a100 independent D365", "exact E06b two-head"],
+    "outer_evaluation": "biological_subject_purged_leave_one_study_out",
+    "same_subject_same_strain_pair_rows": 11913,
+    "same_subject_same_strain_pair_subjects": 567,
+    "target_proxy_panel_size": 8,
+    "target_proxy_subjects": 439,
+    "target_proxy_studies": 3,
+    "hpo_allowed": false,
+    "post_result_parameter_tuning_allowed": false,
+    "study_specific_gate_allowed": false,
+    "public_leaderboard_used": false
+  },
+  "stop_contract": {
+    "insufficient_teacher_or_proxy_support": true,
+    "no_paired_improvement_vs_independent_d365": true,
+    "severe_held_study_reversal": true
+  },
+  "output_contract": {
+    "private_row_level_files": ["v3_v07_h2_oof_bank.csv", "v3_v07_h2_challenge_bank.csv"],
+    "aggregate_safe_files": ["v3_v07_h2_summary.json", "v3_v07_h2_manifest.json"],
+    "public_artifact_upload": false,
+    "row_level_contents_may_exist_only_in_private_kaggle_output_and_ephemeral_runner_validation": true
+  },
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version after protected approval",
+    "persist the declared private V3-07 H2 output files",
+    "read only exact current version 1 declared outputs"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true,
+  "final_submission_selection_authorized": false
+}
