@@ -1,4 +1,4 @@
-name: Dispatch frozen CMI-Flu V3-07 H1/H2 once
+name: Dispatch corrected frozen CMI-Flu V3-07 H1/H2 once
 
 on:
   push:
@@ -15,11 +15,11 @@ jobs:
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
       github.actor == 'renta0426' &&
-      github.event.head_commit.message == 'Dispatch frozen CMI-Flu V3-07 H1/H2 once'
+      github.event.head_commit.message == 'Dispatch corrected frozen CMI-Flu V3-07 H1/H2 once'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Dispatch exact H1 and H2 manual workflows
+      - name: Redispatch exact H1 and H2 after zero-side-effect preflight fix
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -28,4 +28,4 @@ jobs:
           set -euo pipefail
           gh api --method POST "/repos/${REPOSITORY}/actions/workflows/263-cmi-flu-v3-v07-h1-panel-mean-001.yml/dispatches" -f ref=main
           gh api --method POST "/repos/${REPOSITORY}/actions/workflows/264-cmi-flu-v3-v07-h2-retention-001.yml/dispatches" -f ref=main
-          echo 'V3-07 H1/H2 dispatch requests accepted; protected jobs still require kaggle-readonry approval.'
+          echo 'Corrected V3-07 H1/H2 pre-write retries accepted. Prior attempts ended in credential-free validation before any Kaggle write; protected jobs still require kaggle-readonry approval.'
