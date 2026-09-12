@@ -3,14 +3,15 @@
 
 This is intentionally row-free and credential-free. It exists to prevent model
 runtimes from assuming a reference-file column contract that CI never checked.
+The validator is stdlib-only so it can run before any modeling environment is
+activated.
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 from pathlib import Path
-
-import pandas as pd
 
 EXPECTED_SHA256 = {
     "strain_sequences.csv": "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887",
@@ -23,6 +24,15 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def read_csv_header(path: Path) -> tuple[str, ...]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.reader(handle)
+        try:
+            return tuple(next(reader))
+        except StopIteration as exc:
+            raise SystemExit("strain sequence reference is empty") from exc
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference-dir", type=Path, required=True)
@@ -32,7 +42,7 @@ def main() -> int:
         path = root / name
         if not path.is_file() or digest(path) != expected:
             raise SystemExit(f"locked reference integrity mismatch:{name}")
-    columns = tuple(map(str, pd.read_csv(root / "strain_sequences.csv", nrows=0).columns.tolist()))
+    columns = read_csv_header(root / "strain_sequences.csv")
     if columns != EXPECTED_STRAIN_SEQUENCE_COLUMNS:
         raise SystemExit(
             "strain sequence reference header changed: "
