@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-cmi-flu-strategy-v3-v05-task13-scale-002",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-v05-task13-scale-20260912-002",
+  "title": "cmi-flu-v3-v05-task13-scale-20260912-002",
+  "expected_version": 1,
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "f8641f7489f22478b8caf3430d2d432e617c4a25",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "base_strategy_v3_v05_blob_sha": "136d92de6a5d4f23fb4bb66d4c339aa8f49e79f0",
+  "strategy_v3_v05_repair_blob_sha": "493a8ffa7caed30796a5fe6711577aee6c58905c",
+  "approved_runtime": {
+    "bytes": 445883,
+    "sha256": "40cb71249698e4b88b6ba11c20d241584e2469ce55324af2d1384abba31035c1"
+  },
+  "parent_runtime_failure": {
+    "request_id": "20260912-cmi-flu-strategy-v3-v05-task13-scale-001",
+    "target": "renta0426/cmi-flu-v3-v05-task13-scale-20260912-001",
+    "version": 1,
+    "actions_run": 34681620133,
+    "protected_job": 103521225160,
+    "terminal_state": "ERROR",
+    "stage": "run_task13_scale_heads",
+    "type": "DataContractError",
+    "code": "88315152273aaa70245f",
+    "message": "V3-05 source cohort is not the frozen single 2024UGA domain",
+    "savekernel_calls": 1,
+    "same_target_version_rerun_forbidden": true,
+    "automatic_compute_retries": 0
+  },
+  "repair_contract": {
+    "version": "strategy_v3_v05_v2_context_study_alias_repair",
+    "scope": "participant_context.study_group_identity_only",
+    "frozen_alias_map": {
+      "2024UGA": "2024UGA",
+      "2024_UGA": "2024UGA"
+    },
+    "frozen_alias_sha256": "6626de8ebc839dbdac44faa19e8c3280348325d2a214fe940984a9d209fe2985",
+    "teacher_changed": false,
+    "target_changed": false,
+    "measurement_values_changed": false,
+    "features_changed": false,
+    "splits_changed": false,
+    "candidate_formulas_changed": false,
+    "fit_budget_changed": false,
+    "raw_unit_conversion_performed": false,
+    "prediction_logic_changed_except_identity_alias": false
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 20,
+    "hard_timeout_minutes": 75
+  },
+  "scientific_contract": {
+    "stage": "V3-05",
+    "task": "Task1.3",
+    "new_candidate_conditions": ["S1", "S2", "S3", "S4"],
+    "new_candidate_condition_count": 4,
+    "fit_limit": 96,
+    "task12_state": "not_executed_data_limited",
+    "task13_teacher_study_canonical": "2024UGA",
+    "task13_teacher_study_raw_participant_context": "2024_UGA",
+    "task13_teacher_subjects": 23,
+    "challenge_study": "2025LJI",
+    "challenge_subjects": 40,
+    "cv_family": "repeated_group_kfold",
+    "cv_splits": 5,
+    "cv_repeats": 3,
+    "subject_purged": true,
+    "primary_scale_metric": "RMSE",
+    "rank_metric_is_side_diagnostic": true,
+    "raw_unit_conversion_performed": false,
+    "pseudocount_added": false,
+    "age_imputation_allowed": false,
+    "synthetic_teacher_rows_allowed": false,
+    "hpo_allowed": false,
+    "public_leaderboard_used": false
+  },
+  "output_contract": {
+    "private_row_level_files": [
+      "v3_v05_task13_oof_bank.csv",
+      "v3_v05_task13_challenge_bank.csv"
+    ],
+    "aggregate_safe_files": [
+      "v3_v05_task13_summary.json",
+      "v3_v05_task13_bank_manifest.json"
+    ],
+    "public_artifact_upload": false,
+    "row_level_contents_may_exist_only_in_private_kaggle_output_and_ephemeral_runner_validation": true
+  },
+  "side_effects": [
+    "create exactly one fresh private Kaggle Notebook version at target 002",
+    "persist two private row-level Task1.3 prediction-bank CSVs and two aggregate JSON outputs"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true,
+  "final_submission_selection_authorized": false
+}
