@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-cmi-flu-strategy-v3-v06-actual-et-calibration-001",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-v06-actual-et-calibration-20260912-001",
+  "title": "cmi-flu-v3-v06-actual-et-calibration-20260912-001",
+  "expected_version": 1,
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "0d395e55e7d8d82a1167c5347cc65d0c051ad59f",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_v3_v06_blob_sha": "5f75baa73750abed53b476ef9cf525e5dbf37a50",
+  "approved_runtime": {
+    "bytes": 429235,
+    "sha256": "1cacfde0f3a86ddd37e337a8bb92c67f447eb1f43b27df1ac735284083ee88d6"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 35,
+    "hard_timeout_minutes": 90
+  },
+  "scientific_contract": {
+    "stage": "V3-06",
+    "tasks": ["Task2.1", "Task2.2"],
+    "base_models": {
+      "Task2.1": "et_subtype_d3_l5",
+      "Task2.2": "et_subtype_d5_l10"
+    },
+    "new_candidate_conditions": [
+      "task21_et_log_affine",
+      "task22_et_log_affine"
+    ],
+    "new_candidate_condition_count": 2,
+    "calibration_kind": "log2_affine",
+    "calibration_formula": "log2(yhat_cal)=a+b*log2(yhat_ET), b>0",
+    "outer_evaluation": "subject_purged_leave_one_study_out",
+    "inner_calibration": "three_subject_purged_study_folds_from_outer_training_only",
+    "inner_study_folds": 3,
+    "fit_limit": 256,
+    "strict_monotonicity_required": true,
+    "historical_e06c_ridge_is_comparator_only": true,
+    "affine_or_power_grid_reopened": false,
+    "public_leaderboard_used": false,
+    "hpo_allowed": false,
+    "inverse_transform_interpretation": "geometric_or_median_like_without_smearing_not_arithmetic_mean"
+  },
+  "output_contract": {
+    "private_row_level_files": [
+      "v3_v06_oof_bank.csv",
+      "v3_v06_challenge_bank.csv"
+    ],
+    "aggregate_safe_files": [
+      "v3_v06_summary.json",
+      "v3_v06_bank_manifest.json"
+    ],
+    "public_artifact_upload": false,
+    "row_level_contents_may_exist_only_in_private_kaggle_output_and_ephemeral_runner_validation": true
+  },
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version",
+    "persist two private V3-06 row-level prediction-bank CSVs and two aggregate-safe JSON outputs"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true,
+  "final_submission_selection_authorized": false
+}
