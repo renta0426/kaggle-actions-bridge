@@ -1,0 +1,76 @@
+name: CMI-Flu V3-06 actual ET calibration 001
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml
+      - payloads/cmi-flu-v3-v06-actual-et-calibration-001/**
+      - scripts/cmi_flu_v3_v06_*.py
+      - requirements/v3-runtime-ci.*
+
+permissions: {}
+concurrency:
+  group: cmi-flu-v3-v06-actual-et-calibration-001-pr
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: V3-06 exact source and full generated-runtime regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Enforce credential-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:${name}"; exit 1; }
+          done
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${REPOSITORY}" "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
+          if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v306-ci/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
+          if not data or len(data)>80000000: raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref): raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+      - name: Install hash-locked real numerical libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+      - name: Execute deterministic runtime and full synthetic science path
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci.py" \
+            --repository-root "${WORKDIR}/bridge" --workdir "${WORKDIR}/v306-ci"
+          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare.py"
+          python3 "${WORKDIR}/bridge/scripts/kaggle_workflow_shell_v2.py" workflow \
+            "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml"
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: '[[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"'
