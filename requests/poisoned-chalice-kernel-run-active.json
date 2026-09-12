@@ -1,41 +1,115 @@
 {
   "schema_version": 1,
-  "request_id": "20260910-poisoned-chalice-lumia-hidden-state-eval-5000-v1-001",
+  "request_id": "20260912-poisoned-chalice-stage2-deployment-validation-v1-001",
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
-  "target": "renta0426/poisoned-chalice-lumia-hidden-state-eval-5000-v1",
-  "launcher_path": "runners/poisoned_chalice/lumia_hidden_state_evaluation_5000_v1.py",
-  "launcher_blob_sha": "e5acb0afd3929b24bd53cc831b56a53589018352",
+  "target": "renta0426/poisoned-chalice-stage2-deployment-validation-v1",
+  "launcher_path": "runners/poisoned_chalice/stage2_deployment_validation_v1.py",
+  "launcher_blob_sha": "f66ead2b9463d48857d277aaa501d7a8289c8a66",
   "research_repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-  "research_commit": "422771f7c28f263de031a35abc6efb4c0dbf4734",
+  "research_commit": "def904f9f526e43648b370693977b932f8d6e64d",
   "research_files": [
-    {"path":"src/poisoned_chalice/evaluation.py","git_blob_sha":"cb3afd4f3e3ecafe0e0677eda4fda30e93b04ba8","max_bytes":131072,"snapshot_parts":1},
-    {"path":"src/poisoned_chalice/sersem_author_faithful.py","git_blob_sha":"91f0fcdccd646902ccc939e0835090a517505347","max_bytes":131072,"snapshot_parts":1},
-    {"path":"src/poisoned_chalice/lumia_hidden_state_pilot.py","git_blob_sha":"d33fa4f4b0d258083d1503e4b4b883461f41ed8f","max_bytes":131072,"snapshot_parts":1},
-    {"path":"src/poisoned_chalice/lumia_hidden_state_cache.py","git_blob_sha":"61182c7fcde131ed36c0791fa16928dcdc9b6e8b","max_bytes":131072,"snapshot_parts":1},
-    {"path":"src/poisoned_chalice/lumia_hidden_state_probe.py","git_blob_sha":"dffe5648eb45f6919dcd002a46f7a2c6d6fb9121","max_bytes":131072,"snapshot_parts":1},
-    {"path":"src/poisoned_chalice/lumia_hidden_state_scale.py","git_blob_sha":"3f323970ab8bac0a243be9cb0fed19b3c40f74f6","max_bytes":131072,"snapshot_parts":1},
-    {"path":"scripts/run_lumia_hidden_state_scale_5000_evaluation.py","git_blob_sha":"d82e37b1ca5c6962c62c409d7944e9b6e7067bc7","max_bytes":131072,"snapshot_parts":1},
-    {"path":"scripts/build_lumia_hidden_state_evaluation_5000_notebook_v1.py","git_blob_sha":"7b77f5e42f83efc9f5c1ff1300c47efc67449656","max_bytes":131072,"snapshot_parts":1},
-    {"path":"configs/p1_03_lumia_hidden_state_scale_5000_v1_20260910.json","git_blob_sha":"0dccee9b2e562ccab9f4b4a1e4c9f21cb5518b85","max_bytes":32768,"snapshot_parts":1}
+    {
+      "path": "src/poisoned_chalice/evaluation.py",
+      "git_blob_sha": "cb3afd4f3e3ecafe0e0677eda4fda30e93b04ba8",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/sersem_author_faithful.py",
+      "git_blob_sha": "91f0fcdccd646902ccc939e0835090a517505347",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/sersem_author_runtime.py",
+      "git_blob_sha": "024156b0723cdc084803b400f6705bc76fbfbfc6",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/lumia_hidden_state_pilot.py",
+      "git_blob_sha": "d33fa4f4b0d258083d1503e4b4b883461f41ed8f",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/lumia_hidden_state_cache.py",
+      "git_blob_sha": "61182c7fcde131ed36c0791fa16928dcdc9b6e8b",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/lumia_hidden_state_scale_cache.py",
+      "git_blob_sha": "d69a088addade20475805aa5b69ad5bb0ee5591f",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/lumia_hidden_state_probe.py",
+      "git_blob_sha": "dffe5648eb45f6919dcd002a46f7a2c6d6fb9121",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/stage2_api.py",
+      "git_blob_sha": "16578d3e01b6471e5bfb2b04cebb99e1b3126c7c",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/stage2_deployment_validation.py",
+      "git_blob_sha": "bb5d9dc56f6aed6c6d091e4eb8852172879e5afe",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "src/poisoned_chalice/stage2_deployment_evaluation.py",
+      "git_blob_sha": "d4ca76ab2c03e2f467de18c6b78e2e352f45a262",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "scripts/run_stage2_deployment_validation_v1.py",
+      "git_blob_sha": "e5ba9f31aedcb184488c5756ad771f3e25a4e6a0",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    },
+    {
+      "path": "scripts/build_stage2_deployment_validation_v1_notebook.py",
+      "git_blob_sha": "18c6701a7a1baa6709306c98f88e77d45c30c1c6",
+      "max_bytes": 262144,
+      "snapshot_parts": 1
+    }
   ],
   "resource": {
     "accelerator": "gpu",
     "machine_shape": "NvidiaTeslaT4",
     "expected_visible_gpu_count": 2,
-    "expected_runtime_minutes": 75,
-    "hard_timeout_minutes": 120,
+    "expected_runtime_minutes": 120,
+    "hard_timeout_minutes": 180,
     "max_active_runs": 1,
     "min_remaining_quota_hours": 2.5
   },
-  "api_budget": {"max_calls": 60},
-  "side_effects": ["create one private notebook version"],
+  "api_budget": {
+    "max_calls": 60
+  },
+  "side_effects": [
+    "create one private notebook version"
+  ],
   "persistent_outputs": [
-    "lumia_hidden_state_evaluation_5000_v1/decision.json",
-    "lumia_hidden_state_evaluation_5000_v1/fold_selection.json",
-    "lumia_hidden_state_evaluation_5000_v1/metrics.json",
-    "lumia_hidden_state_evaluation_5000_v1/oof_predictions.csv",
-    "lumia_hidden_state_evaluation_5000_v1/run_manifest.json"
+    "stage2_deployment_validation_v1/run_manifest.json",
+    "stage2_deployment_validation_v1/evaluation.json",
+    "stage2_deployment_validation_v1/predictions_label_free.csv",
+    "stage2_deployment_validation_v1/predictions_label_free.sha256",
+    "stage2_deployment_validation_v1/holdout_selection_manifest.json",
+    "stage2_deployment_validation_v1/holdout_scoring_manifest.parquet",
+    "stage2_deployment_validation_v1/holdout_scoring_manifest.sha256",
+    "stage2_deployment_validation_v1/tr_stage2_features.parquet",
+    "stage2_deployment_validation_v1/tr_stage2_manifest.json",
+    "stage2_deployment_validation_v1/sealed_source_bundle/bundle_manifest.json",
+    "stage2_deployment_validation_v1/sealed_source_bundle/SEALED.sha256",
+    "stage2_deployment_validation_v1/holdout_hidden_mean/manifest.json"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
@@ -47,52 +121,35 @@
     "hidden_validation_labels_used": false,
     "validation_rows_used": false,
     "codeparrot_rows_or_labels_used": false,
-    "row_level_persisted_membership_labels": true,
-    "persisted_membership_labels_scope": "public_train_oof_evaluation_only",
+    "row_level_persisted_membership_labels": false,
     "performance_metrics_computed": true,
     "automatic_promotion": false
   },
   "scientific_contract": {
-    "task_id": "P1-03a-lumia-hidden-state-evaluation-5000-v1",
-    "purpose": "frozen_scale_stability_outer_oof_hidden_state_probe_evaluation",
+    "task_id": "STAGE2-DEPLOYMENT-VALIDATION-V1",
+    "purpose": "fixed_source_predictor_same_model_fresh_deployment_validation",
+    "model_id": "bigcode/starcoder2-3b",
+    "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928",
     "source_cache_kernel": "renta0426/poisoned-chalice-lumia-hidden-state-cache-5000-v1",
     "source_cache_manifest_sha256": "380e553cea43c0bb4a649e7d6b696786b4e5178d45ee116efbd5e99cceeab6aa",
-    "known_cache_manifest_task_id_bug": "P1-03-lumia-hidden-state-cache-1000-v1",
-    "known_cache_manifest_task_id_bug_scientific_data_affected": false,
-    "rows": 5000,
-    "rows_per_language_label": 500,
-    "public_train_labels_only": true,
-    "outer_folds": 5,
-    "outer_holdout_rows_per_fold": 1000,
-    "inner_probe_train_rows": 2400,
-    "inner_early_stop_rows": 800,
-    "inner_layer_selection_rows": 800,
-    "layers": 30,
-    "probe_architecture": "Linear(input_dim,128)-ReLU-Dropout(0.5)-Linear(128,1)-Sigmoid",
-    "optimizer": "Adam",
-    "learning_rate": 0.001,
-    "weight_decay": 0.0001,
-    "epochs_max": 100,
-    "batch_size": 32,
-    "validation_every_epochs": 5,
-    "early_stopping_patience_checks": 5,
-    "top5_ensemble_size": 5,
-    "bootstrap_replicates": 1000,
-    "bootstrap_seed": 20260909,
-    "predeclared_same_model_signal_confirmed_all": [
-      "caller top5 OOF AUC >= 0.62",
-      "caller top5 minus same-input zsigmoid paired-bootstrap AUC delta lower_95 > 0",
-      "caller top5 per-language AUC > 0.55 for all five languages"
-    ],
-    "predeclared_weighting_increment_supported_if": "caller top5 minus mean-only top5 OR helper top5 minus mean-only top5 paired-bootstrap AUC delta lower_95 > 0",
-    "predeclared_low_fpr_confirmation_if": "at least one frozen hidden anchor has TPR@1% FPR >= zsigmoid + 0.01 and its paired-bootstrap TPR delta lower_95 >= 0",
-    "tail_failure_does_not_negate_auc_signal": true,
-    "outer_holdout_used_for_layer_selection": false,
+    "source_rows": 5000,
+    "source_fit_split": "3000/1000/1000 train/early/select",
+    "source_seed": 20260909,
+    "target_rows": 5000,
+    "target_rows_per_language_label": 500,
+    "target_official_train_only": true,
+    "exclude_stage1_10k_ids": true,
+    "exclude_source_5k_ids": true,
+    "exclude_content_groups_touching_excluded_ids": true,
+    "hr": "mean hidden states, source-only top5 layer selection, sealed/reloaded fixed predictor",
+    "gr": "exact mean-hidden 96-feature scalarization + median imputer + StandardScaler + LogisticRegression(C=0.2)",
+    "tr": "label-free stage2-model-independent-v1",
+    "primary_fusion": "global-rank 0.5 TR + 0.5 HR",
+    "fusion_weight_grid": false,
+    "prediction_artifact_hashed_before_target_label_join": true,
+    "target_performance_feedback_into_fit": false,
     "visible_validation_used": false,
     "public_lb_used": false,
-    "result_derived_formula_added": false,
-    "automatic_promotion": false,
-    "no_automatic_cross_model_promotion": true,
     "competition_submission": false
   }
 }
