@@ -1,0 +1,211 @@
+name: CMI-Flu V3-07 H1 panel mean 001
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-v3-v07-h1-panel-mean-001
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: '1354356687'
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: '71638068'
+  CONDITION: task22_panel_mean
+  REQUEST_ID: 20260912-cmi-flu-strategy-v3-v07-h1-panel-mean-001
+  TARGET_KERNEL: renta0426/cmi-flu-v3-v07-h1-panel-mean-20260912-001
+  SCIENCE_COMMIT: 9bfe05664e4d96f09631a3210f7951bf9dfefe71
+  SCIENCE_BLOB: 4cf804e0c10889d0e037457ac096711b77200ea9
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Credential-free H1 exact runtime validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      runtime_sha: ${{ steps.runtime.outputs.runtime_sha }}
+      runtime_bytes: ${{ steps.runtime.outputs.runtime_bytes }}
+    steps:
+      - name: Enforce manual main and credential-free boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REF" == 'refs/heads/main' ]]
+          [[ "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:${name}"; exit 1; }
+          done
+
+      - name: Materialize exact public bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
+          if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-h1/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
+          if not data or len(data)>80000000: raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref): raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+
+      - name: Install real locked numerical stack and locked HAI references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          python="${WORKDIR}/venv/bin/python"
+          "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
+          "$python" -m pip check >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          echo '63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887  '"${WORKDIR}/references/strain_sequences.csv" | sha256sum --check --status
+          echo '8f6c7116f37f29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35  '"${WORKDIR}/references/vaccine_strains_per_season.txt" | sha256sum --check --status
+
+      - name: Build twice, execute synthetic science, writer, sanitizer and failure cleanup
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python="${WORKDIR}/venv/bin/python"; export PYTHONPATH="${WORKDIR}/bridge/scripts"
+          "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_prepare.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --condition "$CONDITION" --output "${WORKDIR}/runtime-a.py"
+          "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_prepare.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --condition "$CONDITION" --output "${WORKDIR}/runtime-b.py"
+          cmp "${WORKDIR}/runtime-a.py" "${WORKDIR}/runtime-b.py"
+          sha="$(sha256sum "${WORKDIR}/runtime-a.py" | awk '{print $1}')"; bytes="$(wc -c < "${WORKDIR}/runtime-a.py" | tr -d ' ')"
+          "$python" "${WORKDIR}/bridge/scripts/test_cmi_flu_v3_v07_runtime.py" --runtime "${WORKDIR}/runtime-a.py" --condition "$CONDITION" --output-dir "${WORKDIR}/synthetic"
+          "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition "$CONDITION" --input-dir "${WORKDIR}/synthetic"
+          "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" --condition "$CONDITION" --runtime "${WORKDIR}/runtime-a.py" --approved-runtime-sha256 "$sha" --bridge-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output-dir "${WORKDIR}/unused" --path-self-test
+          echo "runtime_sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "runtime_bytes=${bytes}" >> "$GITHUB_OUTPUT"
+          echo "CMI_FLU_V307_H1_PREAPPROVAL_PASS runtime_sha256=${sha} bytes=${bytes} science_commit=${SCIENCE_COMMIT} science_blob=${SCIENCE_BLOB} submission=false"
+
+      - name: Enforce request, workflow, one-write and no-submit policies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" request "${WORKDIR}/bridge/requests/cmi-flu-v3-v07-h1-panel-mean-001.json" --require-v2
+          python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/263-cmi-flu-v3-v07-h1-panel-mean-001.yml"
+          python3 "${WORKDIR}/bridge/scripts/kaggle_workflow_shell_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/263-cmi-flu-v3-v07-h1-panel-mean-001.yml"
+          python3 - "${WORKDIR}/bridge" <<'PY'
+          import ast,hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1]); req=json.loads((root/'requests/cmi-flu-v3-v07-h1-panel-mean-001.json').read_text())
+          assert req['request_id']=='20260912-cmi-flu-strategy-v3-v07-h1-panel-mean-001' and req['automatic_compute_retries']==0
+          assert req['competition_submission_authorized'] is False and req['final_submission_selection_authorized'] is False
+          raw=(root/'payloads/cmi-flu-v3-v07-source-001/strategy_v3_v07.py').read_bytes(); blob=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest(); assert blob=='4cf804e0c10889d0e037457ac096711b77200ea9'
+          tree=ast.parse((root/'scripts/cmi_flu_v3_v07_execute.py').read_text()); pushes=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and isinstance(n.func.value,ast.Name) and n.func.value.id=='base' and n.func.attr=='push']; assert len(pushes)==1
+          for path in (root/'payloads/cmi-flu-v3-v07-source-001/strategy_v3_v07.py', root/'scripts/cmi_flu_v3_v07_prepare.py', root/'scripts/cmi_flu_v3_v07_execute.py'):
+              low=path.read_text().casefold(); assert 'kaggle competitions submit' not in low and 'competition_submit(' not in low
+          print('CMI_FLU_V307_H1_STATIC PASS exact_blob=true one_write_site=1 retry=0 submission=false')
+          PY
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+
+  execute:
+    name: Run one approved private V3-07 H1 CPU Notebook
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Enforce protected main identity and materialize exact commit
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" && "$EVENT_REF" == 'refs/heads/main' ]]
+          [[ "$EVENT_ACTOR" == "$EXPECTED_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_ACTOR_ID" && "$EVENT_SENDER_ID" == "$EXPECTED_ACTOR_ID" ]]
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == 'renta0426/kaggle-actions-bridge/.github/workflows/263-cmi-flu-v3-v07-h1-panel-mean-001.yml@refs/heads/main' ]]
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${EXPECTED_REPOSITORY}" "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3]); assert re.fullmatch('[0-9a-f]{40}',ref)
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-h1-protected/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(80000001)
+          if not data or len(data)>80000000:raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}; assert len(prefixes)==1 and next(iter(prefixes)).endswith(ref)
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1]); assert not rel.is_absolute() and '..' not in rel.parts
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+
+      - name: Rebuild exact approved runtime and install locked Kaggle client
+        shell: bash
+        env:
+          APPROVED_RUNTIME_SHA256: ${{ needs.validate.outputs.runtime_sha }}
+          APPROVED_RUNTIME_BYTES: ${{ needs.validate.outputs.runtime_bytes }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ && "$APPROVED_RUNTIME_BYTES" =~ ^[0-9]+$ ]]
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          PYTHONPATH="${WORKDIR}/bridge/scripts" python3 "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_prepare.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --condition "$CONDITION" --output "${WORKDIR}/runtime.py"
+          echo "$APPROVED_RUNTIME_SHA256  ${WORKDIR}/runtime.py" | sha256sum --check --status
+          [[ "$(wc -c < "${WORKDIR}/runtime.py" | tr -d ' ')" == "$APPROVED_RUNTIME_BYTES" ]]
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          echo "CMI_FLU_V307_H1_APPROVED_RUNTIME sha256=${APPROVED_RUNTIME_SHA256} bytes=${APPROVED_RUNTIME_BYTES}"
+
+      - name: Execute exactly one approved Kaggle operation and recover declared outputs
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          APPROVED_RUNTIME_SHA256: ${{ needs.validate.outputs.runtime_sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" \
+            --condition "$CONDITION" --runtime "${WORKDIR}/runtime.py" --approved-runtime-sha256 "$APPROVED_RUNTIME_SHA256" \
+            --bridge-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output-dir "${WORKDIR}/safe-result"
+
+      - name: Emit only aggregate-safe H1 diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition "$CONDITION" --input-dir "${WORKDIR}/safe-result"
+
+      - name: Unconditionally remove runner-local private content
+        if: always()
+        shell: bash
+        run: |
+          unset KAGGLE_API_TOKEN || true
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+          echo 'V3-07 H1 runner-local private content removed; row-level banks remain only in private Kaggle output'
