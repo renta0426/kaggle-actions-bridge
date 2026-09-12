@@ -1,4 +1,4 @@
-name: Dispatch corrected frozen CMI-Flu V3-07 H1/H2 once
+name: Dispatch CMI-Flu V3-07 credential-free validation once
 
 on:
   push:
@@ -15,17 +15,16 @@ jobs:
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
       github.actor == 'renta0426' &&
-      github.event.head_commit.message == 'Dispatch corrected frozen CMI-Flu V3-07 H1/H2 once'
+      github.event.head_commit.message == 'Dispatch CMI-Flu V3-07 credential-free validation once'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Redispatch exact H1 and H2 after zero-side-effect preflight fix
+      - name: Dispatch exact combined H1/H2 credential-free validator
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/263-cmi-flu-v3-v07-h1-panel-mean-001.yml/dispatches" -f ref=main
-          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/264-cmi-flu-v3-v07-h2-retention-001.yml/dispatches" -f ref=main
-          echo 'Corrected V3-07 H1/H2 pre-write retries accepted. Prior attempts ended in credential-free validation before any Kaggle write; protected jobs still require kaggle-readonry approval.'
+          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/262-cmi-flu-v3-v07-runtime-validation.yml/dispatches" -f ref=main
+          echo 'V3-07 combined credential-free runtime validation accepted. No Kaggle write or protected environment is reachable from workflow 262.'
