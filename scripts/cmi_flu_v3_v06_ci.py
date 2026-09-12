@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import sys
 import tempfile
 
-import numpy as np
 import pandas as pd
 
 import cmi_flu_v3_v06_prepare as prepare
@@ -55,6 +54,7 @@ def full_science(runtime: Path):
     with tempfile.TemporaryDirectory(prefix="v306-pkg-") as td:
         package=Path(td)/"bundle.zip"; package.write_bytes(generated.package_bytes()); sys.path.insert(0,str(package))
         try:
+            assert generated.self_test()==0
             rt=generated.load_v3_v06_module()
             from cmi_flu.models import ModelSpec
             dataset,strains=hai_dataset(rt)
@@ -94,7 +94,6 @@ def main()->int:
     prepare.build_runtime(root,one); prepare.build_runtime(root,two)
     assert one.read_bytes()==two.read_bytes()
     compile(one.read_text(),str(one),"exec")
-    mod=load(one,"v306_selftest_runtime"); assert mod.self_test()==0
     full_science(one)
     raw=one.read_bytes(); print(f"V306_CI PASS bytes={len(raw)} sha256={hashlib.sha256(raw).hexdigest()} real_libraries=true full_science_path=true kaggle_write=0 competition_submit=0")
     return 0
