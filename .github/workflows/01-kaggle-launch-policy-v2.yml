@@ -1,19 +1,7 @@
 name: Kaggle launch policy v2
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-    paths:
-      - README.md
-      - docs/**
-      - scripts/kaggle_launch_policy_v2.py
-      - scripts/kaggle_kernel_write_v2.py
-      - tests/test_kaggle_launch_policy_v2.py
-      - tests/test_kaggle_kernel_write_v2.py
-      - requests/**
-      - .github/workflows/**
+  workflow_dispatch:
 
 permissions: {}
 
