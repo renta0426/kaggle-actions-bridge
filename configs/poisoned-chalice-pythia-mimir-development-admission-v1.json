@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "audit_id": "20260912-poisoned-chalice-pythia-mimir-development-admission-v1",
+  "role": "model_transfer_development",
+  "status": "pre_label_method_selection_admission",
+  "target_model": {
+    "repository": "EleutherAI/pythia-2.8b",
+    "revision_ref": "step143000",
+    "resolved_commit": null,
+    "license_expected": "apache-2.0",
+    "architecture_expected": "GPTNeoXForCausalLM",
+    "num_hidden_layers_expected": 32,
+    "hidden_size_expected": 2560,
+    "max_position_embeddings_expected": 2048,
+    "tokenizer_policy": "load_from_same_repository_and_exact_resolved_commit"
+  },
+  "benchmark": {
+    "mirror_repository": "Al-not-AI/mimir",
+    "mirror_commit": "47e348e97cae2ab8c1d2278d4ffd6db2f1d043f8",
+    "source": "github",
+    "split": "ngram_13_0.8",
+    "member_path": "cache_100_200_1000_512/train/github_ngram_13_0.8.jsonl",
+    "nonmember_path": "cache_100_200_1000_512/test/github_ngram_13_0.8.jsonl",
+    "expected_rows_per_class": 1000,
+    "expected_total_rows": 2000,
+    "unit": "MIMIR truncated GitHub snippet",
+    "expected_min_whitespace_words": 100,
+    "expected_max_whitespace_words": 200,
+    "construction_max_mask_tokens": 512,
+    "exact_cross_split_duplicates_allowed": 0
+  },
+  "canonical_provenance": {
+    "repository": "iamgroot42/mimir",
+    "commit": "1b6fd649eeeecc887275a2336c7da808ee58757d",
+    "custom_datasets_path": "mimir/custom_datasets.py",
+    "custom_datasets_blob": "f7174c444c78df389e6c43f2c56d8ff5b34a76ae",
+    "create_datasets_path": "data/create_datasets.py",
+    "create_datasets_blob": "df1a29c04c46bbdc16613a8a5a4c760a6328ce54",
+    "create_pile_subsets_path": "data/create_pile_subsets.sh",
+    "create_pile_subsets_blob": "9a0b48626dcfc3b9d4bddb22abd271b0e333479e",
+    "license_blob": "03e7000da6731658bc7d739995f7d4d17ab73c59"
+  },
+  "label_semantics": {
+    "member": "MIMIR Pile-train-derived GitHub snippet",
+    "nonmember": "MIMIR Pile-test-derived GitHub snippet",
+    "target_model_choice_reason": "use non-deduplicated Pythia to align the Pile train/test benchmark construction more directly with the target training corpus",
+    "claim_limit": "corpus-split provenance is strong but is not a bit-level audit of the exact Pythia training sequence",
+    "benchmark_confounding_risk": "member/nonmember construction can encode content, length, source, or sampling differences independent of memorization"
+  },
+  "development_rules": {
+    "target_labels_may_be_used_for_method_fit": false,
+    "target_labels_may_be_used_for_weight_search": false,
+    "target_labels_may_be_used_for_sign_selection": false,
+    "target_labels_may_be_used_for_layer_selection": false,
+    "target_labels_may_be_used_for_post_hoc_sample_selection": false,
+    "labels_may_be_joined_only_after_prediction_artifacts_are_frozen": true,
+    "content_only_control_required": true,
+    "actual_fp_tp_required_for_low_fpr": true,
+    "bootstrap_uncertainty_required": true,
+    "sealed_final_environment_consumed": false
+  },
+  "audit_execution": {
+    "kaggle_calls": 0,
+    "model_inference": false,
+    "model_weight_download": false,
+    "github_actions_expected_runner_minutes": 3,
+    "credentials_required": false,
+    "side_effects": []
+  }
+}

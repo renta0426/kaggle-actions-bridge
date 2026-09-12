@@ -1,0 +1,149 @@
+name: Poisoned Chalice Pythia MIMIR development admission v1
+
+on:
+  pull_request:
+    paths:
+      - configs/poisoned-chalice-pythia-mimir-development-admission-v1.json
+      - scripts/poisoned_chalice_pythia_mimir_admission_v1.py
+      - .github/workflows/261-poisoned-chalice-pythia-mimir-admission-v1.yml
+  push:
+    branches: [main]
+    paths:
+      - configs/poisoned-chalice-pythia-mimir-development-admission-v1.json
+      - scripts/poisoned_chalice_pythia_mimir_admission_v1.py
+      - .github/workflows/261-poisoned-chalice-pythia-mimir-admission-v1.yml
+
+permissions: {}
+
+concurrency:
+  group: poisoned-chalice-pythia-mimir-admission-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: "1354356687"
+  EXPECTED_ACTOR: renta0426
+  EXPECTED_ACTOR_ID: "71638068"
+  CONFIG_PATH: configs/poisoned-chalice-pythia-mimir-development-admission-v1.json
+  SCRIPT_PATH: scripts/poisoned_chalice_pythia_mimir_admission_v1.py
+
+jobs:
+  audit:
+    name: Resolve exact Pythia and audit pinned MIMIR cohort without credentials
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      github.actor_id == '71638068'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce lightweight secret-free boundary
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "${EVENT_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
+          [[ "${EVENT_REPOSITORY_ID}" == "${EXPECTED_REPOSITORY_ID}" ]]
+          [[ "${EVENT_ACTOR}" == "${EXPECTED_ACTOR}" ]]
+          [[ "${EVENT_ACTOR_ID}" == "${EXPECTED_ACTOR_ID}" ]]
+          [[ "${RUNNER_ENVIRONMENT}" == "github-hosted" ]]
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY RESEARCH_REPO_READ_TOKEN GH_TOKEN GITHUB_PAT SSH_PRIVATE_KEY HF_TOKEN HUGGING_FACE_HUB_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:${name}"; exit 1; }
+          done
+          source_sha="${EVENT_SHA}"
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then source_sha="${PR_HEAD_SHA}"; fi
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          workdir="$(mktemp -d)"
+          printf '%s\n' "${source_sha}" > "${workdir}/source_sha"
+          printf '%s\n' "${workdir}" > "${RUNNER_TEMP}/pythia-mimir-admission-workdir"
+          echo "PYTHIA_MIMIR_ADMISSION_BOUNDARY PASS credentials=0 kaggle_calls=0 model_inference=0 expected_runner_minutes=3"
+
+      - name: Materialize exact event files and run self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(cat "${RUNNER_TEMP}/pythia-mimir-admission-workdir")"
+          source_sha="$(cat "${workdir}/source_sha")"
+          python3 - "${source_sha}" "${workdir}" <<'PY'
+          import pathlib,re,sys,urllib.request
+          sha,root_value=sys.argv[1:]
+          if not re.fullmatch(r'[0-9a-f]{40}',sha): raise SystemExit('invalid source SHA')
+          root=pathlib.Path(root_value)
+          paths={
+              'configs/poisoned-chalice-pythia-mimir-development-admission-v1.json':131072,
+              'scripts/poisoned_chalice_pythia_mimir_admission_v1.py':262144,
+          }
+          for rel,maximum in paths.items():
+              request=urllib.request.Request(
+                  f'https://raw.githubusercontent.com/renta0426/kaggle-actions-bridge/{sha}/{rel}',
+                  headers={'User-Agent':'kaggle-actions-bridge/1'},
+              )
+              with urllib.request.urlopen(request,timeout=30) as response: data=response.read(maximum+1)
+              if not data or len(data)>maximum: raise SystemExit(f'event file byte budget failed:{rel}')
+              destination=root/pathlib.Path(rel).name
+              destination.write_bytes(data)
+          compile((root/'poisoned_chalice_pythia_mimir_admission_v1.py').read_text(encoding='utf-8'), 'admission.py', 'exec')
+          PY
+          python3 "${workdir}/poisoned_chalice_pythia_mimir_admission_v1.py" \
+            --self-test \
+            --config "${workdir}/poisoned-chalice-pythia-mimir-development-admission-v1.json"
+
+      - name: Resolve exact public identities and audit cohort contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(cat "${RUNNER_TEMP}/pythia-mimir-admission-workdir")"
+          python3 "${workdir}/poisoned_chalice_pythia_mimir_admission_v1.py" \
+            --audit \
+            --config "${workdir}/poisoned-chalice-pythia-mimir-development-admission-v1.json" \
+            --output "${workdir}/audit.json"
+          python3 - "${workdir}/audit.json" <<'PY'
+          import json,sys
+          audit=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert audit['status']=='pass'
+          assert audit['role']=='model_transfer_development'
+          assert audit['benchmark']['total_rows']==2000
+          assert audit['benchmark']['exact_cross_split_duplicates']==0
+          assert audit['execution']=={
+              'credentials_used':False,
+              'kaggle_calls':0,
+              'model_inference':False,
+              'model_weights_downloaded':False,
+              'side_effects':[],
+          }
+          assert audit['decision']['sealed_confirmation_environment_consumed'] is False
+          assert audit['decision']['performance_labels_observed'] is False
+          print('PYTHIA_MIMIR_ADMISSION_RESULT '+json.dumps({
+              'model_commit':audit['target_model']['resolved_commit'],
+              'model_config_sha256':audit['target_model']['model_config_sha256'],
+              'tokenizer_json_sha256':audit['target_model']['tokenizer_json_sha256'],
+              'member_sha256':audit['benchmark']['member']['raw_sha256'],
+              'nonmember_sha256':audit['benchmark']['nonmember']['raw_sha256'],
+              'member_schema':audit['benchmark']['member']['schema'],
+              'nonmember_schema':audit['benchmark']['nonmember']['schema'],
+              'member_word_range':[audit['benchmark']['member']['min_whitespace_words'],audit['benchmark']['member']['max_whitespace_words']],
+              'nonmember_word_range':[audit['benchmark']['nonmember']['min_whitespace_words'],audit['benchmark']['nonmember']['max_whitespace_words']],
+              'manifest_sha256':audit['audit_manifest_sha256'],
+          },sort_keys=True))
+          PY
+
+      - name: Cleanup admission material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="${RUNNER_TEMP}/pythia-mimir-admission-workdir"
+          if [[ -f "${marker}" ]]; then
+            workdir="$(cat "${marker}")"
+            [[ ! -d "${workdir}" ]] || rm -rf "${workdir}"
+            rm -f "${marker}"
+          fi
+          echo "PYTHIA_MIMIR_ADMISSION_CLEANUP PASS retained_public_rows=0 credentials=0"

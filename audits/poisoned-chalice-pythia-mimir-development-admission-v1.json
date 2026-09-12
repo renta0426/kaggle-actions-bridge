@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "audit_id": "20260912-poisoned-chalice-pythia-mimir-development-admission-v1",
+  "status": "pass",
+  "role": "model_transfer_development",
+  "bridge_ci": {
+    "pull_request": 287,
+    "source_head_sha": "596696bf5ee102f9aad99228f0ff08bbfe4d391a",
+    "workflow_run_id": 34695799427,
+    "job_id": 103558951134,
+    "policy_workflow_run_id": 34695799435,
+    "shell_safety_workflow_run_id": 34695799419
+  },
+  "target_model": {
+    "repository": "EleutherAI/pythia-2.8b",
+    "requested_revision": "step143000",
+    "resolved_commit": "dbe7ae300a54abcdc475a33907b3dff81d25709f",
+    "architecture": "GPTNeoXForCausalLM",
+    "num_hidden_layers": 32,
+    "hidden_size": 2560,
+    "max_position_embeddings": 2048,
+    "license": "apache-2.0",
+    "model_config_sha256": "fe1a9b9550935517588c98f89df24db7d7eadf4c4a00dd32e127a2d4585e9827",
+    "tokenizer_json_sha256": "c24618a1b3e6a38167beff1c72cffd126c3a66254347304b50547d12c5f25624",
+    "tokenizer_files_resolved_at_same_commit": true,
+    "model_weights_downloaded": false
+  },
+  "benchmark": {
+    "repository": "Al-not-AI/mimir",
+    "commit": "47e348e97cae2ab8c1d2278d4ffd6db2f1d043f8",
+    "source": "github",
+    "split": "ngram_13_0.8",
+    "member_rows": 1000,
+    "nonmember_rows": 1000,
+    "total_rows": 2000,
+    "member_schema": "json_string",
+    "nonmember_schema": "json_string",
+    "member_word_range": [100, 200],
+    "nonmember_word_range": [100, 200],
+    "member_sha256": "41b785ca8bbc1051596900df3d16737a92079e9fcc1ae97e13d967ff9a07b065",
+    "nonmember_sha256": "d382222bd0a723e47da9dfd3afc99d0890e532a39440179e1e295b932792f8a8",
+    "exact_cross_split_duplicates": 0
+  },
+  "canonical_provenance": {
+    "repository": "iamgroot42/mimir",
+    "commit": "1b6fd649eeeecc887275a2336c7da808ee58757d",
+    "train_maps_to_member": true,
+    "test_maps_to_nonmember": true,
+    "construction_min_words": 100,
+    "construction_max_words": 200,
+    "construction_max_mask_tokens": 512,
+    "license": "MIT"
+  },
+  "label_semantics": {
+    "member": "MIMIR Pile-train-derived GitHub snippet",
+    "nonmember": "MIMIR Pile-test-derived GitHub snippet",
+    "target_model_choice_reason": "non-deduplicated Pythia aligns the Pile train/test benchmark construction more directly with the target training corpus",
+    "claim_limit": "corpus-split provenance is strong but is not a bit-level audit of the exact Pythia training sequence",
+    "benchmark_confounding_risk": "member/nonmember construction can encode content, length, source, or sampling differences independent of memorization"
+  },
+  "clean_room": {
+    "performance_labels_observed": false,
+    "target_labels_used_for_method_fit": false,
+    "target_labels_used_for_weight_search": false,
+    "target_labels_used_for_sign_selection": false,
+    "target_labels_used_for_layer_selection": false,
+    "target_labels_used_for_sample_selection": false,
+    "sealed_confirmation_environment_consumed": false
+  },
+  "execution": {
+    "credentials_used": false,
+    "kaggle_calls": 0,
+    "model_inference": false,
+    "model_weights_downloaded": false,
+    "side_effects": []
+  },
+  "audit_manifest_sha256": "5ef01e46b708560525f39be0489ec582eebfc55e5a5f9acb2cb45ec005dc6d75",
+  "next_step": "freeze the Pythia/MIMIR method-comparison protocol before any membership-label evaluation"
+}
