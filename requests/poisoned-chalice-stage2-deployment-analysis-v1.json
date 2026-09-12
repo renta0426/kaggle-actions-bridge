@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "request_id": "20260913-poisoned-chalice-stage2-deployment-analysis-v1-001",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_run",
+  "target": "renta0426/poisoned-chalice-stage2-deployment-analysis-v1",
+  "source_kernel": "renta0426/poisoned-chalice-stage2-deployment-validation-v1",
+  "source_script_version_id": 349274389,
+  "source_output_hashes": {
+    "evaluation.json": "aa67746f23b3b1bf73d4d1b1d81e746b7909eae69c6059187b711071608d228c",
+    "predictions_label_free.csv": "57aa7ff4633e88808c135443e9dea2711a0ed869b04e7765e7709242bd842e63",
+    "holdout_scoring_manifest.parquet": "abc45c6131593a5899bf1774ee47f6e160d1d79e0e5928149b5eec0028b90680",
+    "tr_stage2_features.parquet": "9236d3d015ae040b0fdeb0565f74a67f440ca42e65df2cb84ea3a45cb5a495a5",
+    "tr_stage2_manifest.json": "5d5a066fdd7a544b850da609a3454617b86e7f2e12a60fb2168eb371f12efa94",
+    "holdout_selection_manifest.json": "e134616858b4c8bb6c9a385fa38a55b3681f79d29f4200c7de8a62709cae72b4",
+    "run_manifest.json": "492af0a639fb44fa46cd5362ab72b0c779e24d217ac4100dac84cb805c0fb643"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 15,
+    "hard_timeout_minutes": 60
+  },
+  "side_effects": [
+    "create one private CPU analysis notebook version"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": true,
+  "competition_submission": false,
+  "select_as_final": false,
+  "analysis_contract": {
+    "source_output_only_kaggle_attachment": true,
+    "official_public_train_labels_loaded_after_hash_verification": true,
+    "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "no_model_inference": true,
+    "no_weight_or_threshold_search_for_promotion": true,
+    "row_level_prediction_plus_label_artifact_persisted": false,
+    "posthoc_tr_primitives_are_mechanism_diagnostics_only": true,
+    "holdout_becomes_consumed_for_diagnostics": true
+  }
+}
