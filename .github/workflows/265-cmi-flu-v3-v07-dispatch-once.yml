@@ -1,4 +1,4 @@
-name: Redispatch CMI-Flu V3-07 credential-free validation once
+name: Dispatch protected CMI-Flu V3-07 H1/H2 successor once
 
 on:
   push:
@@ -15,16 +15,16 @@ jobs:
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
       github.actor == 'renta0426' &&
-      github.event.head_commit.message == 'Redispatch CMI-Flu V3-07 credential-free validation once'
+      github.event.head_commit.message == 'Dispatch protected CMI-Flu V3-07 H1/H2 successor once'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Redispatch exact combined H1/H2 credential-free validator
+      - name: Dispatch one protected successor workflow containing independent H1/H2 jobs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/262-cmi-flu-v3-v07-runtime-validation.yml/dispatches" -f ref=main
-          echo 'V3-07 combined credential-free runtime validation redispatch accepted after the lazy Kaggle-import fix. No Kaggle write or protected environment is reachable from workflow 262.'
+          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/266-cmi-flu-v3-v07-protected-successor.yml/dispatches" -f ref=main
+          echo 'Protected V3-07 H1/H2 successor dispatched. Each request keeps one write maximum and zero automatic retries; both jobs remain gated by kaggle-readonry human approval.'
