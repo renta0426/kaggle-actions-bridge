@@ -1,26 +1,25 @@
-"""Strategy-v3 V3-05 repair: canonicalize frozen study aliases in context only.
+"""Strategy-v3 V3-05 repair: canonicalize the frozen study alias in context only.
 
 The first real V3-05 Kaggle run reached the Task1.3 scale-head science path but
-failed before any fit because participant context retained the raw organizer
-label ``2024_UGA`` while the measurement audit uses the already-frozen V3-01
-canonical label ``2024UGA``.  V3-01 explicitly established this alias and its
-hash; this module applies that same outcome-independent alias only to
-``study_group`` returned by ``build_participant_context`` while the frozen V3-05
-implementation runs.
+failed before any fit because participant context retained the organizer label
+``2024_UGA`` while the measurement audit used the already-frozen V3-01 label
+``2024UGA``.  The exact V3-01 alias map and its digest are duplicated here as a
+small provenance constant so this repair does not acquire a new runtime-module
+dependency on the later Strategy-v3 audit source.
 
-No teacher, target, baseline value, feature, split, candidate formula, fit,
+No teacher, target, measurement value, feature, split, candidate formula, fit,
 prediction, unit, parent/gate metadata, Public score, or submission behavior is
 changed by this repair.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Any
 
 import pandas as pd
 
 from . import strategy_v3_v05 as _base
-from .strategy_v3_batch1 import canonical_study, study_alias_hash
 
 EXPERIMENT = _base.EXPERIMENT
 SCHEMA_VERSION = _base.SCHEMA_VERSION
@@ -32,6 +31,7 @@ OBSERVED_FAILURE_STAGE = "run_task13_scale_heads"
 OBSERVED_FAILURE_TYPE = "DataContractError"
 OBSERVED_FAILURE_MESSAGE = "V3-05 source cohort is not the frozen single 2024UGA domain"
 OBSERVED_FAILURE_CODE = "88315152273aaa70245f"
+FROZEN_STUDY_ALIASES = {"2024UGA": "2024UGA", "2024_UGA": "2024UGA"}
 EXPECTED_ALIAS_HASH = "6626de8ebc839dbdac44faa19e8c3280348325d2a214fe940984a9d209fe2985"
 _ALLOWED_CHANGED_PAIRS = {("2024_UGA", "2024UGA")}
 _ORIGINAL_BUILD_PARTICIPANT_CONTEXT = _base.build_participant_context
@@ -42,13 +42,28 @@ def observed_failure_code() -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:20]
 
 
+def study_alias_hash() -> str:
+    raw = json.dumps(
+        FROZEN_STUDY_ALIASES,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
+def canonical_study(value: Any) -> str:
+    text = "" if value is None or pd.isna(value) else str(value).strip()
+    return FROZEN_STUDY_ALIASES.get(text, text)
+
+
 def _canonical_context_builder(
     participants: pd.DataFrame,
     investigations: pd.DataFrame,
     *,
     include_geolocation: bool = False,
 ) -> pd.DataFrame:
-    """Apply only the frozen V3-01 study alias to participant context identity."""
+    """Apply only the already-frozen V3-01 alias to participant context identity."""
     context = _ORIGINAL_BUILD_PARTICIPANT_CONTEXT(
         participants,
         investigations,
@@ -80,9 +95,11 @@ def _canonical_context_builder(
 
 
 def run_v3_05_task13(config: Any, inputs: Any):
-    """Run frozen V3-05 with the V3-01 study-identity alias applied fail-closed."""
+    """Run frozen V3-05 with the study-identity alias applied fail-closed."""
     if observed_failure_code() != OBSERVED_FAILURE_CODE:
         raise _base.DataContractError("V3-05 v2 observed failure fingerprint changed")
+    if study_alias_hash() != EXPECTED_ALIAS_HASH:
+        raise _base.DataContractError("V3-05 v2 frozen study alias digest changed")
     previous = _base.build_participant_context
     _base.build_participant_context = _canonical_context_builder
     try:
