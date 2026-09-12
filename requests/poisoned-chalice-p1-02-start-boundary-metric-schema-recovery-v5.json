@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-poisoned-chalice-p1-02-start-boundary-metric-schema-recovery-v5-001",
+  "predecessor_request_id": "20260912-poisoned-chalice-p1-02-start-boundary-order-independent-recovery-v4-001",
+  "predecessor_run_id": 34659847414,
+  "predecessor_error_sha256": "af93c27cd8f5ba62cf79b87622524ddeb932313296d2bda87141a4a988ab41c5",
+  "original_request_id": "20260906-poisoned-chalice-shadow-gold-start-boundary-attribution-v1-001",
+  "competition": "poisoned-chalice-icse27",
+  "operation": "kernel_current_completed_recovery_read",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "historical_declared_target": "renta0426/shadow-gold-start-boundary-attribution-v1",
+  "canonical_target": "renta0426/gold-start-boundary-attribution-v1",
+  "expected_kernel_version": 1,
+  "research_commit": "6b6f388627dfcf16ab0140337cabe7e93f4a8891",
+  "repair_scope": "validator_only_use_frozen_producer_metric_schema_tpr_at_fpr",
+  "frozen_metric_schema": ["auc", "partial_auc_standardized", "tpr_at_fpr"],
+  "frozen_false_positive_rate": 0.01,
+  "scientific_thresholds_changed": false,
+  "scientific_conditions_changed": false,
+  "target_changed_from_canonical_v3": false,
+  "version_changed": false,
+  "new_write_attempted": false,
+  "new_compute_requested": false,
+  "competition_submission_attempted": false,
+  "automatic_compute_retries": 0,
+  "environment": "kaggle-readonry",
+  "expected_output_names": [
+    "start_boundary_decision.json",
+    "start_boundary_metrics.json",
+    "start_boundary_predictions.jsonl",
+    "start_boundary_runtime_manifest.json"
+  ],
+  "expected_prediction_rows": 2560,
+  "fail_closed": {
+    "require_current_version_exactly_1": true,
+    "require_original_notebook_source_identity": true,
+    "require_exact_frozen_producer_metric_schema": true,
+    "require_scientific_outputs_complete": true,
+    "require_frozen_clean_room_guards": true,
+    "refuse_any_write_or_compute_retry": true,
+    "refuse_target_or_version_substitution": true
+  }
+}
