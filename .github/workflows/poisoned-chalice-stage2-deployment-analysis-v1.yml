@@ -96,7 +96,7 @@ jobs:
           workflow=workflow_path.read_text()
           for marker in ("environment: kaggle-readonry","github.event_name == 'push'","automatic_retries=0","competition_submission=0"):
               assert marker in workflow, marker
-          for forbidden in ("competitions submit","competition_submit(","min_remaining_quota_hours","max_active_runs"):
+          for forbidden in ("competitions "+"submit","competition_"+"submit(","min_remaining_"+"quota_hours","max_active_"+"runs"):
               assert forbidden not in workflow.casefold(), forbidden
           PY
           (cd "${workdir}" && python3 "${BUILDER_PATH}" >/dev/null)
@@ -112,7 +112,7 @@ jobs:
           nb=json.loads((root/meta["code_file"]).read_text()); code="\n".join(str(c.get("source","")) for c in nb["cells"])
           for marker in ("349274389","aa67746f23b3b1bf73d4d1b1d81e746b7909eae69c6059187b711071608d228c","STAGE2_DEPLOYMENT_ANALYSIS_V1_NOTEBOOK COMPLETE"):
               assert marker in code, marker
-          assert "competitions submit" not in code.casefold()
+          assert ("competitions "+"submit") not in code.casefold()
           PY
           echo "STAGE2_DEPLOYMENT_ANALYSIS_V1_VALIDATE PASS expected_runner_minutes_lt_5 automatic_retries=0 competition_submission=0"
 
