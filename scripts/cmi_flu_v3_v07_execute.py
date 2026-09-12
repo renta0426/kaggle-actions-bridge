@@ -110,7 +110,7 @@ def main() -> int:
     runtime = args.runtime.resolve()
     validate_runtime(runtime, args.approved_runtime_sha256, args.condition)
     if args.path_self_test:
-        print(f"CMI_FLU_V307_EXECUTOR_SELF_TEST PASS condition={args.condition} target={c['target']} version=1 write_limit=1 retry=0 submission=false")
+        print(f"CMI_FLU_V307_EXECUTOR_SELF_TEST PASS condition={args.condition} target={c['target']} version=1 write_limit=1 retry=0 submission=false capacity_authority=kaggle")
         return 0
 
     token = os.environ.get("KAGGLE_API_TOKEN", "")
@@ -118,11 +118,10 @@ def main() -> int:
         raise SystemExit("KAGGLE_API_TOKEN contract failed")
     from kaggle.api.kaggle_api_extended import KaggleApi
     api = KaggleApi(); api.authenticate()
+    # Kaggle is the capacity/quota authority under execution policy v2. Do not
+    # enumerate active sessions or impose a bridge-local concurrency admission gate.
     base.live_rules(api)
     prewrite_guard(api, c)
-    active = base.active_counts(api)
-    if active["unknown"] or active["cpu"] >= 1:
-        raise SystemExit("CPU admission closed or resource classification unknown")
 
     output_dir = args.output_dir.resolve()
     if output_dir.exists() and any(output_dir.iterdir()):

@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-cmi-flu-strategy-v3-v07-h1-panel-mean-001",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-v07-h1-panel-mean-20260912-001",
+  "title": "CMI Flu V3-07 H1 Panel Mean 20260912 001",
+  "expected_version": 1,
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "9bfe05664e4d96f09631a3210f7951bf9dfefe71",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_v3_v07_blob_sha": "4cf804e0c10889d0e037457ac096711b77200ea9",
+  "approved_runtime_binding": {
+    "method": "credential_free_validate_job_sha256_before_protected_environment_approval",
+    "deterministic_double_build_required": true,
+    "protected_job_rebuild_and_exact_sha256_match_required": true,
+    "runtime_digest_must_exist_before_human_environment_approval": true
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 60,
+    "hard_timeout_minutes": 120
+  },
+  "scientific_contract": {
+    "stage": "V3-07",
+    "condition": "task22_panel_mean",
+    "task": "Task2.2",
+    "target": "same-local-panel donor raw geometric mean",
+    "base_offset": "E05 main-effects nested INNER-OOF raw panel geometric mean",
+    "features": ["log2_pre_panel_gm", "pre_panel_log2_sd"],
+    "ridge_alpha": 10.0,
+    "feature_standardization": "source_training_only",
+    "loss": "raw_squared",
+    "positivity_enforced": true,
+    "controls": ["e05_main_effects", "et_subtype_d5_l10", "pre_hai"],
+    "outer_evaluation": "biological_subject_purged_leave_one_study_out",
+    "inner_teacher": "outer_training_only_nested_oof",
+    "saved_outer_oof_reuse_for_inner_teacher": false,
+    "target_proxy_panel_size": 9,
+    "target_proxy_subjects": 238,
+    "target_proxy_studies": ["2023_UGA", "2024UGA"],
+    "panel_size_and_composition_strata_preserved": true,
+    "hpo_allowed": false,
+    "post_result_parameter_tuning_allowed": false,
+    "public_leaderboard_used": false
+  },
+  "stop_contract": {
+    "insufficient_frozen_local_panel_support": true,
+    "no_paired_scale_improvement": true,
+    "constant_correction_degenerate": true,
+    "target_proxy_stratum_worsens": true
+  },
+  "output_contract": {
+    "private_row_level_files": ["v3_v07_h1_oof_bank.csv", "v3_v07_h1_challenge_bank.csv"],
+    "aggregate_safe_files": ["v3_v07_h1_summary.json", "v3_v07_h1_manifest.json"],
+    "public_artifact_upload": false,
+    "row_level_contents_may_exist_only_in_private_kaggle_output_and_ephemeral_runner_validation": true
+  },
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version after protected approval",
+    "persist the declared private V3-07 H1 output files",
+    "read only exact current version 1 declared outputs"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true,
+  "final_submission_selection_authorized": false
+}
