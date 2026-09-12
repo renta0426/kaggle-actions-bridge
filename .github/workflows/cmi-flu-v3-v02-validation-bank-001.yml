@@ -1,0 +1,81 @@
+name: CMI-Flu V3-02 validation bank 001
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-v3-v02-validation-bank-001.yml
+      - payloads/cmi-flu-v3-v02-validation-bank-001/**
+      - scripts/cmi_flu_v3_v02_*.py
+      - requirements/v3-runtime-ci.*
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cmi-flu-v3-v02-validation-bank-001.yml
+      - payloads/cmi-flu-v3-v02-validation-bank-001/**
+      - scripts/cmi_flu_v3_v02_*.py
+      - requirements/v3-runtime-ci.*
+
+permissions: {}
+concurrency:
+  group: cmi-flu-v3-v02-validation-bank-001-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: V3-02 exact source and generated-runtime synthetic regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    if: github.repository == 'renta0426/kaggle-actions-bridge' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      - name: Enforce credential-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:${name}"; exit 1; }
+          done
+      - name: Materialize exact bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${REPOSITORY}" "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
+          if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v302-ci/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
+          if not data or len(data)>80000000: raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref): raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+      - name: Install hash-locked real numerical libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+      - name: Execute deterministic generated runtime and full synthetic science path
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v02_ci.py" \
+            --repository-root "${WORKDIR}/bridge" --workdir "${WORKDIR}/v302-ci"
+          python3 "${WORKDIR}/bridge/scripts/kaggle_workflow_shell_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-v02-validation-bank-001.yml"
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: '[[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"'
