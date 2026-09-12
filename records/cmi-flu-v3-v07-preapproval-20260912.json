@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "stage": "V3-07",
+  "science_commit": "9bfe05664e4d96f09631a3210f7951bf9dfefe71",
+  "science_blob": "4cf804e0c10889d0e037457ac096711b77200ea9",
+  "request_partition_frozen_before_runtime_results": true,
+  "requests": [
+    {
+      "condition": "task22_panel_mean",
+      "request_id": "20260912-cmi-flu-strategy-v3-v07-h1-panel-mean-001",
+      "target": "renta0426/cmi-flu-v3-v07-h1-panel-mean-20260912-001",
+      "reason": "panel-conditioned D28 scale correction has E05 ontology/reference dependencies and its own nested panel calibration failure modes"
+    },
+    {
+      "condition": "task23_retention",
+      "request_id": "20260912-cmi-flu-strategy-v3-v07-h2-retention-001",
+      "target": "renta0426/cmi-flu-v3-v07-h2-retention-20260912-001",
+      "reason": "D28-to-D365 retention uses a distinct paired longitudinal teacher, nested D28 isolation and independent failure surface"
+    }
+  ],
+  "automatic_compute_retries": 0,
+  "competition_submission_authorized": false,
+  "final_submission_selection_authorized": false,
+  "public_leaderboard_selection_authorized": false,
+  "post_result_parameter_tuning_authorized": false
+}
