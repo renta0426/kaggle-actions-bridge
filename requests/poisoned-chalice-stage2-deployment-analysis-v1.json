@@ -1,12 +1,16 @@
 {
-  "schema_version": 1,
-  "request_id": "20260913-poisoned-chalice-stage2-deployment-analysis-v1-001",
+  "schema_version": 2,
+  "request_id": "20260913-poisoned-chalice-stage2-deployment-analysis-v1-v2-repair-001",
   "execution_policy": "kaggle_native_capacity_v2",
   "competition": "poisoned-chalice-icse27",
   "operation": "kernel_run",
   "target": "renta0426/poisoned-chalice-stage2-deployment-analysis-v1",
   "source_kernel": "renta0426/poisoned-chalice-stage2-deployment-validation-v1",
   "source_script_version_id": 349274389,
+  "expected_before_version": 1,
+  "expected_before_state": "ERROR",
+  "expected_after_version": 2,
+  "repair_reason": "analysis-v1 reconstructed TR_HR_rank_50_50 instead of evaluating the persisted frozen score column",
   "source_output_hashes": {
     "evaluation.json": "aa67746f23b3b1bf73d4d1b1d81e746b7909eae69c6059187b711071608d228c",
     "predictions_label_free.csv": "57aa7ff4633e88808c135443e9dea2711a0ed869b04e7765e7709242bd842e63",
@@ -22,7 +26,7 @@
     "hard_timeout_minutes": 60
   },
   "side_effects": [
-    "create one private CPU analysis notebook version"
+    "create exactly one successor private CPU notebook version: v1 ERROR -> v2"
   ],
   "automatic_compute_retries": 0,
   "enable_internet": true,
@@ -32,6 +36,8 @@
     "source_output_only_kaggle_attachment": true,
     "official_public_train_labels_loaded_after_hash_verification": true,
     "dataset_revision": "2ed5468723efa5457a3665782c6979ea4dbac7c2",
+    "saved_frozen_scores_only_for_candidate_metrics": true,
+    "fusion_reconstruction_forbidden": true,
     "no_model_inference": true,
     "no_weight_or_threshold_search_for_promotion": true,
     "row_level_prediction_plus_label_artifact_persisted": false,
