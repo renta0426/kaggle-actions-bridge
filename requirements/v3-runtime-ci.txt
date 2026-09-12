@@ -1,0 +1,13 @@
+# CI only. Reviewed wheel hashes are frozen from the PR bootstrap before merge.
+# Never used to install packages in a Kaggle Notebook.
+joblib==1.5.3
+numpy==2.3.5
+pandas==2.2.3
+PyYAML==6.0.3
+scikit-learn==1.8.0
+scipy==1.17.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+tzdata==2025.2
+threadpoolctl==3.6.0
+six==1.17.0
