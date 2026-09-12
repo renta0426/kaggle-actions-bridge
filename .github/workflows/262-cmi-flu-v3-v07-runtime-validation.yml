@@ -1,0 +1,119 @@
+name: CMI-Flu V3-07 credential-free runtime validation
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-v3-v07-runtime-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate exact H1/H2 generated runtimes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Enforce credential-free boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:${name}"; exit 1; }
+          done
+
+      - name: Materialize exact public bridge commit
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "${REPOSITORY}" "${EVENT_SHA}" "${workdir}/bridge" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
+          if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-ci/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response: data=response.read(80000001)
+          if not data or len(data)>80000000: raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref): raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts: raise SystemExit('archive path')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+
+      - name: Install real locked numerical stack and fetch locked HAI references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          python="${WORKDIR}/venv/bin/python"
+          "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
+          "$python" -m pip check >/dev/null
+          python3 -m venv "${WORKDIR}/refs-venv"
+          "${WORKDIR}/refs-venv/bin/pip" install --disable-pip-version-check --no-input gdown==5.2.0 >/dev/null
+          "${WORKDIR}/refs-venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_fetch_locked_hai_references.py" --output-dir "${WORKDIR}/references"
+          python3 "${WORKDIR}/bridge/scripts/cmi_flu_inspect_locked_hai_reference_schema.py" --reference-dir "${WORKDIR}/references"
+          echo '63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887  '"${WORKDIR}/references/strain_sequences.csv" | sha256sum --check --status
+          echo '8f6c7116f37f29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35  '"${WORKDIR}/references/vaccine_strains_per_season.txt" | sha256sum --check --status
+
+      - name: Build deterministic H1/H2 runtimes twice and run exact synthetic ladder
+        shell: bash
+        run: |
+          set -euo pipefail
+          python="${WORKDIR}/venv/bin/python"
+          export PYTHONPATH="${WORKDIR}/bridge/scripts"
+          for condition in task22_panel_mean task23_retention; do
+            case "$condition" in
+              task22_panel_mean) short=h1 ;;
+              task23_retention) short=h2 ;;
+              *) exit 1 ;;
+            esac
+            "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_prepare.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --condition "$condition" --output "${WORKDIR}/${short}-a.py"
+            "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_prepare.py" --repository-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --condition "$condition" --output "${WORKDIR}/${short}-b.py"
+            cmp "${WORKDIR}/${short}-a.py" "${WORKDIR}/${short}-b.py"
+            sha="$(sha256sum "${WORKDIR}/${short}-a.py" | awk '{print $1}')"
+            bytes="$(wc -c < "${WORKDIR}/${short}-a.py" | tr -d ' ')"
+            echo "CMI_FLU_V307_APPROVED_CANDIDATE condition=${condition} bytes=${bytes} runtime_sha256=${sha}"
+            "$python" "${WORKDIR}/bridge/scripts/test_cmi_flu_v3_v07_runtime.py" --runtime "${WORKDIR}/${short}-a.py" --condition "$condition" --output-dir "${WORKDIR}/${short}-synthetic"
+            "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition "$condition" --input-dir "${WORKDIR}/${short}-synthetic"
+            "$python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" --condition "$condition" --runtime "${WORKDIR}/${short}-a.py" --approved-runtime-sha256 "$sha" --bridge-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output-dir "${WORKDIR}/${short}-unused" --path-self-test
+          done
+
+      - name: Enforce static provenance, no-submit and one-write contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" \
+            "${WORKDIR}/bridge/scripts/test_cmi_flu_v3_v07_runtime.py"
+          python3 - "${WORKDIR}/bridge" <<'PY'
+          import ast,hashlib,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          science=root/'payloads/cmi-flu-v3-v07-source-001/strategy_v3_v07.py'
+          raw=science.read_bytes(); blob=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          assert blob=='4cf804e0c10889d0e037457ac096711b77200ea9'
+          src=(root/'scripts/cmi_flu_v3_v07_execute.py').read_text()
+          tree=ast.parse(src)
+          pushes=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and isinstance(n.func.value,ast.Name) and n.func.value.id=='base' and n.func.attr=='push']
+          assert len(pushes)==1, len(pushes)
+          for path in [science,root/'scripts/cmi_flu_v3_v07_prepare.py',root/'scripts/cmi_flu_v3_v07_execute.py']:
+              low=path.read_text().casefold()
+              assert 'kaggle competitions submit' not in low and 'competition_submit(' not in low
+          print('CMI_FLU_V307_STATIC PASS exact_blob=true one_write_site=1 retry=0 submission=false')
+          PY
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
