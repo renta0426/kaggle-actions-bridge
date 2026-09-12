@@ -166,7 +166,7 @@ def _fold_records(result: TaskRunResult) -> list[Mapping[str, Any]]:
 
 def _result_summary(dataset: TaskDataset, result: TaskRunResult) -> Mapping[str, Any]:
     return {
-        "selected_model": result.selected_spec.name,
+        "selected_model": result.selected_spec.to_dict(),
         "training_rows": int(len(dataset.train)),
         "training_subjects": int(dataset.train["subject_group"].nunique()),
         "training_studies": int(dataset.train["study_group"].nunique()),
