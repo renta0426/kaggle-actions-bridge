@@ -108,10 +108,23 @@ def full_science_synthetic(runtime: Path) -> None:
             assert aggregate["competition_submission_attempted"] is False
             assert len(oof) == 23 * 3
             assert len(challenge) == 40
-            for name in ("S2_vs_raw_baseline", "S3_vs_raw_baseline"):
-                contract = aggregate["Task1.3"]["challenge_rank_contracts"][name]
-                assert contract["same_rank_vector"] is True
-                assert contract["same_tie_equivalence"] is True
+
+            # S2 is a strictly positive multiplicative calibration and must keep
+            # the exact baseline rank/tie structure. S3 is monotone in an
+            # empirical-CDF score; with only 23 training thresholds it may merge
+            # distinct Challenge values into ties, but it must never invert the
+            # baseline order. Exact tie preservation is therefore not a science
+            # requirement for S3.
+            s2 = aggregate["Task1.3"]["challenge_rank_contracts"]["S2_vs_raw_baseline"]
+            assert s2["same_rank_vector"] is True
+            assert s2["same_tie_equivalence"] is True
+            s3 = aggregate["Task1.3"]["challenge_rank_contracts"]["S3_vs_raw_baseline"]
+            assert s3["spearman_status"] == "ok"
+            assert s3["spearman"] > 0
+            assert aggregate["Task1.3"]["full_fit_parameters"]["S3"]["b"] > 0
+            order = np.argsort(challenge["raw_baseline"].to_numpy(dtype=float), kind="mergesort")
+            assert np.all(np.diff(challenge.iloc[order]["S3"].to_numpy(dtype=float)) >= -1e-12)
+
             assert aggregate["Task1.3"]["conditions"]["S4"]["state"] == "evaluated"
             with tempfile.TemporaryDirectory(prefix="v305-ci-output-") as out:
                 manifest = rt.write_v3_05_outputs(aggregate, oof, challenge, out)
