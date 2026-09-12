@@ -13,7 +13,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: poisoned-chalice-stage2-analysis-reconcile
+  group: poisoned-chalice-stage2-analysis-reconcile-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -56,7 +56,12 @@ jobs:
           with urllib.request.urlopen(req,timeout=30,context=ssl.create_default_context()) as response:
               text=response.read(32769).decode('utf-8')
           if len(text.encode())>32768: raise SystemExit('workflow byte budget failed')
-          forbidden=('kernels_push(', 'kaggle kernels push', 'competitions submit', 'competition_submit(')
+          forbidden=(
+              'kernels_'+'push(',
+              'kaggle kernels'+' push',
+              'competitions'+' submit',
+              'competition_'+'submit(',
+          )
           lowered=text.casefold()
           for token in forbidden:
               if token in lowered: raise SystemExit('write marker present')
