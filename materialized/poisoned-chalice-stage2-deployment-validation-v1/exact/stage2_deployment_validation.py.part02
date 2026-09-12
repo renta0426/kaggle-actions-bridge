@@ -1,0 +1,220 @@
+    mean = np.asarray(bundle["scaler_mean"], dtype=np.float64)
+    scale = np.asarray(bundle["scaler_scale"], dtype=np.float64)
+    coef = np.asarray(bundle["coef"], dtype=np.float64)
+    if np.any(scale <= 0) or mean.shape != scale.shape or coef.shape != scale.shape:
+        raise ValueError("GR scaler/coef shape changed")
+    standardized = (X - mean) / scale
+    decision = standardized @ coef + float(bundle["intercept"])
+    probability = np.empty_like(decision, dtype=np.float64)
+    positive = decision >= 0
+    probability[positive] = 1.0 / (1.0 + np.exp(-decision[positive]))
+    exp_value = np.exp(decision[~positive])
+    probability[~positive] = exp_value / (1.0 + exp_value)
+    if not np.isfinite(probability).all():
+        raise RuntimeError("GR prediction contains nonfinite values")
+    return probability
+
+
+def predict_gr(bundle: dict[str, Any], mean_hidden: np.ndarray) -> np.ndarray:
+    X, names = scalarize_hidden_mean_96(mean_hidden)
+    if names != list(bundle["feature_names"]):
+        raise RuntimeError("GR feature order changed")
+    return predict_gr_from_features(bundle, X)
+
+
+def save_gr_bundle(bundle: dict[str, Any], root: str | Path) -> dict[str, str]:
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    array_fields = {"imputer_statistics", "scaler_mean", "scaler_scale", "coef"}
+    metadata = {k: v for k, v in bundle.items() if k not in array_fields}
+    metadata_path = root / "gr_metadata.json"
+    weights_path = root / "gr_parameters.npz"
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    np.savez_compressed(
+        weights_path,
+        imputer_statistics=np.asarray(bundle["imputer_statistics"], dtype=np.float64),
+        scaler_mean=np.asarray(bundle["scaler_mean"], dtype=np.float64),
+        scaler_scale=np.asarray(bundle["scaler_scale"], dtype=np.float64),
+        coef=np.asarray(bundle["coef"], dtype=np.float64),
+    )
+    return {"metadata_sha256": sha256_file(metadata_path), "parameters_sha256": sha256_file(weights_path)}
+
+
+def load_gr_bundle(root: str | Path) -> dict[str, Any]:
+    root = Path(root)
+    bundle = json.loads((root / "gr_metadata.json").read_text(encoding="utf-8"))
+    with np.load(root / "gr_parameters.npz", allow_pickle=False) as archive:
+        for name in ("imputer_statistics", "scaler_mean", "scaler_scale", "coef"):
+            bundle[name] = np.asarray(archive[name], dtype=np.float64)
+    return bundle
+
+
+def fit_hr_mean_top5_source(
+    mean_hidden: np.ndarray,
+    frame: pd.DataFrame,
+    *,
+    config: LumiaProbeConfig | None = None,
+    device: str = "cpu",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Train all layers on source train/early, select top-5 on source select."""
+    from sklearn.metrics import roc_auc_score
+
+    config = config or LumiaProbeConfig()
+    validate_balanced_source_frame(frame)
+    X = np.asarray(mean_hidden, dtype=np.float32)
+    if X.shape[0] != len(frame) or X.ndim != 3:
+        raise ValueError("HR mean-hidden/source-frame shape changed")
+    train_index, early_index, select_index = source_train_early_select_split(frame, config.seed)
+    y = frame.label.to_numpy(dtype=int)
+    selection: list[tuple[int, float]] = []
+    state_by_layer: dict[int, dict[str, np.ndarray]] = {}
+    layer_records: list[dict[str, Any]] = []
+    for layer in range(X.shape[1]):
+        seed = config.seed + layer
+        probe, training_record = train_probe(
+            X[train_index, layer, :],
+            y[train_index],
+            X[early_index, layer, :],
+            y[early_index],
+            config=config,
+            seed=seed,
+            device=device,
+        )
+        select_prediction = predict_probe(
+            probe,
+            X[select_index, layer, :],
+            batch_size=config.batch_size,
+            device=device,
+        )
+        selection_auc = float(roc_auc_score(y[select_index], select_prediction))
+        selection.append((layer, selection_auc))
+        state_by_layer[layer] = {
+            key: value.detach().cpu().numpy().copy() for key, value in probe.state_dict().items()
+        }
+        layer_records.append({"layer": layer, "selection_auc": selection_auc, **training_record, "seed": seed})
+        del probe
+    ordered = sorted(selection, key=lambda item: (-item[1], item[0]))
+    top_layers = [int(layer) for layer, _ in ordered[: config.ensemble_size]]
+    bundle = {
+        "schema_version": 1,
+        "input_dim": int(X.shape[2]),
+        "hidden_dim": int(config.hidden_dim),
+        "top_layers": top_layers,
+        "state_dicts": {str(layer): state_by_layer[layer] for layer in top_layers},
+        "config": asdict(config),
+        "source_split": {
+            "train_rows": int(len(train_index)),
+            "early_rows": int(len(early_index)),
+            "select_rows": int(len(select_index)),
+            "seed": int(config.seed),
+            "outer_oof_holdout_rows": 0,
+        },
+        "score_direction": "higher_is_member",
+        "ensemble": "arithmetic_mean_of_top5_probe_probabilities",
+        "pooling": "mean",
+    }
+    audit = {"top_layers": top_layers, "layer_records": layer_records}
+    return bundle, audit
+
+
+def _probe_from_numpy_state(
+    state: dict[str, np.ndarray],
+    input_dim: int,
+    hidden_dim: int,
+    device: str,
+):
+    import torch
+
+    probe = _make_probe(torch, input_dim, hidden_dim).to(device)
+    tensor_state = {name: torch.as_tensor(value, device=device) for name, value in state.items()}
+    probe.load_state_dict(tensor_state)
+    probe.eval()
+    return probe
+
+
+def predict_hr(bundle: dict[str, Any], mean_hidden: np.ndarray, *, device: str = "cpu") -> np.ndarray:
+    X = np.asarray(mean_hidden, dtype=np.float32)
+    if X.ndim != 3 or X.shape[2] != int(bundle["input_dim"]):
+        raise ValueError("HR mean-hidden shape changed")
+    config = LumiaProbeConfig(**bundle["config"])
+    predictions = []
+    for layer in bundle["top_layers"]:
+        state = bundle["state_dicts"][str(layer)]
+        probe = _probe_from_numpy_state(
+            state,
+            int(bundle["input_dim"]),
+            int(bundle["hidden_dim"]),
+            device,
+        )
+        predictions.append(
+            predict_probe(
+                probe,
+                X[:, int(layer), :],
+                batch_size=config.batch_size,
+                device=device,
+            )
+        )
+        del probe
+    result = np.mean(np.stack(predictions, axis=0), axis=0)
+    if result.shape != (len(X),) or not np.isfinite(result).all():
+        raise RuntimeError("HR prediction coverage/finite check failed")
+    return result
+
+
+def save_hr_bundle(bundle: dict[str, Any], root: str | Path) -> dict[str, str]:
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    metadata = {k: v for k, v in bundle.items() if k != "state_dicts"}
+    metadata_path = root / "hr_metadata.json"
+    weights_path = root / "hr_parameters.npz"
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    arrays = {}
+    for layer in bundle["top_layers"]:
+        for name, value in bundle["state_dicts"][str(layer)].items():
+            arrays[f"layer_{int(layer):02d}__{name}"] = np.asarray(value)
+    np.savez_compressed(weights_path, **arrays)
+    return {"metadata_sha256": sha256_file(metadata_path), "parameters_sha256": sha256_file(weights_path)}
+
+
+def load_hr_bundle(root: str | Path) -> dict[str, Any]:
+    root = Path(root)
+    bundle = json.loads((root / "hr_metadata.json").read_text(encoding="utf-8"))
+    states: dict[str, dict[str, np.ndarray]] = {str(layer): {} for layer in bundle["top_layers"]}
+    with np.load(root / "hr_parameters.npz", allow_pickle=False) as archive:
+        for layer in bundle["top_layers"]:
+            prefix = f"layer_{int(layer):02d}__"
+            matched = [key for key in archive.files if key.startswith(prefix)]
+            if not matched:
+                raise ValueError(f"HR saved state missing layer {layer}")
+            for key in matched:
+                states[str(layer)][key[len(prefix):]] = np.asarray(archive[key])
+    bundle["state_dicts"] = states
+    return bundle
+
+
+def global_rank01(values: Sequence[float]) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float64)
+    if values.ndim != 1 or not np.isfinite(values).all():
+        raise ValueError("global rank input must be finite 1-D")
+    return pd.Series(values).rank(method="average", pct=True).to_numpy(dtype=np.float64)
+
+
+def equal_rank_fusion(left: Sequence[float], right: Sequence[float]) -> np.ndarray:
+    left = np.asarray(left, dtype=np.float64)
+    right = np.asarray(right, dtype=np.float64)
+    if left.shape != right.shape:
+        raise ValueError("rank-fusion score lengths differ")
+    return 0.5 * global_rank01(left) + 0.5 * global_rank01(right)
+
+
+def build_prediction_frame(
+    sample_ids: Sequence[str],
+    languages: Sequence[str],
+    **scores: Sequence[float],
+) -> pd.DataFrame:
+    frame = pd.DataFrame({"sample_id": list(sample_ids), "language": list(languages)})
+    if frame.sample_id.duplicated().any():
+        raise ValueError("prediction identity contains duplicate sample IDs")
+    for name, values in scores.items():
+        array = np.asarray(values, dtype=np.float64)
+        if array.shape != (len(frame),) or not np.isfinite(array).all():
