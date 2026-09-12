@@ -89,6 +89,7 @@ jobs:
           python3 -m venv "${WORKDIR}/venv"
           "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
           "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          [[ -x "${WORKDIR}/venv/bin/kaggle" ]]
           echo "CMI_FLU_V307_H1_APPROVED_RUNTIME sha256=${H1_RUNTIME_SHA256} bytes=${H1_RUNTIME_BYTES} science_commit=${SCIENCE_COMMIT} science_blob=${SCIENCE_BLOB}"
 
       - name: Execute exactly one approved H1 Kaggle operation and recover declared outputs
@@ -98,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
-          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" --condition task22_panel_mean --runtime "${WORKDIR}/runtime.py" --approved-runtime-sha256 "$H1_RUNTIME_SHA256" --bridge-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output-dir "${WORKDIR}/safe-result"
+          PATH="${WORKDIR}/venv/bin:${PATH}" PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" --condition task22_panel_mean --runtime "${WORKDIR}/runtime.py" --approved-runtime-sha256 "$H1_RUNTIME_SHA256" --bridge-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output-dir "${WORKDIR}/safe-result"
 
       - name: Emit only aggregate-safe H1 diagnostics
         shell: bash
@@ -176,6 +177,7 @@ jobs:
           python3 -m venv "${WORKDIR}/venv"
           "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
           "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          [[ -x "${WORKDIR}/venv/bin/kaggle" ]]
           echo "CMI_FLU_V307_H2_APPROVED_RUNTIME sha256=${H2_RUNTIME_SHA256} bytes=${H2_RUNTIME_BYTES} science_commit=${SCIENCE_COMMIT} science_blob=${SCIENCE_BLOB}"
 
       - name: Execute exactly one approved H2 Kaggle operation and recover declared outputs
@@ -185,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
-          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" --condition task23_retention --runtime "${WORKDIR}/runtime.py" --approved-runtime-sha256 "$H2_RUNTIME_SHA256" --bridge-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output-dir "${WORKDIR}/safe-result"
+          PATH="${WORKDIR}/venv/bin:${PATH}" PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_execute.py" --condition task23_retention --runtime "${WORKDIR}/runtime.py" --approved-runtime-sha256 "$H2_RUNTIME_SHA256" --bridge-root "${WORKDIR}/bridge" --reference-dir "${WORKDIR}/references" --output-dir "${WORKDIR}/safe-result"
 
       - name: Emit only aggregate-safe H2 diagnostics
         shell: bash
