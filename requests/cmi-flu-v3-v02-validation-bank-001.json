@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "request_id": "20260912-cmi-flu-strategy-v3-v02-validation-bank-001",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-v02-validation-bank-20260912-001",
+  "title": "cmi-flu-v3-v02-validation-bank-20260912-001",
+  "expected_version": 1,
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "c47a9b1e5a6fdb889d9962e00cca7e418e366d23",
+  "science_transport": "connector_verified_exact_blob_relay",
+  "strategy_v3_v02_blob_sha": "e8e87bda474814ecf64b6b9530b46b5d81d1d27b",
+  "approved_runtime": {
+    "bytes": 402983,
+    "sha256": "9fb900680dfe0278c9a655d369bf113a292978d76ee2960a398f4ab4e7845390"
+  },
+  "source_B": {
+    "source_kernel": "renta0426/cmi-flu-e12c-manual-submission-20260911-002",
+    "expected_current_version": 1,
+    "expected_terminal_state": "COMPLETE",
+    "filename": "submission.csv",
+    "bytes": 5926,
+    "sha256": "0f9df53c3aa8c6e4ac693f6a42dbd2633b4b61d1462df798a9bd767c220be3a5"
+  },
+  "resource": {
+    "accelerator": "cpu",
+    "expected_runtime_minutes": 30,
+    "hard_timeout_minutes": 75
+  },
+  "scientific_contract": {
+    "stage": "V3-02",
+    "new_candidate_conditions": 0,
+    "fit_limit": 256,
+    "pseudo40_repetitions": 200,
+    "pseudo40_public_n": 12,
+    "pseudo40_private_n": 28,
+    "public_leaderboard_used": false,
+    "complete_local_panel_selection_uses_target_values": false,
+    "task12_supervised_raw_scale_branch_executed": false,
+    "task14_supervised_model_executed": false
+  },
+  "output_contract": {
+    "private_row_level_files": [
+      "v3_v02_oof_bank.csv",
+      "v3_v02_challenge_bank.csv"
+    ],
+    "aggregate_safe_files": [
+      "v3_v02_summary.json",
+      "v3_v02_bank_manifest.json"
+    ],
+    "public_artifact_upload": false,
+    "row_level_contents_may_exist_only_in_private_kaggle_output_and_ephemeral_runner_validation": true
+  },
+  "side_effects": [
+    "create exactly one private Kaggle Notebook version",
+    "persist two private row-level prediction-bank CSVs and two aggregate JSON outputs"
+  ],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_attempted": false,
+  "competition_submission_authorized": false,
+  "manual_operator_submission_only": true,
+  "final_submission_selection_authorized": false
+}
