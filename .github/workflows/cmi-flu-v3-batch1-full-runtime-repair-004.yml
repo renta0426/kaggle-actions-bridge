@@ -100,6 +100,7 @@ jobs:
           set -euo pipefail
           python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" request "${WORKDIR}/bridge/requests/cmi-flu-v3-batch1-full-runtime-repair-004.json" --require-v2
           python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-batch1-full-runtime-repair-004.yml"
+          python3 "${WORKDIR}/bridge/scripts/kaggle_workflow_shell_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-batch1-full-runtime-repair-004.yml"
           [[ "$APPROVED_RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ ]]
           echo "$APPROVED_RUNTIME_SHA256  ${WORKDIR}/integration/runtime.py" | sha256sum --check --status
       - name: Remove all synthetic and runtime validation files
@@ -155,9 +156,9 @@ jobs:
           PY
           PYTHONPATH="${workdir}/bridge/scripts" python3 "${workdir}/bridge/scripts/cmi_flu_v3_batch1_full_runtime_prepare.py" --repository-root "${workdir}/bridge" --output "${workdir}/runtime.py"
           echo "$APPROVED_RUNTIME_SHA256  ${workdir}/runtime.py" | sha256sum --check --status
-          python3 -m venv "${WORKDIR}/venv"
-          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
-          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          python3 -m venv "${workdir}/venv"
+          "${workdir}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${workdir}/bridge/${LOCK_PATH}" >/dev/null
+          "${workdir}/venv/bin/python" -m pip check >/dev/null
       - name: Execute exactly one approved Kaggle operation
         shell: bash
         env:

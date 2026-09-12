@@ -1,0 +1,90 @@
+name: Kaggle workflow shell safety v2
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/**
+      - scripts/kaggle_workflow_shell_v2.py
+      - tests/test_kaggle_workflow_shell_v2.py
+
+permissions: {}
+
+concurrency:
+  group: bridge-shell-safety-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Reject same-step GITHUB_ENV visibility defects
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_SHA: ${{ github.sha }}
+      EVENT_BEFORE: ${{ github.event.before }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Validate changed workflows without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:$name"; exit 1; }
+          done
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+          else
+            base_sha="$EVENT_BEFORE"
+            head_sha="$EVENT_SHA"
+          fi
+          [[ "$base_sha" =~ ^[0-9a-f]{40}$ && "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$base_sha" != "0000000000000000000000000000000000000000" ]]
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          python3 - "$REPOSITORY" "$base_sha" "$head_sha" "$workdir" <<'PY'
+          import io
+          import pathlib
+          import ssl
+          import sys
+          import tarfile
+          import urllib.request
+
+          repo, base_sha, head_sha, root_value = sys.argv[1:]
+          root = pathlib.Path(root_value)
+          context = ssl.create_default_context()
+
+          def fetch_tree(sha: str, target: pathlib.Path) -> None:
+              request = urllib.request.Request(
+                  f"https://codeload.github.com/{repo}/tar.gz/{sha}",
+                  headers={"User-Agent": "kaggle-workflow-shell-v2/1"},
+              )
+              with urllib.request.urlopen(request, timeout=45, context=context) as response:
+                  data = response.read(80_000_001)
+              if not data or len(data) > 80_000_000:
+                  raise SystemExit("repository archive byte budget failed")
+              with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+                  files = [item for item in archive.getmembers() if item.isfile()]
+                  prefixes = {item.name.split("/", 1)[0] for item in files}
+                  if len(prefixes) != 1:
+                      raise SystemExit("repository archive layout failed")
+                  prefix = next(iter(prefixes)) + "/"
+                  for item in files:
+                      rel = pathlib.PurePosixPath(item.name[len(prefix):])
+                      if not rel.parts or ".." in rel.parts:
+                          raise SystemExit("unsafe repository archive path")
+                      out = target.joinpath(*rel.parts)
+                      out.parent.mkdir(parents=True, exist_ok=True)
+                      out.write_bytes(archive.extractfile(item).read())
+
+          fetch_tree(base_sha, root / "base")
+          fetch_tree(head_sha, root / "head")
+          PY
+          cd "$workdir/head"
+          python3 -m unittest discover -s tests -p 'test_kaggle_workflow_shell_v2.py'
+          python3 scripts/kaggle_workflow_shell_v2.py changed "$workdir/base" "$workdir/head"
