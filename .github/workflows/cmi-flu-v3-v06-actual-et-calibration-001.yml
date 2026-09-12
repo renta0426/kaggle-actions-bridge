@@ -65,9 +65,14 @@ jobs:
         run: |
           set -euo pipefail
           PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
-            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci_v2.py" \
             --repository-root "${WORKDIR}/bridge" --workdir "${WORKDIR}/v306-ci"
-          python3 -m py_compile "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare.py"
+          python3 -m py_compile \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare_v3.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_prepare_v4.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci.py" \
+            "${WORKDIR}/bridge/scripts/cmi_flu_v3_v06_ci_v2.py"
           python3 "${WORKDIR}/bridge/scripts/kaggle_workflow_shell_v2.py" workflow \
             "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-v06-actual-et-calibration-001.yml"
       - name: Cleanup
