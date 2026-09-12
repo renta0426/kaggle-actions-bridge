@@ -32,7 +32,7 @@ env:
   EXPECTED_ACTOR_ID: '71638068'
   REQUEST_ID: 20260912-cmi-flu-strategy-v3-batch1-full-runtime-repair-004
   TARGET_KERNEL: renta0426/cmi-flu-v3-batch1-audit-diagnostics-20260912-004
-  APPROVED_RUNTIME_SHA256: pending-pr-ci-freeze
+  APPROVED_RUNTIME_SHA256: c473ef428910e2f4cd00706e398c21d59a27ddf83208eef9099860b6e35bbfee
   LOCK_PATH: requirements/kaggle-2.2.4.lock
 
 jobs:
@@ -75,26 +75,13 @@ jobs:
                   out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True)
                   out.write_bytes(archive.extractfile(item).read())
           PY
-      - name: Install real CI libraries and locked official client without authentication
+      - name: Install hash-locked real CI libraries and official client without credentials
         shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           python3 -m venv "${WORKDIR}/venv"
           python="${WORKDIR}/venv/bin/python"
-          if [[ -f "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" ]]; then
-            "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
-          else
-            [[ "$EVENT_NAME" == 'pull_request' ]] || { echo 'CI wheel hash freeze required before main execution'; exit 1; }
-            "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --report "${WORKDIR}/science-install.json" -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.txt" >/dev/null
-            "$python" - "${WORKDIR}/science-install.json" <<'PY'
-          import json,sys
-          for row in json.load(open(sys.argv[1]))['install']:
-              m=row['metadata']; d=row['download_info']['archive_info']['hashes']['sha256']
-              print(f"V3_CI_WHEEL_LOCK {m['name']}=={m['version']} --hash=sha256:{d}")
-          PY
-          fi
+          "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/requirements/v3-runtime-ci.lock" >/dev/null
           "$python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
           "$python" -m pip check
           "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4'
@@ -108,19 +95,13 @@ jobs:
           PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" \
             "${WORKDIR}/bridge/scripts/cmi_flu_v3_batch1_full_runtime_execute.py" --path-self-test
       - name: Enforce launch policy and frozen runtime digest
-        env:
-          EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
           set -euo pipefail
           python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" request "${WORKDIR}/bridge/requests/cmi-flu-v3-batch1-full-runtime-repair-004.json" --require-v2
           python3 "${WORKDIR}/bridge/scripts/kaggle_launch_policy_v2.py" workflow "${WORKDIR}/bridge/.github/workflows/cmi-flu-v3-batch1-full-runtime-repair-004.yml"
-          if [[ "$APPROVED_RUNTIME_SHA256" == 'pending-pr-ci-freeze' ]]; then
-            [[ "$EVENT_NAME" == 'pull_request' ]] || exit 1
-            echo 'V3 runtime digest must be frozen before merge'
-          else
-            echo "$APPROVED_RUNTIME_SHA256  ${WORKDIR}/integration/runtime.py" | sha256sum --check --status
-          fi
+          [[ "$APPROVED_RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          echo "$APPROVED_RUNTIME_SHA256  ${WORKDIR}/integration/runtime.py" | sha256sum --check --status
       - name: Remove all synthetic and runtime validation files
         if: always()
         shell: bash
