@@ -1,0 +1,158 @@
+name: CMI-Flu V3-07 consumed target readout
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cmi-flu-v3-v07-consumed-readout-001
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: renta0426/kaggle-actions-bridge
+  EXPECTED_REPOSITORY_ID: '1354356687'
+  EXPECTED_OWNER_ACTOR: renta0426
+  EXPECTED_OWNER_ACTOR_ID: '71638068'
+  EXPECTED_AUTOMATION_ACTOR: github-actions[bot]
+  EXPECTED_AUTOMATION_ACTOR_ID: '41898282'
+  REQUEST_PATH: requests/cmi-flu-v3-v07-consumed-readout-001.json
+  LOCK_PATH: requirements/kaggle-2.2.4.lock
+
+jobs:
+  validate:
+    name: Validate V3-07 read-only recovery contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce credential-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY GH_TOKEN GITHUB_PAT RESEARCH_REPO_READ_TOKEN SSH_PRIVATE_KEY HF_TOKEN; do
+            [[ -z "${!name-}" ]] || { echo "unexpected credential variable:${name}"; exit 1; }
+          done
+
+      - name: Materialize exact public bridge commit and validate read-only code
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "$REPOSITORY" "$EVENT_SHA" "${workdir}/bridge" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
+          if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-readout/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(80000001)
+          if not data or len(data)>80000000:raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref):raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts:raise SystemExit('unsafe archive path')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+          python3 -m py_compile "${workdir}/bridge/scripts/cmi_flu_v3_v07_consumed_readout.py"
+          python3 - "${workdir}/bridge" <<'PY'
+          import ast,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          req=json.loads((root/'requests/cmi-flu-v3-v07-consumed-readout-001.json').read_text())
+          assert req['side_effects']==[] and req['competition_submission_authorized'] is False and req['final_submission_selection_authorized'] is False
+          assert req['automatic_compute_retries']==0 and len(req['targets'])==2
+          src=(root/'scripts/cmi_flu_v3_v07_consumed_readout.py').read_text()
+          low=src.casefold()
+          forbidden=('kernels push','kernel_push','competition_submit(','competitions submit','final submission')
+          assert not any(x in low for x in forbidden), [x for x in forbidden if x in low]
+          tree=ast.parse(src)
+          writes=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr in {'push','kernel_push','competition_submit','submit'}]
+          assert not writes
+          print('CMI_FLU_V307_READOUT_STATIC PASS side_effects=0 writes=0 submission=false')
+          PY
+
+      - name: Cleanup validation content
+        if: always()
+        shell: bash
+        run: |
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
+
+  readout:
+    name: Read consumed V3-07 H1/H2 targets once
+    needs: validate
+    environment: kaggle-readonry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Enforce protected identity and materialize exact commit
+        shell: bash
+        env:
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.event.repository.id }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_ACTOR_ID: ${{ github.actor_id }}
+          EVENT_SENDER_ID: ${{ github.event.sender.id }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REPOSITORY" == "$EXPECTED_REPOSITORY" && "$EVENT_REPOSITORY_ID" == "$EXPECTED_REPOSITORY_ID" && "$EVENT_REF" == 'refs/heads/main' ]]
+          if [[ "$EVENT_ACTOR" == "$EXPECTED_OWNER_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_OWNER_ACTOR_ID" ]]; then
+            [[ "$EVENT_SENDER_ID" == "$EXPECTED_OWNER_ACTOR_ID" ]]
+          elif [[ "$EVENT_ACTOR" == "$EXPECTED_AUTOMATION_ACTOR" && "$EVENT_ACTOR_ID" == "$EXPECTED_AUTOMATION_ACTOR_ID" ]]; then
+            :
+          else
+            echo "unauthorized workflow_dispatch actor:${EVENT_ACTOR}:${EVENT_ACTOR_ID}"; exit 1
+          fi
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]]
+          [[ "$WORKFLOW_REF" == 'renta0426/kaggle-actions-bridge/.github/workflows/267-cmi-flu-v3-v07-consumed-readout.yml@refs/heads/main' ]]
+          workdir="$(mktemp -d)"; echo "WORKDIR=${workdir}" >> "$GITHUB_ENV"
+          python3 - "$EXPECTED_REPOSITORY" "$EVENT_SHA" "${workdir}/bridge" <<'PY'
+          import io,pathlib,re,ssl,sys,tarfile,urllib.request
+          repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
+          if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref):raise SystemExit('identity mismatch')
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-readout-protected/1'})
+          with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(80000001)
+          if not data or len(data)>80000000:raise SystemExit('archive byte budget')
+          target.mkdir(parents=True)
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+              files=[x for x in archive.getmembers() if x.isfile()]; prefixes={x.name.split('/',1)[0] for x in files}
+              if len(prefixes)!=1 or not next(iter(prefixes)).endswith(ref):raise SystemExit('archive identity')
+              for item in files:
+                  rel=pathlib.PurePosixPath(item.name.split('/',1)[1])
+                  if rel.is_absolute() or '..' in rel.parts:raise SystemExit('unsafe archive path')
+                  out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
+          PY
+
+      - name: Install exact locked Kaggle client
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${WORKDIR}/venv"
+          "${WORKDIR}/venv/bin/python" -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r "${WORKDIR}/bridge/${LOCK_PATH}" >/dev/null
+          "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
+          "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
+
+      - name: Read terminal status, safe failure markers, and H2 declared outputs
+        shell: bash
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
+          PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_consumed_readout.py" --output-dir "${WORKDIR}/h2-output"
+          if [[ -d "${WORKDIR}/h2-output" ]]; then
+            PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition task23_retention --input-dir "${WORKDIR}/h2-output"
+          fi
+
+      - name: Remove all runner-local outputs
+        if: always()
+        shell: bash
+        run: |
+          unset KAGGLE_API_TOKEN || true
+          [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
