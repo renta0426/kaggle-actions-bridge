@@ -27,4 +27,4 @@ jobs:
         run: |
           set -euo pipefail
           gh api --method POST "/repos/${REPOSITORY}/actions/workflows/271-cmi-flu-v3-v07-repair-002.yml/dispatches" -f ref=main
-          echo 'V3-07 repaired 002 dispatch accepted. H1/H2 use independent fresh targets and one protected environment approval boundary.'
+          echo 'V3-07 repaired 002 embedded-reference successor dispatch accepted. H1/H2 use the same still-unconsumed fresh targets and one protected environment approval boundary.'
