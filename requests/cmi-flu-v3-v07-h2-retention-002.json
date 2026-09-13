@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "request_id": "20260913-cmi-flu-strategy-v3-v07-h2-retention-002",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-07-h2-retention-20260913-002",
+  "title": "CMI Flu V3 07 H2 Retention 20260913 002",
+  "expected_version": 1,
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "bfaef18b9f703be4d88b8a170794ace2c47a0e55",
+  "science_v1_blob": "4cf804e0c10889d0e037457ac096711b77200ea9",
+  "science_repair_blob": "f547b894235542981a4ad48d523fe53393c52e34",
+  "repair_version": "strategy_v3_v07_v2_execution_contract_20260913",
+  "predecessor": {
+    "actual_ref": "renta0426/cmi-flu-v3-07-h2-retention-20260912-001",
+    "status": "ERROR",
+    "failure_code": "366adb150d48539aff31",
+    "classification": "science_implementation_support_grain_mismatch_not_scientific_negative",
+    "reuse_forbidden": true
+  },
+  "scientific_contract_unchanged": {
+    "task": "Task2.3",
+    "alpha": 100.0,
+    "target": "log2(Y365/Y28)",
+    "features": ["baseline HAI", "age", "predicted D28"],
+    "predicted_d28_contract": "inner OOF only for retention teacher; full outer-training model for held prediction",
+    "held_observed_d28_used": false,
+    "challenge_observed_d28_used": false,
+    "controls": ["independent_d365", "e06b_two_head"],
+    "target_proxy": {"panel_size": 8, "subjects": 439, "studies": 3},
+    "hpo_allowed": false,
+    "post_result_parameter_tuning_allowed": false,
+    "public_leaderboard_used": false
+  },
+  "execution_repair": {
+    "participant_year_strain_teacher_rows": 18593,
+    "participant_years": 1067,
+    "teacher_studies": 11,
+    "unique_biological_subject_strain_pairs": 11913,
+    "unique_biological_subjects": 567,
+    "fit_limit_policy": "exact outcome-independent reachable fit count within original 256 bound"
+  },
+  "resource": {"accelerator": "cpu", "expected_runtime_minutes": 90, "hard_timeout_minutes": 130},
+  "side_effects": ["create exactly one private Kaggle Notebook version and run it", "persist only four declared private V3-07 H2 output files"],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_authorized": false,
+  "final_submission_selection_authorized": false
+}
