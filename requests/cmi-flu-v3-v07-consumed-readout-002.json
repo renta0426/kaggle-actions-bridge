@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "request_id": "20260913-cmi-flu-v3-v07-consumed-readout-002",
+  "predecessor_request_id": "20260913-cmi-flu-v3-v07-consumed-readout-001",
+  "predecessor_failure": {
+    "classification": "bridge_runtime_compatibility",
+    "cause": "private-kernel text search returned an identity mismatch before direct kernel inspection",
+    "repair": "resolve each immutable owner/slug directly with get_kernel, then validate exact ref/privacy/version before reading status/log/output"
+  },
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_status_log_and_declared_output_read",
+  "targets": [
+    {
+      "condition": "task22_panel_mean",
+      "kernel": "renta0426/cmi-flu-v3-v07-h1-panel-mean-20260912-001",
+      "kernel_version": 1,
+      "runtime_sha256": "a5224ff34d899143c7903618131183440e1757a381330fa4012dc7e30bc3f5c9"
+    },
+    {
+      "condition": "task23_retention",
+      "kernel": "renta0426/cmi-flu-v3-v07-h2-retention-20260912-001",
+      "kernel_version": 1,
+      "runtime_sha256": "742b1dd339adcd59767f6550cdcf2606a94d1b16980b537f5a91d8d89fd37939"
+    }
+  ],
+  "allowed_h2_outputs": [
+    "v3_v07_h2_oof_bank.csv",
+    "v3_v07_h2_challenge_bank.csv",
+    "v3_v07_h2_summary.json",
+    "v3_v07_h2_manifest.json"
+  ],
+  "api_budget": {
+    "max_calls": 14,
+    "max_pages": 1,
+    "poll_attempts": 1
+  },
+  "side_effects": [],
+  "competition_submission_authorized": false,
+  "final_submission_selection_authorized": false,
+  "publish_private_outputs": false,
+  "automatic_compute_retries": 0
+}
