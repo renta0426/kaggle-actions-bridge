@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "request_id": "20260913-cmi-flu-strategy-v3-v07-h1-panel-mean-002",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "save_kernel_once",
+  "target": "renta0426/cmi-flu-v3-07-h1-panel-mean-20260913-002",
+  "title": "CMI Flu V3 07 H1 Panel Mean 20260913 002",
+  "expected_version": 1,
+  "science_repository": "renta0426/CMI-Flu-Invited-Prediction-Challenge",
+  "science_source_commit": "bfaef18b9f703be4d88b8a170794ace2c47a0e55",
+  "science_v1_blob": "4cf804e0c10889d0e037457ac096711b77200ea9",
+  "science_repair_blob": "f547b894235542981a4ad48d523fe53393c52e34",
+  "repair_version": "strategy_v3_v07_v2_execution_contract_20260913",
+  "predecessor": {
+    "actual_ref": "renta0426/cmi-flu-v3-07-h1-panel-mean-20260912-001",
+    "status": "ERROR",
+    "failure_code": "445d164432e5ff8e94cd",
+    "classification": "science_implementation_engineering_budget_exhaustion_not_scientific_negative",
+    "reuse_forbidden": true
+  },
+  "scientific_contract_unchanged": {
+    "task": "Task2.2",
+    "alpha": 10.0,
+    "features": ["log2_pre_panel_gm", "pre_panel_log2_sd"],
+    "offset": "nested_inner_OOF_E05_main_effects",
+    "controls": ["e05_main_effects", "et_subtype_d5_l10", "pre_hai"],
+    "target_proxy": {"panel_size": 9, "subjects": 238, "studies": ["2023_UGA", "2024UGA"]},
+    "hpo_allowed": false,
+    "post_result_parameter_tuning_allowed": false,
+    "public_leaderboard_used": false
+  },
+  "execution_repair": {
+    "initial_fit_limit": 256,
+    "fit_limit_policy": "exact outcome-independent reachable fit count computed before fitting",
+    "absolute_engineering_ceiling": 384,
+    "pre_result_learning_rows": 62285,
+    "pre_result_learning_studies": 48
+  },
+  "resource": {"accelerator": "cpu", "expected_runtime_minutes": 75, "hard_timeout_minutes": 130},
+  "side_effects": ["create exactly one private Kaggle Notebook version and run it", "persist only four declared private V3-07 H1 output files"],
+  "automatic_compute_retries": 0,
+  "enable_internet": false,
+  "competition_submission_authorized": false,
+  "final_submission_selection_authorized": false
+}
