@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "request_id": "20260914-cmi-flu-v3-v07-error-log-readout-002",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "competition": "cmi-flu-first-prediction-challenge",
+  "operation": "kernel_latest_log_safe_exception_read",
+  "source_execution_run": 34762893662,
+  "targets": [
+    {
+      "condition": "task22_panel_mean",
+      "resolved_kernel": "renta0426/cmi-flu-v3-07-h1-panel-mean-20260913-002",
+      "expected_latest_status": "ERROR",
+      "expected_version": 1,
+      "failure_marker": {"stage": "run_v307", "type": "DataContractError", "code": "f26a5256a19c01b6f0a6"}
+    },
+    {
+      "condition": "task23_retention",
+      "resolved_kernel": "renta0426/cmi-flu-v3-07-h2-retention-20260913-002",
+      "expected_latest_status": "ERROR",
+      "expected_version": 1,
+      "failure_marker": {"stage": "run_v307", "type": "KeyError", "code": "eb03498a8ceb92036869"}
+    }
+  ],
+  "api_budget": {
+    "max_status_calls": 2,
+    "max_log_calls": 2,
+    "poll_attempts": 1
+  },
+  "side_effects": [],
+  "automatic_compute_retries": 0,
+  "competition_submission_authorized": false,
+  "final_submission_selection_authorized": false,
+  "publish_private_outputs": false,
+  "publish_only_failure_markers_and_sanitized_exception_detail": true
+}

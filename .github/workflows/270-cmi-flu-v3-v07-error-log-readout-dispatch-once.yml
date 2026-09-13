@@ -15,11 +15,11 @@ jobs:
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
       github.actor == 'renta0426' &&
-      startsWith(github.event.head_commit.message, 'Dispatch CMI-Flu V3-07 error-log readout once')
+      startsWith(github.event.head_commit.message, 'Dispatch CMI-Flu V3-07 002 safe exception readout once')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Dispatch one protected read-only failure-marker inspection
+      - name: Dispatch one protected read-only consumed-002 exception inspection
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -27,4 +27,4 @@ jobs:
         run: |
           set -euo pipefail
           gh api --method POST "/repos/${REPOSITORY}/actions/workflows/269-cmi-flu-v3-v07-error-log-readout.yml/dispatches" -f ref=main
-          echo 'V3-07 resolved-kernel error-log readout dispatched; kaggle-readonry approval is still required.'
+          echo 'V3-07 consumed -002 safe exception readout dispatched; kaggle-readonry approval is still required.'
