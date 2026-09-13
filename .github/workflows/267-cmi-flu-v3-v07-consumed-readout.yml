@@ -6,7 +6,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: cmi-flu-v3-v07-consumed-readout-003
+  group: cmi-flu-v3-v07-consumed-readout-004
   cancel-in-progress: false
 
 env:
@@ -16,12 +16,12 @@ env:
   EXPECTED_OWNER_ACTOR_ID: '71638068'
   EXPECTED_AUTOMATION_ACTOR: github-actions[bot]
   EXPECTED_AUTOMATION_ACTOR_ID: '41898282'
-  REQUEST_PATH: requests/cmi-flu-v3-v07-consumed-readout-003.json
+  REQUEST_PATH: requests/cmi-flu-v3-v07-consumed-readout-004.json
   LOCK_PATH: requirements/kaggle-2.2.4.lock
 
 jobs:
   validate:
-    name: Validate V3-07 exact-session read-only recovery contract
+    name: Validate V3-07 exact-title read-only recovery contract
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -45,7 +45,7 @@ jobs:
           import io,pathlib,re,ssl,sys,tarfile,urllib.request
           repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
           if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref): raise SystemExit('identity mismatch')
-          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-readout/3'})
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-readout/4'})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(80000001)
           if not data or len(data)>80000000:raise SystemExit('archive byte budget')
           target.mkdir(parents=True)
@@ -57,28 +57,31 @@ jobs:
                   if rel.is_absolute() or '..' in rel.parts:raise SystemExit('unsafe archive path')
                   out=target.joinpath(*rel.parts); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(archive.extractfile(item).read())
           PY
-          python3 -m py_compile "${workdir}/bridge/scripts/cmi_flu_v3_v07_consumed_readout.py"
+          python3 -m py_compile "${workdir}/bridge/scripts/cmi_flu_v3_v07_consumed_readout.py" "${workdir}/bridge/scripts/cmi_flu_v3_v07_sanitize.py"
           python3 - "${workdir}/bridge" <<'PY'
           import ast,json,pathlib,sys
           root=pathlib.Path(sys.argv[1])
-          req=json.loads((root/'requests/cmi-flu-v3-v07-consumed-readout-003.json').read_text())
-          assert req['request_id']=='20260913-cmi-flu-v3-v07-consumed-readout-003'
-          assert req['predecessor_request_id']=='20260913-cmi-flu-v3-v07-consumed-readout-002'
-          assert req['predecessor_failure']['classification']=='bridge_runtime_compatibility'
-          assert req['operation']=='exact_kernel_version_session_output_read'
+          req=json.loads((root/'requests/cmi-flu-v3-v07-consumed-readout-004.json').read_text())
+          assert req['request_id']=='20260913-cmi-flu-v3-v07-consumed-readout-004'
+          assert req['predecessor_request_id']=='20260913-cmi-flu-v3-v07-consumed-readout-003'
+          assert req['predecessor_failure']['classification']=='kaggle_transport_api_readout_failure'
+          assert req['operation']=='exact_title_resolved_kernel_version_session_output_read'
+          assert req['resolution_contract']['slug_search_used'] is False
+          assert req['resolution_contract']['exact_title_match_required'] is True
+          assert req['resolution_contract']['latest_current_fallback_for_scientific_output'] is False
           assert req['side_effects']==[] and req['competition_submission_authorized'] is False and req['final_submission_selection_authorized'] is False
           assert req['automatic_compute_retries']==0 and len(req['targets'])==2
-          assert len(req['allowed_h1_outputs'])==4 and len(req['allowed_h2_outputs'])==4
           src=(root/'scripts/cmi_flu_v3_v07_consumed_readout.py').read_text()
-          low=src.casefold()
-          forbidden=('kernels push','kernel_push','competition_submit(','competitions submit','final submission','kernels_list(','get_kernel(','kernels_status(','kernels_output(')
-          assert not any(x in low for x in forbidden), [x for x in forbidden if x in low]
-          assert 'list_kernel_session_output(request)' in src
-          assert 'request.version_label = str(target["version"])' in src
+          assert 'api.kernels_list(user=OWNER, page_size=100, sort_by="dateRun")' in src
+          assert 'search=' not in src
+          assert 'request.version_label = str(TARGETS[key]["version"])' in src
+          assert 'get_kernel(' not in src
           tree=ast.parse(src)
-          writes=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr in {'push','kernel_push','competition_submit','submit'}]
+          writes=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr in {'push','kernel_push','competition_submit','submit','save_kernel','create_dataset','create_model'}]
           assert not writes
-          print('CMI_FLU_V307_READOUT_STATIC_V3 PASS exact_version_label=true side_effects=0 writes=0 submission=false')
+          sanitizer=(root/'scripts/cmi_flu_v3_v07_sanitize.py').read_text()
+          assert 'import pandas' not in sanitizer and 'csv.DictReader' in sanitizer
+          print('CMI_FLU_V307_READOUT_STATIC_V4 PASS title_resolution=true exact_v1=true side_effects=0 writes=0')
           PY
 
       - name: Cleanup validation content
@@ -88,7 +91,7 @@ jobs:
           [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
 
   readout:
-    name: Read consumed V3-07 exact version-1 session outputs once
+    name: Resolve and read consumed V3-07 version-1 outputs once
     needs: validate
     environment: kaggle-readonry
     runs-on: ubuntu-24.04
@@ -123,7 +126,7 @@ jobs:
           import io,pathlib,re,ssl,sys,tarfile,urllib.request
           repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
           if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref):raise SystemExit('identity mismatch')
-          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-readout-protected/3'})
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-readout-protected/4'})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(80000001)
           if not data or len(data)>80000000:raise SystemExit('archive byte budget')
           target.mkdir(parents=True)
@@ -145,7 +148,7 @@ jobs:
           "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
           "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
 
-      - name: Read exact version-1 session logs and declared outputs
+      - name: Resolve exact titles then read immutable version-1 outputs
         shell: bash
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
@@ -154,10 +157,10 @@ jobs:
           [[ -n "$KAGGLE_API_TOKEN" && "$KAGGLE_API_TOKEN" == KGAT_* ]]
           PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_consumed_readout.py" --output-dir "${WORKDIR}/v307-output"
           if [[ -d "${WORKDIR}/v307-output/h1" ]]; then
-            PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition task22_panel_mean --input-dir "${WORKDIR}/v307-output/h1"
+            "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition task22_panel_mean --input-dir "${WORKDIR}/v307-output/h1"
           fi
           if [[ -d "${WORKDIR}/v307-output/h2" ]]; then
-            PYTHONPATH="${WORKDIR}/bridge/scripts" "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition task23_retention --input-dir "${WORKDIR}/v307-output/h2"
+            "${WORKDIR}/venv/bin/python" "${WORKDIR}/bridge/scripts/cmi_flu_v3_v07_sanitize.py" --condition task23_retention --input-dir "${WORKDIR}/v307-output/h2"
           fi
 
       - name: Remove all runner-local outputs
