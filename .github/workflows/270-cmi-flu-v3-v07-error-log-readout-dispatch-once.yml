@@ -1,0 +1,30 @@
+name: Dispatch CMI-Flu V3-07 error-log readout once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/270-cmi-flu-v3-v07-error-log-readout-dispatch-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      startsWith(github.event.head_commit.message, 'Dispatch CMI-Flu V3-07 error-log readout once')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch one protected read-only failure-marker inspection
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/269-cmi-flu-v3-v07-error-log-readout.yml/dispatches" -f ref=main
+          echo 'V3-07 resolved-kernel error-log readout dispatched; kaggle-readonry approval is still required.'
