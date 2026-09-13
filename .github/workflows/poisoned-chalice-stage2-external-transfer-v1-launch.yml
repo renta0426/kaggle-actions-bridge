@@ -1,0 +1,79 @@
+name: Poisoned Chalice Stage2 External Transfer V1 Launch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poisoned-chalice-stage2-external-transfer-v1-launch
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate frozen request and launcher
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/poisoned_chalice_stage2_external_transfer_v1_launch.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          request = json.loads(Path('requests/20260913-stage2-external-transfer-v1-launch-001.json').read_text())
+          assert request['execution_policy'] == 'kaggle_native_capacity_v2'
+          assert request['automatic_compute_retries'] == 0
+          assert request['science']['commit'] == '98d25516ba4558e4b5fa2b0b2baacb28be71db25'
+          assert request['target']['kernel_ref'] == 'renta0426/poisoned-chalice-stage2-external-transfer-v1'
+          assert request['target']['accelerator'] == 'NvidiaTeslaT4'
+          assert request['target']['private'] is True
+          assert request['target']['internet'] is True
+          assert request['side_effect_budget'] == {
+              'kaggle_kernel_writes': 1,
+              'competition_submissions': 0,
+              'final_submission_selections': 0,
+              'automatic_write_retries': 0,
+          }
+          assert request['protected_environment'] == 'kaggle-readonry'
+          print('STAGE2_EXT_REQUEST_VALIDATE PASS')
+          PY
+
+  launch:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: kaggle-readonry
+    steps:
+      - name: Checkout Bridge
+        uses: actions/checkout@v4
+      - name: Checkout exact private Science payload
+        uses: actions/checkout@v4
+        with:
+          repository: renta0426/The-Poisoned-Chalice-of-LLM-Evaluation
+          ref: 98d25516ba4558e4b5fa2b0b2baacb28be71db25
+          token: ${{ secrets.RESEARCH_REPO_READ_TOKEN }}
+          path: science-private
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install launch-only dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'kaggle==2.2.4' 'nbformat==5.10.4'
+      - name: Exact preflight and one-shot Kaggle create
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/poisoned_chalice_stage2_external_transfer_v1_launch.py \
+            --request requests/20260913-stage2-external-transfer-v1-launch-001.json \
+            --science-dir science-private \
+            --receipt /tmp/stage2-external-transfer-v1-launch-receipt.json
+          test -s /tmp/stage2-external-transfer-v1-launch-receipt.json
