@@ -7,7 +7,7 @@
   "operation": "create_private_kernel_once",
   "science": {
     "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
-    "commit": "3234423661813083fb85227fd643c764310f2d59",
+    "commit": "98d25516ba4558e4b5fa2b0b2baacb28be71db25",
     "builder": "scripts/build_stage2_external_transfer_v1_notebook.py",
     "execution_config": "configs/stage2_external_transfer_v1_execution_20260913.json"
   },
@@ -42,5 +42,5 @@
   "protected_environment": "kaggle-readonry",
   "secret": "KAGGLE_API_TOKEN",
   "private_science_read_secret": "RESEARCH_REPO_READ_TOKEN",
-  "approval_boundary": "protected launch job; exact source current identity/status and target absence are rechecked before the only Kaggle write"
+  "approval_boundary": "protected launch job; exact source current identity/status and sealed-bundle hashes plus target absence are rechecked before the only Kaggle write"
 }
