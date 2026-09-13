@@ -16,6 +16,7 @@
     "title": "Poisoned Chalice Stage2 External Transfer V1",
     "expected_first_version": 1,
     "private": true,
+    "accelerator": "NvidiaTeslaT4",
     "gpu": true,
     "internet": true
   },
