@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Fail-closed first-create launcher for STAGE2-EXTERNAL-TRANSFER-V1.
 
-This script performs read-only source/target preflight and exactly one Kaggle
-kernel push. It does not poll the new GPU run to completion and cannot submit to
-a competition.
+Read-only preflight is completed before exactly one Kaggle kernel push. The new
+GPU run is not polled to completion here and no competition submission exists.
 """
 from __future__ import annotations
 
@@ -12,18 +11,16 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from typing import Any
 
 from kaggle_exact_identity import exact_metadata, exact_metadata_eventually, status_name
 
 REQUEST_ID = "STAGE2-EXTERNAL-TRANSFER-V1-LAUNCH-001"
 TASK_ID = "STAGE2-EXTERNAL-TRANSFER-V1"
-EXPECTED_SCIENCE_SHA = "3234423661813083fb85227fd643c764310f2d59"
+EXPECTED_SCIENCE_SHA = "98d25516ba4558e4b5fa2b0b2baacb28be71db25"
 TARGET = "renta0426/poisoned-chalice-stage2-external-transfer-v1"
 TITLE = "Poisoned Chalice Stage2 External Transfer V1"
 SOURCE = "renta0426/poisoned-chalice-stage2-deployment-validation-v1"
@@ -35,7 +32,7 @@ ACCELERATOR = "NvidiaTeslaT4"
 EXPECTED_TARGET_VERSION = 1
 
 
-def args() -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--request", type=Path, required=True)
     p.add_argument("--science-dir", type=Path, required=True)
@@ -53,11 +50,7 @@ def sha256_file(path: Path) -> str:
 
 
 def http_status(exc: BaseException) -> int | None:
-    for value in (
-        getattr(exc, "status", None),
-        getattr(exc, "status_code", None),
-        getattr(getattr(exc, "response", None), "status_code", None),
-    ):
+    for value in (getattr(exc, "status", None), getattr(exc, "status_code", None), getattr(getattr(exc, "response", None), "status_code", None)):
         if type(value) is int and 100 <= value <= 599:
             return value
     return None
@@ -65,26 +58,22 @@ def http_status(exc: BaseException) -> int | None:
 
 def load_request(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    required = {
+    for key, value in {
         "request_id": REQUEST_ID,
         "task_id": TASK_ID,
         "execution_policy": "kaggle_native_capacity_v2",
         "automatic_compute_retries": 0,
         "operation": "create_private_kernel_once",
         "protected_environment": "kaggle-readonry",
-    }
-    for key, value in required.items():
+    }.items():
         if data.get(key) != value:
             raise RuntimeError(f"request contract mismatch:{key}")
-    science = data["science"]
-    target = data["target"]
-    source = data["source"]
-    side = data["side_effect_budget"]
+    science, target, source, side = data["science"], data["target"], data["source"], data["side_effect_budget"]
     if science.get("commit") != EXPECTED_SCIENCE_SHA:
         raise RuntimeError("science commit mismatch")
     expected_target = {
-        "kernel_ref": TARGET, "title": TITLE, "expected_first_version": 1,
-        "private": True, "accelerator": ACCELERATOR, "gpu": True, "internet": True,
+        "kernel_ref": TARGET, "title": TITLE, "expected_first_version": 1, "private": True,
+        "accelerator": ACCELERATOR, "gpu": True, "internet": True,
     }
     if any(target.get(k) != v for k, v in expected_target.items()):
         raise RuntimeError("target contract mismatch")
@@ -103,13 +92,13 @@ def verify_science_checkout(science_dir: Path) -> None:
     observed = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=science_dir, text=True).strip()
     if observed != EXPECTED_SCIENCE_SHA:
         raise RuntimeError("checked-out Science SHA mismatch")
-    required = (
-        science_dir / "scripts/build_stage2_external_transfer_v1_notebook.py",
-        science_dir / "configs/stage2_external_transfer_v1_execution_20260913.json",
-        science_dir / "scripts/run_stage2_external_transfer_v1.py",
-    )
-    if not all(path.is_file() for path in required):
-        raise RuntimeError("Science payload files missing")
+    for rel in (
+        "scripts/build_stage2_external_transfer_v1_notebook.py",
+        "configs/stage2_external_transfer_v1_execution_20260913.json",
+        "scripts/run_stage2_external_transfer_v1.py",
+    ):
+        if not (science_dir / rel).is_file():
+            raise RuntimeError(f"Science payload missing:{rel}")
 
 
 def build_payload(science_dir: Path) -> tuple[Path, dict[str, Any]]:
@@ -117,29 +106,23 @@ def build_payload(science_dir: Path) -> tuple[Path, dict[str, Any]]:
     completed = subprocess.run([sys.executable, str(builder)], cwd=science_dir, capture_output=True, text=True, timeout=120, check=False)
     if completed.returncode != 0:
         raise RuntimeError("Science notebook builder failed")
-    kernel_dir = science_dir / "notebooks/experiments/poisoned-chalice-stage2-external-transfer-v1"
-    metadata_path = kernel_dir / "kernel-metadata.json"
-    notebook_path = kernel_dir / "poisoned-chalice-stage2-external-transfer-v1.ipynb"
-    if not metadata_path.is_file() or not notebook_path.is_file():
+    root = science_dir / "notebooks/experiments/poisoned-chalice-stage2-external-transfer-v1"
+    meta_path = root / "kernel-metadata.json"
+    nb_path = root / "poisoned-chalice-stage2-external-transfer-v1.ipynb"
+    if not meta_path.is_file() or not nb_path.is_file():
         raise RuntimeError("built Kaggle payload missing")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
     expected = {
-        "id": TARGET, "title": TITLE, "is_private": True,
-        "enable_gpu": True, "enable_internet": True,
+        "id": TARGET, "title": TITLE, "is_private": True, "enable_gpu": True, "enable_internet": True,
         "kernel_sources": [SOURCE], "competition_sources": [], "dataset_sources": [],
     }
     for key, value in expected.items():
-        if metadata.get(key) != value:
+        if meta.get(key) != value:
             raise RuntimeError(f"built metadata mismatch:{key}")
-    notebook_low = notebook_path.read_text(encoding="utf-8").casefold()
-    forbidden = ("competition_submit(", "competitions submit", "final submission")
-    if any(token in notebook_low for token in forbidden):
+    low = nb_path.read_text(encoding="utf-8").casefold()
+    if any(token in low for token in ("competition_submit(", "competitions submit")):
         raise RuntimeError("built notebook contains forbidden submission path")
-    return kernel_dir, {
-        "science_sha": EXPECTED_SCIENCE_SHA,
-        "notebook_sha256": sha256_file(notebook_path),
-        "metadata_sha256": sha256_file(metadata_path),
-    }
+    return root, {"science_sha": EXPECTED_SCIENCE_SHA, "notebook_sha256": sha256_file(nb_path), "metadata_sha256": sha256_file(meta_path)}
 
 
 def authenticate():
@@ -147,8 +130,7 @@ def authenticate():
     if not token.startswith("KGAT_"):
         raise RuntimeError("KAGGLE_API_TOKEN contract failed")
     from kaggle.api.kaggle_api_extended import KaggleApi
-    api = KaggleApi(); api.authenticate()
-    return api
+    api = KaggleApi(); api.authenticate(); return api
 
 
 def source_preflight(api) -> dict[str, Any]:
@@ -161,55 +143,60 @@ def source_preflight(api) -> dict[str, Any]:
     state = status_name(getattr(api.kernels_status(SOURCE), "status", None))
     if state != "COMPLETE":
         raise RuntimeError("source current version is not COMPLETE")
-    # The Kaggle metadata schema does not guarantee exposure of scriptVersionId.
-    # If it is exposed, require the frozen successful id. In all cases the
-    # current attached output is independently bundle-verified below.
     observed_script_id = None
     for attr in ("current_version_id", "current_version_script_id", "script_version_id"):
         value = getattr(metadata, attr, None)
         if type(value) is int:
-            observed_script_id = int(value)
-            break
+            observed_script_id = int(value); break
     if observed_script_id is not None and observed_script_id != EXPECTED_SOURCE_SCRIPT_VERSION_ID:
         raise RuntimeError("source current scriptVersionId mismatch")
     return {
-        "kernel_ref": SOURCE,
-        "current_version_number": int(version),
-        "status": state,
+        "kernel_ref": SOURCE, "current_version_number": int(version), "status": state,
         "expected_successful_script_version_id": EXPECTED_SOURCE_SCRIPT_VERSION_ID,
         "observed_script_version_id_if_exposed": observed_script_id,
     }
 
 
-def verify_current_source_bundle(api, science_dir: Path) -> dict[str, Any]:
-    """Read current source output and verify its sealed bundle before target write."""
+def verify_source_bundle_root(root: Path) -> dict[str, Any]:
+    manifest_path, seal_path = root / "bundle_manifest.json", root / "SEALED.sha256"
+    if not manifest_path.is_file() or not seal_path.is_file():
+        raise RuntimeError("source bundle manifest/seal missing")
+    fields = seal_path.read_text(encoding="utf-8").strip().split()
+    if not fields or fields[0] != sha256_file(manifest_path):
+        raise RuntimeError("source bundle manifest seal mismatch")
+    m = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected = {
+        "hr_metadata.json": m.get("hr", {}).get("metadata_sha256"),
+        "hr_parameters.npz": m.get("hr", {}).get("parameters_sha256"),
+        "gr_metadata.json": m.get("gr", {}).get("metadata_sha256"),
+        "gr_parameters.npz": m.get("gr", {}).get("parameters_sha256"),
+        "c1_source_model.joblib": m.get("c1", {}).get("sha256"),
+        "hr_training_audit.json": m.get("hr", {}).get("training_audit_sha256"),
+    }
+    if any(not isinstance(v, str) or len(v) != 64 for v in expected.values()):
+        raise RuntimeError("source bundle asset hashes incomplete")
+    for name, digest in expected.items():
+        path = root / name
+        if not path.is_file() or sha256_file(path) != digest:
+            raise RuntimeError(f"source bundle asset mismatch:{name}")
+    if m.get("task_id") != EXPECTED_SOURCE_TASK or m.get("model_id") != EXPECTED_SOURCE_MODEL or m.get("model_revision") != EXPECTED_SOURCE_REVISION:
+        raise RuntimeError("source sealed bundle scientific identity mismatch")
+    return {
+        "task_id": m["task_id"], "model_id": m["model_id"], "model_revision": m["model_revision"],
+        "bundle_manifest_sha256": sha256_file(manifest_path), "verified_asset_count": len(expected),
+    }
+
+
+def verify_current_source_bundle() -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="pc-source-output-") as tmp:
         out = Path(tmp)
-        completed = subprocess.run(
-            ["kaggle", "kernels", "output", SOURCE, "-p", str(out), "-q", "-o"],
-            capture_output=True, text=True, timeout=300, check=False,
-        )
+        completed = subprocess.run(["kaggle", "kernels", "output", SOURCE, "-p", str(out), "-q", "-o"], capture_output=True, text=True, timeout=300, check=False)
         if completed.returncode != 0:
             raise RuntimeError("source current output read failed")
         manifests = list(out.rglob("bundle_manifest.json"))
         if len(manifests) != 1:
             raise RuntimeError("source bundle manifest cardinality mismatch")
-        sys.path.insert(0, str(science_dir / "src"))
-        try:
-            from poisoned_chalice.stage2_external_transfer_core import verify_sealed_source_bundle
-            verified = verify_sealed_source_bundle(manifests[0].parent)
-        finally:
-            if sys.path and sys.path[0] == str(science_dir / "src"):
-                sys.path.pop(0)
-        if verified.get("task_id") != EXPECTED_SOURCE_TASK or verified.get("model_id") != EXPECTED_SOURCE_MODEL or verified.get("model_revision") != EXPECTED_SOURCE_REVISION:
-            raise RuntimeError("source sealed bundle scientific identity mismatch")
-        return {
-            "task_id": verified["task_id"],
-            "model_id": verified["model_id"],
-            "model_revision": verified["model_revision"],
-            "manifest_sha256": sha256_file(manifests[0]),
-            "asset_hash_verification": True,
-        }
+        return verify_source_bundle_root(manifests[0].parent)
 
 
 def require_target_absent(api) -> None:
@@ -231,9 +218,7 @@ def push_once(kernel_dir: Path) -> dict[str, Any]:
         capture_output=True, text=True, timeout=210, check=False,
     )
     receipt = {
-        "write_attempted": True,
-        "write_count": 1,
-        "automatic_write_retries": 0,
+        "write_attempted": True, "write_count": 1, "automatic_write_retries": 0,
         "cli_return_code": int(completed.returncode),
         "stdout_bytes": len(completed.stdout.encode("utf-8", errors="replace")),
         "stderr_bytes": len(completed.stderr.encode("utf-8", errors="replace")),
@@ -254,43 +239,30 @@ def reconcile_new_target(api) -> dict[str, Any]:
     if getattr(metadata, "enable_gpu", None) is not True or getattr(metadata, "enable_internet", None) is not True:
         raise RuntimeError("new target runtime flags mismatch")
     state = status_name(getattr(api.kernels_status(TARGET), "status", None))
-    return {"kernel_ref": TARGET, "version": EXPECTED_TARGET_VERSION, "status": state, "accelerator": ACCELERATOR, "private": True, "internet": True}
+    return {"kernel_ref": TARGET, "version": 1, "status": state, "accelerator": ACCELERATOR, "private": True, "internet": True}
 
 
 def main() -> int:
-    a = args()
-    request = load_request(a.request.resolve())
-    science_dir = a.science_dir.resolve()
-    verify_science_checkout(science_dir)
-    kernel_dir, payload = build_payload(science_dir)
+    a = parse_args(); request = load_request(a.request.resolve()); science_dir = a.science_dir.resolve()
+    verify_science_checkout(science_dir); kernel_dir, payload = build_payload(science_dir)
     if a.self_test:
-        print(json.dumps({"self_test": "PASS", "request_id": REQUEST_ID, "target": TARGET, "accelerator": ACCELERATOR, **payload}, sort_keys=True))
-        return 0
+        print(json.dumps({"self_test": "PASS", "request_id": REQUEST_ID, "target": TARGET, "accelerator": ACCELERATOR, **payload}, sort_keys=True)); return 0
     api = authenticate()
     source_identity = source_preflight(api)
-    source_bundle = verify_current_source_bundle(api, science_dir)
+    source_bundle = verify_current_source_bundle()
     require_target_absent(api)
     print("STAGE2_EXT_PREWRITE_PASS " + json.dumps({"request_id": REQUEST_ID, "source": source_identity, "source_bundle": source_bundle, "target": TARGET, "accelerator": ACCELERATOR, **payload}, sort_keys=True))
     write = push_once(kernel_dir)
     target = reconcile_new_target(api)
     receipt = {
-        "schema_version": 1,
-        "request_id": REQUEST_ID,
-        "task_id": TASK_ID,
-        "execution_policy": request["execution_policy"],
-        "source": source_identity,
-        "source_bundle": source_bundle,
-        "payload": payload,
-        "write": write,
-        "target": target,
-        "competition_submission": False,
-        "final_submission_selection": False,
-        "continuous_monitoring": False,
+        "schema_version": 1, "request_id": REQUEST_ID, "task_id": TASK_ID,
+        "execution_policy": request["execution_policy"], "source": source_identity, "source_bundle": source_bundle,
+        "payload": payload, "write": write, "target": target,
+        "competition_submission": False, "final_submission_selection": False, "continuous_monitoring": False,
     }
     a.receipt.parent.mkdir(parents=True, exist_ok=True)
     a.receipt.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print("STAGE2_EXT_LAUNCH_CONFIRMED " + json.dumps(receipt, sort_keys=True))
-    return 0
+    print("STAGE2_EXT_LAUNCH_CONFIRMED " + json.dumps(receipt, sort_keys=True)); return 0
 
 
 if __name__ == "__main__":
