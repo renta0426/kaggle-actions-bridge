@@ -55,14 +55,9 @@ def parse_args() -> argparse.Namespace:
 
 def inspect(api: KaggleApi, key: str) -> tuple[dict, str]:
     target = TARGETS[key]
-    discovered = api.kernels_list(user=target["owner"], search=target["slug"], page_size=5) or []
-    refs = [str(getattr(item, "ref", "")) for item in discovered]
-    if refs.count(target["kernel"]) != 1:
-        raise RuntimeError(f"{key} exact kernel discovery mismatch")
-    status = str(getattr(api.kernels_status(target["kernel"]), "status", "")).upper()
-    if any(token in status for token in ("RUNNING", "QUEUED", "PENDING")):
-        raise RuntimeError(f"{key} kernel is not terminal:{status}")
-
+    # Private-kernel text search is not an identity primitive and can return zero
+    # even when an exact private ref exists. Resolve the immutable owner/slug
+    # directly, then validate the returned ref, privacy bit, and version.
     with api.build_kaggle_client() as client:
         meta_req = ApiGetKernelRequest()
         meta_req.user_name = target["owner"]
@@ -72,12 +67,17 @@ def inspect(api: KaggleApi, key: str) -> tuple[dict, str]:
             raise RuntimeError(f"{key} kernel identity/private mismatch")
         if int(metadata.current_version_number or 0) != int(target["version"]):
             raise RuntimeError(f"{key} current version changed")
+
         out_req = ApiListKernelSessionOutputRequest()
         out_req.user_name = target["owner"]
         out_req.kernel_slug = target["slug"]
         out_req.version_label = str(target["version"])
         out_req.page_size = 1000
         output = client.kernels.kernels_api_client.list_kernel_session_output(out_req)
+
+    status = str(getattr(api.kernels_status(target["kernel"]), "status", "")).upper()
+    if any(token in status for token in ("RUNNING", "QUEUED", "PENDING")):
+        raise RuntimeError(f"{key} kernel is not terminal:{status}")
 
     log = str(getattr(output, "log", "") or "")
     failures = FAIL_RE.findall(log)
@@ -149,7 +149,9 @@ def main() -> int:
         recover_h2(api, args.output_dir.resolve())
         recovered = True
     result = {
-        "request_id": "20260913-cmi-flu-v3-v07-consumed-readout-001",
+        "request_id": "20260913-cmi-flu-v3-v07-consumed-readout-002",
+        "predecessor_request_id": "20260913-cmi-flu-v3-v07-consumed-readout-001",
+        "failure_classification_repaired": "bridge_runtime_compatibility_private_kernel_search_not_identity_primitive",
         "side_effects": [],
         "competition_submission_attempted": False,
         "final_submission_selection_attempted": False,
