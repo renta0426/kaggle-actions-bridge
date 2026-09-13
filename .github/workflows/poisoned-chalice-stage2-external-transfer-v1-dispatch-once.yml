@@ -1,0 +1,30 @@
+name: Dispatch Poisoned Chalice Stage2 External Transfer V1 once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/poisoned-chalice-stage2-external-transfer-v1-dispatch-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      startsWith(github.event.head_commit.message, 'Dispatch Poisoned Chalice Stage2 External Transfer V1 once')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Dispatch one protected external-transfer launch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/poisoned-chalice-stage2-external-transfer-v1-launch.yml/dispatches" -f ref=main
+          echo 'STAGE2-EXTERNAL-TRANSFER-V1 protected launch dispatch accepted; human environment approval remains required before any Kaggle credential or write.'
