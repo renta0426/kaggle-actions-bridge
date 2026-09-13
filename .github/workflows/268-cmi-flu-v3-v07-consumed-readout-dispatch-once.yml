@@ -27,4 +27,4 @@ jobs:
         run: |
           set -euo pipefail
           gh api --method POST "/repos/${REPOSITORY}/actions/workflows/267-cmi-flu-v3-v07-consumed-readout.yml/dispatches" -f ref=main
-          echo 'V3-07 consumed-target readout dispatch accepted. The protected job is read-only and requires kaggle-readonry approval.'
+          echo 'V3-07 direct-lookup successor readout dispatch accepted. The protected job is read-only and requires kaggle-readonry approval.'
