@@ -6,7 +6,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: cmi-flu-v3-v07-error-log-readout-001
+  group: cmi-flu-v3-v07-error-log-readout-002
   cancel-in-progress: false
 
 env:
@@ -16,13 +16,13 @@ env:
   EXPECTED_OWNER_ACTOR_ID: '71638068'
   EXPECTED_AUTOMATION_ACTOR: github-actions[bot]
   EXPECTED_AUTOMATION_ACTOR_ID: '41898282'
-  REQUEST_PATH: requests/cmi-flu-v3-v07-error-log-readout-001.json
+  REQUEST_PATH: requests/cmi-flu-v3-v07-error-log-readout-002.json
   SCRIPT_PATH: scripts/cmi_flu_v3_v07_error_log_readout.py
   LOCK_PATH: requirements/kaggle-2.2.4.lock
 
 jobs:
   validate:
-    name: Validate V3-07 resolved-kernel log readout
+    name: Validate V3-07 002 safe exception readout
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -41,7 +41,7 @@ jobs:
           import io,pathlib,re,ssl,sys,tarfile,urllib.request
           repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
           if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref):raise SystemExit('identity mismatch')
-          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-error-log/1'})
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-error-log-002/1'})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(80000001)
           if not data or len(data)>80000000:raise SystemExit('archive byte budget')
           target.mkdir(parents=True)
@@ -56,14 +56,15 @@ jobs:
           python3 -W error::SyntaxWarning -m py_compile "${workdir}/bridge/${SCRIPT_PATH}"
           python3 - "${workdir}/bridge" <<'PY'
           import ast,json,pathlib,sys
-          root=pathlib.Path(sys.argv[1]); req=json.loads((root/'requests/cmi-flu-v3-v07-error-log-readout-001.json').read_text())
-          assert req['request_id']=='20260913-cmi-flu-v3-v07-error-log-readout-001'
-          assert req['operation']=='kernel_latest_log_failure_marker_read'
+          root=pathlib.Path(sys.argv[1]); req=json.loads((root/'requests/cmi-flu-v3-v07-error-log-readout-002.json').read_text())
+          assert req['request_id']=='20260914-cmi-flu-v3-v07-error-log-readout-002'
+          assert req['operation']=='kernel_latest_log_safe_exception_read'
           assert req['side_effects']==[] and req['automatic_compute_retries']==0
           assert req['competition_submission_authorized'] is False and req['final_submission_selection_authorized'] is False
           assert [x['resolved_kernel'] for x in req['targets']]==[
-            'renta0426/cmi-flu-v3-07-h1-panel-mean-20260912-001',
-            'renta0426/cmi-flu-v3-07-h2-retention-20260912-001']
+            'renta0426/cmi-flu-v3-07-h1-panel-mean-20260913-002',
+            'renta0426/cmi-flu-v3-07-h2-retention-20260913-002']
+          assert [x['failure_marker']['code'] for x in req['targets']]==['f26a5256a19c01b6f0a6','eb03498a8ceb92036869']
           src=(root/'scripts/cmi_flu_v3_v07_error_log_readout.py').read_text(); low=src.casefold()
           forbidden=('kernels push','kernel_push','competition_submit(','competitions submit','final submission','datasets create','kernels delete','kernels cancel')
           assert not any(x in low for x in forbidden), [x for x in forbidden if x in low]
@@ -71,7 +72,8 @@ jobs:
           writes=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr in {'push','kernel_push','competition_submit','submit','delete'}]
           assert not writes
           assert '[kaggle_cli, "kernels", "logs", ref]' in src
-          print('CMI_FLU_V307_ERROR_LOG_STATIC PASS writes=0 submission=false retries=0')
+          assert 'sanitize_exception_detail' in src
+          print('CMI_FLU_V307_ERROR_LOG_002_STATIC PASS writes=0 submission=false retries=0 safe_exception_only=true')
           PY
 
       - name: Cleanup validation material
@@ -81,7 +83,7 @@ jobs:
           [[ -z "${WORKDIR-}" || ! -d "$WORKDIR" ]] || rm -rf "$WORKDIR"
 
   readout:
-    name: Read resolved V3-07 failure markers once
+    name: Read consumed V3-07 002 sanitized exceptions once
     needs: validate
     environment: kaggle-readonry
     runs-on: ubuntu-24.04
@@ -116,7 +118,7 @@ jobs:
           import io,pathlib,re,ssl,sys,tarfile,urllib.request
           repo,ref,target=sys.argv[1],sys.argv[2],pathlib.Path(sys.argv[3])
           if repo!='renta0426/kaggle-actions-bridge' or not re.fullmatch('[0-9a-f]{40}',ref):raise SystemExit('identity mismatch')
-          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-error-log-protected/1'})
+          req=urllib.request.Request(f'https://codeload.github.com/{repo}/tar.gz/{ref}',headers={'User-Agent':'cmi-v307-error-log-002-protected/1'})
           with urllib.request.urlopen(req,timeout=45,context=ssl.create_default_context()) as response:data=response.read(80000001)
           if not data or len(data)>80000000:raise SystemExit('archive byte budget')
           target.mkdir(parents=True)
@@ -138,7 +140,7 @@ jobs:
           "${WORKDIR}/venv/bin/python" -m pip check >/dev/null
           "${WORKDIR}/venv/bin/kaggle" --version | grep -F '2.2.4' >/dev/null
 
-      - name: Read only safe failure markers from resolved actual kernels
+      - name: Read only sanitized exception details from consumed kernels
         shell: bash
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
