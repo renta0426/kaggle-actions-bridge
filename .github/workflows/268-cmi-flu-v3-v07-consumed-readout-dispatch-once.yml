@@ -15,7 +15,7 @@ jobs:
     if: >-
       github.repository == 'renta0426/kaggle-actions-bridge' &&
       github.actor == 'renta0426' &&
-      github.event.head_commit.message == 'Dispatch CMI-Flu V3-07 consumed readout once'
+      startsWith(github.event.head_commit.message, 'Dispatch CMI-Flu V3-07 consumed readout once')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
