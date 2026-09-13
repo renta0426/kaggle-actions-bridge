@@ -1,0 +1,30 @@
+name: Dispatch CMI-Flu V3-07 repaired 002 once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/272-cmi-flu-v3-v07-repair-002-dispatch-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'renta0426/kaggle-actions-bridge' &&
+      github.actor == 'renta0426' &&
+      startsWith(github.event.head_commit.message, 'Dispatch CMI-Flu V3-07 repaired 002 once')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch one protected repaired H1 H2 execution
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "/repos/${REPOSITORY}/actions/workflows/271-cmi-flu-v3-v07-repair-002.yml/dispatches" -f ref=main
+          echo 'V3-07 repaired 002 dispatch accepted. H1/H2 use independent fresh targets and one protected environment approval boundary.'
