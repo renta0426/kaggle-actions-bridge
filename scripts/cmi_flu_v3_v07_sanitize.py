@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import math
 from pathlib import Path
-
-import pandas as pd
 
 SCIENCE_COMMIT = "9bfe05664e4d96f09631a3210f7951bf9dfefe71"
 SCIENCE_BLOB = "4cf804e0c10889d0e037457ac096711b77200ea9"
@@ -64,6 +63,22 @@ def metric_delta(block: dict, candidate: str, reference: str) -> dict:
         "equal_study_spearman_reference": re["spearman_mean"],
         "equal_study_spearman_delta": None if ce["spearman_mean"] is None or re["spearman_mean"] is None else float(ce["spearman_mean"]) - float(re["spearman_mean"]),
     }
+
+
+def correction_sd_values(path: Path) -> list[float]:
+    values: list[float] = []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames or "correction_sd" not in reader.fieldnames:
+            raise SystemExit("V3-07 H1 correction_sd column missing")
+        for row in reader:
+            raw = str(row.get("correction_sd", "") or "").strip()
+            if not raw:
+                continue
+            if not finite(raw):
+                raise SystemExit("V3-07 H1 correction_sd contains nonfinite value")
+            values.append(float(raw))
+    return values
 
 
 def main() -> int:
@@ -149,13 +164,13 @@ def main() -> int:
         "final_submission_selection_attempted": False,
         "public_leaderboard_used": False,
     }
-    # Constant-correction stop check is aggregate-only: consume only the correction_sd column,
+    # Constant-correction stop check is aggregate-only: consume only correction_sd,
     # never identifiers or predictions, and emit its range rather than row values.
     if args.condition == "task22_panel_mean":
-        corr = pd.read_csv(root / f"{prefix}_oof_bank.csv", usecols=["correction_sd"])["correction_sd"].dropna().astype(float)
-        diagnostic["correction_sd_min"] = float(corr.min()) if len(corr) else None
-        diagnostic["correction_sd_max"] = float(corr.max()) if len(corr) else None
-        diagnostic["constant_correction_degenerate"] = bool(len(corr) == 0 or float(corr.max()) <= 1e-12)
+        corr = correction_sd_values(root / f"{prefix}_oof_bank.csv")
+        diagnostic["correction_sd_min"] = min(corr) if corr else None
+        diagnostic["correction_sd_max"] = max(corr) if corr else None
+        diagnostic["constant_correction_degenerate"] = bool(not corr or max(corr) <= 1e-12)
     print("CMI_FLU_V307_AGGREGATE " + json.dumps(diagnostic, sort_keys=True, allow_nan=False))
     return 0
 
