@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "request_id": "STAGE2-EXTERNAL-TRANSFER-V1-LAUNCH-001",
+  "task_id": "STAGE2-EXTERNAL-TRANSFER-V1",
+  "execution_policy": "kaggle_native_capacity_v2",
+  "automatic_compute_retries": 0,
+  "operation": "create_private_kernel_once",
+  "science": {
+    "repository": "renta0426/The-Poisoned-Chalice-of-LLM-Evaluation",
+    "commit": "98d25516ba4558e4b5fa2b0b2baacb28be71db25",
+    "builder": "scripts/build_stage2_external_transfer_v1_notebook.py",
+    "execution_config": "configs/stage2_external_transfer_v1_execution_20260913.json"
+  },
+  "target": {
+    "kernel_ref": "renta0426/poisoned-chalice-stage2-external-transfer-v1",
+    "title": "Poisoned Chalice Stage2 External Transfer V1",
+    "expected_first_version": 1,
+    "private": true,
+    "accelerator": "NvidiaTeslaT4",
+    "gpu": true,
+    "internet": true
+  },
+  "source": {
+    "kernel_ref": "renta0426/poisoned-chalice-stage2-deployment-validation-v1",
+    "expected_successful_script_version_id": 349274389,
+    "required_current_status": "COMPLETE",
+    "current_version_number_must_be_resolved_before_write": true,
+    "task_id": "STAGE2-DEPLOYMENT-VALIDATION-V1",
+    "model_id": "bigcode/starcoder2-3b",
+    "model_revision": "733247c55e3f73af49ce8e9c7949bf14af205928"
+  },
+  "target_model": {
+    "model_id": "EleutherAI/pythia-2.8b-deduped",
+    "revision": "f049796e71da489ea54cd2530b7b92db69203ebc"
+  },
+  "side_effect_budget": {
+    "kaggle_kernel_writes": 1,
+    "competition_submissions": 0,
+    "final_submission_selections": 0,
+    "automatic_write_retries": 0
+  },
+  "protected_environment": "kaggle-readonry",
+  "secret": "KAGGLE_API_TOKEN",
+  "private_science_read_secret": "RESEARCH_REPO_READ_TOKEN",
+  "approval_boundary": "protected launch job; exact source current identity/status and sealed-bundle hashes plus target absence are rechecked before the only Kaggle write"
+}
