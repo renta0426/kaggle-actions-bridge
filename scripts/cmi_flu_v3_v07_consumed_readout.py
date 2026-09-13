@@ -2,7 +2,7 @@
 """Read terminal V3-07 H1/H2 kernel state and recover only declared H2 outputs.
 
 Read-only by construction: no kernel push, version creation, Competition submission,
-or Final Submission action is present. Row-level H2 banks may exist only in the
+or selection mutation is present. Row-level H2 banks may exist only in the
 runner-local output directory so the existing sanitizer can validate them; this
 script never prints their contents.
 """
