@@ -5,6 +5,12 @@ This executor deliberately does not use GetKernel. The -001 incident established
 that Kaggle canonicalizes the title into the kernel slug and may return 403 for
 a wrong ref. -002 therefore uses a pre-canonicalized expected ref, resolves the
 fresh write by exact frozen title, and requires the resolved ref to equal it.
+
+The generated runtime already embeds the two locked HAI reference files after
+hash verification during the credential-free build. Do not copy a second,
+runner-local reference copy into the Kaggle kernel directory; the runtime's
+locked_reference_bytes/locate_locked_reference path is the sole reference
+transport used by the Notebook.
 """
 from __future__ import annotations
 
@@ -36,10 +42,6 @@ COMPETITION = "cmi-flu-first-prediction-challenge"
 EXPECTED_VERSION = 1
 POLL_SECONDS = 60
 MAX_POLLS = 125
-REF_SHA = {
-    "strain_sequences.csv": "63eb462620d6dc710547b390364194a6073c4fdb3bc811794cc2ffab6da65887",
-    "vaccine_strains_per_season.txt": "8f6c7116f37d29df0bb21d6049d82fa28b4e42b2d10ed9394a1ae6f926bd9f35",
-}
 FAIL_RE = re.compile(
     r"CMI_FLU_V307_RUNTIME_FAIL\s+stage=([A-Za-z0-9_]+)\s+type=([A-Za-z0-9_]+)\s+code=([0-9a-f]{20})"
 )
@@ -50,6 +52,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--condition", choices=sorted(CONTRACTS), required=True)
     p.add_argument("--runtime", type=Path, required=True)
     p.add_argument("--approved-runtime-sha256", required=True)
+    # Kept as a required compatibility argument because the workflow also uses
+    # this directory to build the exact runtime immediately before execution.
+    # The executor itself must not restage those files into the kernel folder.
     p.add_argument("--reference-dir", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--path-self-test", action="store_true")
@@ -74,9 +79,11 @@ def validate_runtime(path: Path, expected_sha: str, condition: str) -> None:
         f"V307_REQUEST_ID = {c['request_id']!r}",
         f"V307_TARGET_KERNEL = {c['target']!r}",
         "V307_REPAIR_VERSION = \"strategy_v3_v07_v2_execution_contract_20260913\"",
+        "LOCKED_REFERENCE_B64 = ",
+        "def locked_reference_bytes(name: str) -> bytes:",
     )
     if any(token not in source for token in required):
-        raise RuntimeError("V3-07 repair runtime identity mismatch")
+        raise RuntimeError("V3-07 repair runtime identity/reference transport mismatch")
     low = source.casefold()
     forbidden = ("competition_" + "submit(", "kaggle competitions " + "submit", "competitions " + "submit")
     if any(token in low for token in forbidden):
@@ -121,15 +128,12 @@ def resolve_written_ref(api, c: dict[str, str]) -> str:
     raise RuntimeError("V3-07 repair write acknowledged but exact title was not resolvable")
 
 
-def prepare_kernel(runtime: Path, references: Path, work: Path, c: dict[str, str]) -> Path:
+def prepare_kernel(runtime: Path, work: Path, c: dict[str, str]) -> Path:
     kernel_dir = work / "kernel"
     kernel_dir.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(runtime, kernel_dir / "script.py")
-    for name, digest in REF_SHA.items():
-        src = references / name
-        if not src.is_file() or _sha256(src) != digest:
-            raise RuntimeError(f"V3-07 repair locked reference mismatch:{name}")
-        shutil.copyfile(src, kernel_dir / name)
+    # The runtime contains hash-verified base64 copies of both organizer HAI
+    # references. Only script.py and metadata belong in the pushed source tree.
     metadata = {
         "id": c["target"],
         "title": c["title"],
@@ -228,8 +232,10 @@ def recover_outputs(ref: str, c: dict[str, str], output_dir: Path) -> None:
             path.unlink()
     for path in sorted(output_dir.rglob("*"), reverse=True):
         if path.is_dir():
-            try: path.rmdir()
-            except OSError: pass
+            try:
+                path.rmdir()
+            except OSError:
+                pass
 
 
 def main() -> int:
@@ -237,7 +243,7 @@ def main() -> int:
     runtime = args.runtime.expanduser().resolve()
     validate_runtime(runtime, args.approved_runtime_sha256, args.condition)
     if args.path_self_test:
-        print(f"CMI_FLU_V307_REPAIR_EXECUTOR_SELF_TEST PASS condition={args.condition} target={c['target']} version=1 write_limit=1 retry=0 submission=false")
+        print(f"CMI_FLU_V307_REPAIR_EXECUTOR_SELF_TEST PASS condition={args.condition} target={c['target']} version=1 write_limit=1 retry=0 embedded_references=true submission=false")
         return 0
     token = os.environ.get("KAGGLE_API_TOKEN", "")
     if not token.startswith("KGAT_"):
@@ -251,7 +257,7 @@ def main() -> int:
     work = output_dir.parent / f"v307-repair-execution-{args.condition}"
     work.mkdir(parents=True, exist_ok=False)
     try:
-        kernel_dir = prepare_kernel(runtime, args.reference_dir.expanduser().resolve(), work, c)
+        kernel_dir = prepare_kernel(runtime, work, c)
         push_once(kernel_dir, runtime, c)
         ref = resolve_written_ref(api, c)
         print(f"CMI_FLU_V307_REPAIR_WRITE_CONFIRMED condition={args.condition} ref={ref} version=1")
