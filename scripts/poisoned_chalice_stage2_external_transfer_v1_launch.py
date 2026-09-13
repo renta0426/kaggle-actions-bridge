@@ -214,11 +214,12 @@ def require_target_absent(api) -> None:
 
 def push_once(kernel_dir: Path) -> dict[str, Any]:
     completed = subprocess.run(
-        ["kaggle", "kernels", "push", "-p", str(kernel_dir), "--accelerator", ACCELERATOR, "--timeout", "180"],
+        ["kaggle", "kernels", "push", "-p", str(kernel_dir), "--accelerator", ACCELERATOR],
         capture_output=True, text=True, timeout=210, check=False,
     )
     receipt = {
         "write_attempted": True, "write_count": 1, "automatic_write_retries": 0,
+        "remote_runtime_timeout_seconds": None,
         "cli_return_code": int(completed.returncode),
         "stdout_bytes": len(completed.stdout.encode("utf-8", errors="replace")),
         "stderr_bytes": len(completed.stderr.encode("utf-8", errors="replace")),
