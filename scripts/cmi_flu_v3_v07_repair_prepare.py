@@ -116,7 +116,7 @@ def load_v307_module() -> tuple[object, object]:
         raise BridgeContractError("v307_repair_entry_missing")
     return repaired, hai
 '''
-    insert = "def self_test() -> int:\n"
+    insert = "def execute(input_dir: Path, output_dir: Path) -> int:\n"
     if runtime.count(insert) != 1:
         raise SystemExit("V3-07 repair loader insertion anchor changed")
     runtime = runtime.replace(insert, wrapper.rstrip() + "\n\n" + insert, 1)
